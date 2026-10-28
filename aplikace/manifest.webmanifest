@@ -1,0 +1,15 @@
+{
+  "name": "Werkplaats – Mercedes Restorations",
+  "short_name": "Werkplaats",
+  "lang": "cs",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f3f5f8",
+  "theme_color": "#092a4f",
+  "icons": [
+    { "src": "ikony/ikona-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "ikony/ikona-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

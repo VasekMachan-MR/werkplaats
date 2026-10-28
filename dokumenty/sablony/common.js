@@ -88,7 +88,12 @@ const mezery = s => s.replace(/[  ]/g, " ");
 const cislo0 = n => mezery(Math.round(Number(n)).toLocaleString("cs-CZ"));                     // 71 376
 const cislo2 = n => mezery(Number(n).toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 })); // 71 376,00
 const mnozstvi = n => mezery(Number(n).toLocaleString("cs-CZ", { maximumFractionDigits: 2 }));   // 0,2 / 37,4
-const datum = d => { const x = new Date(d); return `${x.getDate()}.${x.getMonth() + 1}.${x.getFullYear()}`; };
+const datum = d => {                                                       // 2026-10-09 → 9.10.2026 (prázdné → nic)
+  if (!d) return "";
+  const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${+m[3]}.${+m[2]}.${m[1]}`;
+  const x = new Date(d); return `${x.getDate()}.${x.getMonth() + 1}.${x.getFullYear()}`;
+};
 
 function paticka(strana, celkem) {
   return T(50.0, 801.4, FIRMA.web, { serif: true, size: 7.8, ink: true })

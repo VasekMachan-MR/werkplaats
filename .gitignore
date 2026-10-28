@@ -3,3 +3,5 @@ node_modules/
 dokumenty/sablony/assets/podpis*.png
 *.pdf
 testy/vystup/
+dist/
+testy/vystup-app/
