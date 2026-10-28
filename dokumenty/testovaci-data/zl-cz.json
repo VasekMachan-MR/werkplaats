@@ -1,0 +1,39 @@
+{
+ "cislo": 7374,
+ "zakaznik": {
+  "jmeno": "Jan Novák",
+  "ulice": "Lipová 12",
+  "mesto": "500 02 Hradec Králové",
+  "zeme": "Česká Republika",
+  "telefon": "+420 600 111 222",
+  "email": "jan.novak@example.cz"
+ },
+ "zavady": [
+  "Inspekce vozidla a diagnostika",
+  "Servis vozidla (výměna kapalin a filtrů)",
+  "Kontrola rozvodového řetězu",
+  "Svítí kontrolka ASD",
+  "Kontrola přední nápravy",
+  "Zatéká čelním oknem do prostoru pro nohy řidiče",
+  "Řešení ostatních závad dle další domluvy"
+ ],
+ "vozidlo": {
+  "znacka": "Mercedes-Benz",
+  "typ": "126",
+  "model": "300 SE",
+  "rok": "1989",
+  "vin": "WDB1260241A000001"
+ },
+ "nadrz": "1/4",
+ "tp": true,
+ "foto": true,
+ "stav": [
+  "Auto pojízdné, startuje, jede",
+  "Auto se třepe při přidání plynu",
+  "Zadní anténa nefunkční",
+  "Vnější poškození karoserie viz foto"
+ ],
+ "datum": "2026-10-09",
+ "dokonceni": "2027-01-07",
+ "odhad": 40000
+}

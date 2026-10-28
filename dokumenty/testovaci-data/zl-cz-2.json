@@ -1,0 +1,38 @@
+{
+ "cislo": 7376,
+ "zakaznik": {
+  "jmeno": "Example Trading s.r.o.",
+  "ulice": "Dlouhá 1",
+  "mesto": "110 00 Praha 1",
+  "zeme": "Česká Republika",
+  "telefon": "+420 600 333 444",
+  "email": "objednavky@example.com"
+ },
+ "zavady": [
+  "Inspekce vozidla",
+  "Oprava hadic chlazení oleje automatické převodovky",
+  "Diagnostika řízení",
+  "Výměna olejů a filtrů",
+  "Případná výměna silentbloků motoru + tlumiče chvění",
+  "Diagnostika klimatizace"
+ ],
+ "vozidlo": {
+  "znacka": "Mercedes-Benz",
+  "typ": "108",
+  "model": "280 SEL 4.5",
+  "rok": "1972",
+  "vin": "WDB10806812000003"
+ },
+ "nadrz": "¾",
+ "tp": true,
+ "foto": true,
+ "stav": [
+  "Auto nepojízdné, nebylo možné nastartovat",
+  "Vnější poškození karoserie (viz foto)",
+  "Nesvítí osvětlení interiéru (přístrojová deska a zbytek)",
+  "Nebylo možné provést zkušební jízdu při převzetí"
+ ],
+ "datum": "2026-10-27",
+ "dokonceni": "2027-01-25",
+ "odhad": 45000
+}

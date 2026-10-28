@@ -1,0 +1,40 @@
+{
+ "cislo": 7372,
+ "zakaznik": {
+  "jmeno": "Jan Novák",
+  "ulice": "Lipová 12",
+  "mesto": "500 02 Hradec Králové",
+  "zeme": "Česká Republika",
+  "telefon": "+420 600 111 222",
+  "email": "jan.novak@example.cz"
+ },
+ "zavady": [
+  "Leaking transmission",
+  "Radio replacement",
+  "Rear bumper rubber replacement",
+  "Sporadic fuel indication",
+  "Operating fluids and filters exchange",
+  "Other small repairs"
+ ],
+ "vozidlo": {
+  "znacka": "Mercedes-Benz",
+  "typ": "R107",
+  "model": "560 SL",
+  "rok": "1987",
+  "vin": "WDBBA48D4JA000002"
+ },
+ "nadrz": "4/4",
+ "tp": true,
+ "foto": true,
+ "stav": [
+  "Driveable, all agreed repairs completed",
+  "Test drive performed together with the customer"
+ ],
+ "datum": "2026-08-04",
+ "dokonceni": "2026-10-03",
+ "odhad": 52066,
+ "druh": "protokol",
+ "prevzeti": "2026-08-27",
+ "kolaDotazena": false,
+ "zkusebniJizda": true
+}

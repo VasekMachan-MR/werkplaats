@@ -1,0 +1,4 @@
+node_modules/
+# podpisy a osobní údaje nikdy do gitu
+dokumenty/sablony/assets/podpis*.png
+*.pdf

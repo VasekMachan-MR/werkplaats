@@ -1,0 +1,37 @@
+{
+ "cislo": 7372,
+ "zakaznik": {
+  "jmeno": "Example Trading s.r.o.",
+  "ulice": "Dlouhá 1",
+  "mesto": "110 00 Praha 1",
+  "zeme": "Česká Republika",
+  "telefon": "+420 600 333 444",
+  "email": "objednavky@example.com"
+ },
+ "zavady": [
+  "Leaking transmission",
+  "Radio replacement",
+  "Rear bumper rubber replacement",
+  "Sporadic fuel indication",
+  "Operating fluids and filters exchange",
+  "Other small repairs"
+ ],
+ "vozidlo": {
+  "znacka": "Mercedes-Benz",
+  "typ": "R107",
+  "model": "560 SL",
+  "rok": "1987",
+  "vin": "WDBBA48D4JA000002"
+ },
+ "nadrz": "4/4",
+ "tp": true,
+ "foto": true,
+ "stav": [
+  "Driveable",
+  "Some gears shift a bit harder",
+  "Interior dome light inop"
+ ],
+ "datum": "2026-08-04",
+ "dokonceni": "2026-10-03",
+ "odhad": 52066
+}

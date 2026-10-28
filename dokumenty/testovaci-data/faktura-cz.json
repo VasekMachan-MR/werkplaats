@@ -1,0 +1,71 @@
+{
+ "cislo": 7377,
+ "vystaveno": "2026-10-28",
+ "splatnost": "2026-11-11",
+ "zakaznik": {
+  "jmeno": "Jan Novák",
+  "ulice": "Lipová 12",
+  "mesto": "500 02 Hradec Králové",
+  "zeme": "Česká Republika",
+  "telefon": "+420 600 111 222",
+  "email": "jan.novak@example.cz"
+ },
+ "vozidlo": {
+  "znacka": "Mercedes-Benz",
+  "model": "300 SE",
+  "typ": "126",
+  "rok": "1989",
+  "vin": "WDB1260241A000001"
+ },
+ "polozky": [
+  {
+   "popis": "Inspekce",
+   "mnozstvi": 1,
+   "jednotka": "h",
+   "cena": 1200
+  },
+  {
+   "popis": "Odstranění závady ASD",
+   "mnozstvi": 4,
+   "jednotka": "h",
+   "cena": 1500
+  },
+  {
+   "popis": "Oprava přední nápravy",
+   "mnozstvi": 16,
+   "jednotka": "h",
+   "cena": 1500
+  },
+  {
+   "popis": "Geometrie kol",
+   "mnozstvi": 2,
+   "jednotka": "h",
+   "cena": 1500
+  },
+  {
+   "popis": "Kontrola rozvodového řetězu a výměna těsnění vent. víka",
+   "mnozstvi": 1,
+   "jednotka": "h",
+   "cena": 1500
+  },
+  {
+   "popis": "Výměna náplní a filtrů (motor, převodovka, diferenciál, palivo, hydr.)",
+   "mnozstvi": 5,
+   "jednotka": "h",
+   "cena": 1300
+  },
+  {
+   "popis": "Výměna pouzder táhel řazení",
+   "mnozstvi": 1,
+   "jednotka": "h",
+   "cena": 800
+  },
+  {
+   "popis": "Benzín",
+   "mnozstvi": 1,
+   "jednotka": "ks",
+   "cena": 1000
+  }
+ ],
+ "material": 24777
+}

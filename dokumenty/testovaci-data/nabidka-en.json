@@ -1,0 +1,55 @@
+{
+ "cislo": 7372,
+ "vystaveno": "2026-07-28",
+ "splatnost": "2026-09-08",
+ "zakaznik": {
+  "jmeno": "Petra Svobodová",
+  "ulice": "Školní 5",
+  "mesto": "533 51 Pardubice",
+  "zeme": "Česká Republika",
+  "telefon": "+420 600 555 666",
+  "email": "petra.s@example.cz"
+ },
+ "vozidlo": {
+  "znacka": "Mercedes Benz",
+  "model": "560 SL",
+  "typ": "R107",
+  "rok": "1988",
+  "vin": "WDBBA48D4JA000002"
+ },
+ "polozky": [
+  {
+   "popis": "Initial inspection",
+   "mnozstvi": 1.5,
+   "jednotka": "h",
+   "cena": 1300
+  },
+  {
+   "popis": "722.3 Automatic transmission reseal",
+   "mnozstvi": 24,
+   "jednotka": "h",
+   "cena": 1500
+  },
+  {
+   "typ": "prazdny"
+  },
+  {
+   "typ": "nadpis",
+   "popis": "Additional works / service (if requested):"
+  },
+  {
+   "popis": "Engine oil & filter replacement",
+   "mnozstvi": 2,
+   "jednotka": "h",
+   "cena": 1200
+  },
+  {
+   "popis": "Old fluid waste disposal",
+   "typ": "pausal",
+   "castka": 3000
+  }
+ ],
+ "material": 20061,
+ "druh": "nabidka",
+ "platnost": "2026-08-04"
+}

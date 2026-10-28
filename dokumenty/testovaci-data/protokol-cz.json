@@ -1,0 +1,35 @@
+{
+ "druh": "protokol",
+ "cislo": 7375,
+ "zakaznik": {
+  "jmeno": "Example Trading s.r.o.",
+  "ulice": "Dlouhá 1",
+  "mesto": "110 00 Praha 1",
+  "zeme": "Česká Republika",
+  "telefon": "+420 600 333 444",
+  "email": "objednavky@example.com"
+ },
+ "zavady": [
+  "Inspekce vozidla",
+  "Diagnostika nesprávného volnoběhu",
+  "Případné seřízení volnoběhu, výměna dílů dle dohody"
+ ],
+ "vozidlo": {
+  "znacka": "Mercedes-Benz",
+  "typ": "126",
+  "model": "280 SE",
+  "rok": "1982",
+  "vin": "WDB1260241A000001"
+ },
+ "nadrz": "½",
+ "tp": false,
+ "foto": true,
+ "stav": [
+  "Auto pojízdné, startuje",
+  "Zakázku nebylo možné realizovat v rozsahu požadovaných oprav, auto bylo vráceno ve stavu v jakém bylo zákazníkem do servisu předáno"
+ ],
+ "datum": "2026-10-11",
+ "prevzeti": "2026-10-11",
+ "kolaDotazena": true,
+ "zkusebniJizda": true
+}

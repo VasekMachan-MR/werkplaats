@@ -1,0 +1,65 @@
+{
+ "cislo": 7372,
+ "vystaveno": "2026-08-25",
+ "splatnost": "2026-09-08",
+ "zakaznik": {
+  "jmeno": "Petra Svobodová",
+  "ulice": "Školní 5",
+  "mesto": "533 51 Pardubice",
+  "zeme": "Česká Republika",
+  "telefon": "+420 600 555 666",
+  "email": "petra.s@example.cz"
+ },
+ "vozidlo": {
+  "znacka": "Mercedes Benz",
+  "model": "560 SL",
+  "typ": "R107",
+  "rok": "1987",
+  "vin": "WDBBA48D4JA000002"
+ },
+ "polozky": [
+  {
+   "popis": "Initial inspection",
+   "mnozstvi": 1,
+   "jednotka": "h",
+   "cena": 1300
+  },
+  {
+   "popis": "722.3 Automatic transmission reseal",
+   "mnozstvi": 30,
+   "jednotka": "h",
+   "cena": 1500
+  },
+  {
+   "popis": "Engine oil change & filter replacement",
+   "mnozstvi": 1,
+   "jednotka": "h",
+   "cena": 1200
+  },
+  {
+   "popis": "Power steering box fluid & filter replacement",
+   "mnozstvi": 0.2,
+   "jednotka": "h",
+   "cena": 1200
+  },
+  {
+   "popis": "Air filter replacement",
+   "mnozstvi": 0.2,
+   "jednotka": "h",
+   "cena": 1200
+  },
+  {
+   "popis": "Stereo installation",
+   "mnozstvi": 4,
+   "jednotka": "h",
+   "cena": 1200
+  },
+  {
+   "popis": "Rear bumper rubber installation",
+   "mnozstvi": 1,
+   "jednotka": "h",
+   "cena": 1200
+  }
+ ],
+ "material": 17396
+}

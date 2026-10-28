@@ -1,0 +1,80 @@
+{
+ "cislo": 7374,
+ "vystaveno": "2026-10-11",
+ "splatnost": "2026-11-11",
+ "zakaznik": {
+  "jmeno": "Example Trading s.r.o.",
+  "ulice": "Dlouhá 1",
+  "mesto": "110 00 Praha 1",
+  "zeme": "Česká Republika",
+  "telefon": "+420 600 333 444",
+  "email": "objednavky@example.com"
+ },
+ "vozidlo": {
+  "znacka": "Mercedes-Benz",
+  "model": "300 SE",
+  "typ": "126",
+  "rok": "1989",
+  "vin": "WDB1260241A000001"
+ },
+ "polozky": [
+  {
+   "popis": "Inspekce",
+   "mnozstvi": 1,
+   "jednotka": "h",
+   "cena": 1200
+  },
+  {
+   "popis": "Odstranění závady ASD",
+   "mnozstvi": 4,
+   "jednotka": "h",
+   "cena": 1500
+  },
+  {
+   "popis": "Oprava přední nápravy",
+   "mnozstvi": 16,
+   "jednotka": "h",
+   "cena": 1500
+  },
+  {
+   "popis": "Geometrie kol",
+   "mnozstvi": 2,
+   "jednotka": "h",
+   "cena": 1500
+  },
+  {
+   "popis": "Kontrola rozvodového řetězu a výměna těsnění vent. víka",
+   "mnozstvi": 1,
+   "jednotka": "h",
+   "cena": 1500
+  },
+  {
+   "popis": "Výměna náplní a filtrů (motor, převodovka, diferenciál, palivo, hydr.)",
+   "mnozstvi": 5,
+   "jednotka": "h",
+   "cena": 1300
+  },
+  {
+   "popis": "Výměna pouzder táhel řazení",
+   "mnozstvi": 1,
+   "jednotka": "h",
+   "cena": 800
+  },
+  {
+   "popis": "Benzín",
+   "mnozstvi": 1,
+   "jednotka": "ks",
+   "cena": 1000
+  },
+  {
+   "typ": "prazdny"
+  },
+  {
+   "typ": "nadpis",
+   "popis": "Dodatečné práce dle další domluvy"
+  }
+ ],
+ "material": 24777,
+ "druh": "nabidka",
+ "platnost": "2026-10-18"
+}
