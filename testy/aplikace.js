@@ -327,6 +327,11 @@ const server = http.createServer((q, r) => {
   await p.locator('.dil[data-i="0"] [data-f="marze_pct"]').fill("50");
   kontrola(await p.inputValue('.dil[data-i="0"] [data-f="prodejni_cena"]') === "579", "marže jednoho dílu jde dál změnit zvlášť (50 % → 579 Kč)");
   await foto("20-marze-vse");
+  // smazat všechny díly (s potvrzením)
+  await p.click("#smazat-dily");
+  await p.waitForSelector("#stav-dilu >> text=✓ Uloženo");
+  kontrola(await p.locator(".dil[data-i]").count() === 0 && await p.evaluate(() => !window.__ULOZENO__.tabulky.dily.some(d => d.cislo_mb === "LO 00596")) && !(await p.isVisible("#smazat-dily")),
+    "„Smazat všechny díly“ po potvrzení vymaže seznam dílů zakázky");
 
   // ---------- Lidé v dílně (majitel) ----------
   await p.evaluate(() => { location.hash = "#/lide"; });

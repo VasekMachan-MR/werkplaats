@@ -1386,7 +1386,8 @@
         <button type="button" class="tl" id="pridat-dil">＋ Přidat díl</button>
         <button type="button" class="tl" id="import-dilu" aria-expanded="${!!E.imp}">📥 Import z e-mailu</button>
         ${E.dily.length ? `<button type="button" class="tl" id="parts-list">📄 Parts list (PDF)</button>
-          <label class="cip zaskrt"><input type="checkbox" id="parts-ceny" checked> s cenami</label>` : ""}
+          <label class="cip zaskrt"><input type="checkbox" id="parts-ceny" checked> s cenami</label>
+          <button type="button" class="tl tl-smazat" id="smazat-dily" style="margin-left:auto">🗑 Smazat všechny díly</button>` : ""}
         <span class="napoveda">Prodejní cena = nákup × kurz + marže. Jde přepsat ručně.</span>
       </div>
       ${E.imp ? panelImportu() : ""}`;
@@ -1434,6 +1435,13 @@
       el.querySelector("#marze-pouzit").onclick = pouzit;
       mv.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); pouzit(); } });
     }
+    const sd = el.querySelector("#smazat-dily");
+    if (sd) sd.onclick = () => {
+      const n = E.dily.length;
+      if (!confirm(`Opravdu smazat všechny díly této zakázky (${n} ${n === 1 ? "díl" : n < 5 ? "díly" : "dílů"})?\n\nUž vystavené nabídky a faktury zůstanou beze změny.`)) return;
+      E.dily = []; vykresliDily(); vykresliSouhrnZakazky(); ulozitPozdeji("dily");
+      hlaska(`Smazáno ${n} ${n === 1 ? "díl" : n < 5 ? "díly" : "dílů"}.`);
+    };
     el.querySelector("#import-dilu").onclick = () => { E.imp = E.imp ? null : { text: "", vysledek: null }; vykresliDily(); if (E.imp) el.querySelector("#imp-text")?.focus(); };
     if (E.imp) obsluhaImportu(el);
     el.querySelector("#pridat-dil").onclick = () => {
