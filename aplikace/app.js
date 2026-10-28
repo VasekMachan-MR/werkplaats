@@ -1350,7 +1350,17 @@
   function vykresliDily() {
     const el = document.getElementById("dily"); if (!el) return;
     const dod = E.dodavatele;
+    // „master“ marže: výchozí je ta, kterou má většina dílů (jinak 30 %)
+    if (E.marze == null) {
+      const pocty = {}; for (const d of E.dily) { const m = Number(d.marze_pct ?? 30); pocty[m] = (pocty[m] || 0) + 1; }
+      E.marze = Number(Object.entries(pocty).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 30);
+    }
     el.innerHTML = `
+      ${E.dily.length ? `<div class="marze-vse">
+        <label>Marže pro všechny díly<span class="marze-pole"><input class="vstup cislo" id="marze-vse" value="${E.marze}" inputmode="decimal" aria-label="Marže v procentech"> %</span></label>
+        <button type="button" class="tl tl-hlavni tl-male" id="marze-pouzit">Použít na všechny díly</button>
+        <span class="napoveda">Přepočítá prodejní cenu všech dílů s nákupní cenou. U jednotlivých dílů jde marže dál změnit zvlášť.</span>
+      </div>` : ""}
       ${E.dily.map((d, i) => `
       <div class="dil" data-i="${i}">
         <div class="dil-r1">
@@ -1377,7 +1387,7 @@
         <button type="button" class="tl" id="import-dilu" aria-expanded="${!!E.imp}">📥 Import z e-mailu</button>
         ${E.dily.length ? `<button type="button" class="tl" id="parts-list">📄 Parts list (PDF)</button>
           <label class="cip zaskrt"><input type="checkbox" id="parts-ceny" checked> s cenami</label>` : ""}
-        <span class="napoveda">Prodejní cena = nákup × kurz + marže (výchozí 30 %). Jde přepsat ručně.</span>
+        <span class="napoveda">Prodejní cena = nákup × kurz + marže. Jde přepsat ručně.</span>
       </div>
       ${E.imp ? panelImportu() : ""}`;
     el.querySelectorAll(".dil[data-i]").forEach(r => {
@@ -1411,10 +1421,23 @@
         if (okno) okno.location = u; else window.open(u, "_blank");
       } catch (e) { okno?.close(); hlaska("Parts list se nepodařil: " + chybaText(e), true); }
     };
+    const mv = el.querySelector("#marze-vse");
+    if (mv) {
+      const pouzit = () => {
+        const m = cisloZ(mv.value);
+        if (m == null || m < 0 || m > 1000) return hlaska("Zadejte marži v procentech, např. 30.", true);
+        E.marze = m;
+        for (const d of E.dily) { d.marze_pct = m; if (d.nakupni_cena != null) d.prodejni_cena = prodejDilu(d); }
+        vykresliDily(); vykresliSouhrnZakazky(); ulozitPozdeji("dily");
+        hlaska(`Marže ${mnozstviCz(m)} % nastavena u všech dílů (${E.dily.length}).`);
+      };
+      el.querySelector("#marze-pouzit").onclick = pouzit;
+      mv.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); pouzit(); } });
+    }
     el.querySelector("#import-dilu").onclick = () => { E.imp = E.imp ? null : { text: "", vysledek: null }; vykresliDily(); if (E.imp) el.querySelector("#imp-text")?.focus(); };
     if (E.imp) obsluhaImportu(el);
     el.querySelector("#pridat-dil").onclick = () => {
-      E.dily.push({ id: uuid(), nazev: "", mnozstvi: 1, jednotka: "ks", mena: "CZK", kurz: 1, marze_pct: 30, stav: "potreba" });
+      E.dily.push({ id: uuid(), nazev: "", mnozstvi: 1, jednotka: "ks", mena: "CZK", kurz: 1, marze_pct: E.marze ?? 30, stav: "potreba" });
       vykresliDily(); ulozitPozdeji("dily");
       const n = el.querySelectorAll('.dil [data-f="nazev"]'); n[n.length - 1]?.focus();
     };
@@ -1498,7 +1521,7 @@
       const dod = I.dodavatel_id || null;
       for (const p of vybrane) {
         const d = { id: uuid(), nazev: p.nazev || "", cislo_mb: p.cislo || "", mnozstvi: p.mnozstvi || 1, jednotka: "ks", nakupni_cena: p.cena ?? null,
-          mena: p.mena === "EUR" ? "EUR" : "CZK", kurz: p.mena === "EUR" ? 25 : 1, marze_pct: 30, stav: I.stav || "objednano",
+          mena: p.mena === "EUR" ? "EUR" : "CZK", kurz: p.mena === "EUR" ? 25 : 1, marze_pct: E.marze ?? 30, stav: I.stav || "objednano",
           dodavatel_id: dod, puvod: puvodPodleDodavatele(dod) };
         d.prodejni_cena = d.nakupni_cena == null ? null : prodejDilu(d);
         E.dily.push(d);

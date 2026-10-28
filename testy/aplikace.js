@@ -318,6 +318,15 @@ const server = http.createServer((q, r) => {
   kontrola(radkyPdf.length === 2 && radkyPdf[1][0] === "Montážní sada, řídicí mechanismus MEYLE" && radkyPdf[1][1] === "014 033 0001" && radkyPdf[1][3] === "286" && await p.inputValue("#imp-dodavatel") === "d2",
     "import z PDF faktury Granexu: 2 díly, název přes 2 řádky, 286 Kč/ks, dodavatel Granex " + JSON.stringify(radkyPdf));
   await p.click("#imp-zavrit");
+  // společná marže pro všechny díly
+  kontrola(await p.inputValue("#marze-vse") === "30", "master marže ukazuje 30 % (marže dílů zakázky)");
+  await p.fill("#marze-vse", "40"); await p.click("#marze-pouzit");
+  await p.waitForSelector("#stav-dilu >> text=✓ Uloženo");
+  const dm = await p.evaluate(() => window.__ULOZENO__.tabulky.dily.find(d => d.cislo_mb === "LO 00596"));
+  kontrola(dm.marze_pct === 40 && dm.prodejni_cena === 540 && await p.inputValue('.dil[data-i="0"] [data-f="marze_pct"]') === "40", "„Použít na všechny díly“: marže 40 % → prodej 540 Kč");
+  await p.locator('.dil[data-i="0"] [data-f="marze_pct"]').fill("50");
+  kontrola(await p.inputValue('.dil[data-i="0"] [data-f="prodejni_cena"]') === "579", "marže jednoho dílu jde dál změnit zvlášť (50 % → 579 Kč)");
+  await foto("20-marze-vse");
 
   // ---------- Lidé v dílně (majitel) ----------
   await p.evaluate(() => { location.hash = "#/lide"; });
