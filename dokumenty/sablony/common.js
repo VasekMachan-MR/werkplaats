@@ -80,6 +80,9 @@ const SVG = rects => `<svg style="position:absolute;left:0;top:0;width:595pt;hei
 const IMG = (src, x0, y0, x1, y1) =>
   `<img class="abs" src="${src}" style="left:${x0}pt;top:${y0}pt;width:${(x1 - x0).toFixed(2)}pt;height:${(y1 - y0).toFixed(2)}pt">`;
 
+/* Podpis „Vyhotovil“: true = soubor assets/podpis.png (jen místně), jinak obrázek z databáze (data URL) */
+const podpisSrc = p => (p === true ? "assets/podpis.png" : p);
+
 /* Čísla a data */
 const mezery = s => s.replace(/[  ]/g, " ");
 const cislo0 = n => mezery(Math.round(Number(n)).toLocaleString("cs-CZ"));                     // 71 376

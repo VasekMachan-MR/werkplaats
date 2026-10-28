@@ -228,7 +228,7 @@ function strana1(d, tx) {
   h += T(90.2, 701.8, FIRMA.vyhotovil) + T(259.7, 701.8, z.jmeno || "", { c: true });
   h += T(81.3, 729.2, "…............................") + T(210.7, 729.2, "…..............................");
   if (d.druh !== "protokol") h += T(435.6, 712.8, `${cislo2(d.odhad)} ${tx.mena}`, { b: true, size: 15.7, c: true });
-  if (d.podpisVyhotovil) h += `<img class="abs" src="assets/podpis.png" style="left:63.0pt;top:706.9pt;width:157.4pt;height:45.8pt">`;
+  if (d.podpisVyhotovil) h += IMG(podpisSrc(d.podpisVyhotovil), 63.0, 706.9, 220.4, 752.7);
   if (d.podpisZakaznik) h += `<img class="abs" src="${d.podpisZakaznik}" style="left:199pt;top:706.9pt;width:122pt;height:30pt;object-fit:contain">`;
 
   h += paticka(1, 2);
