@@ -64,6 +64,27 @@ window.__WERK_DB__ = (() => {
     async dily(zid) { return kopie(T.dily.filter(d => d.zakazka_id === zid).sort((a, b) => a.poradi - b.poradi)); },
     async ulozitDily(zid, dily) { await cekej(); T.dily = T.dily.filter(d => d.zakazka_id !== zid).concat(dily.map((d, i) => ({ ...d, zakazka_id: zid, poradi: i + 1 }))); return dily.length; },
     async dodavatele() { return [{ id: "d1", nazev: "Auto Kelly" }, { id: "d2", nazev: "Granex" }, { id: "d3", nazev: "Mercedes-Benz (originál)" }]; },
+    async ulozitZakaznika(z) {
+      await cekej(); if (!z.jmeno) throw new Error("Chybí jméno zákazníka");
+      if (z.id) { Object.assign(T.zakaznici.find(c => c.id === z.id), z); return z.id; }
+      const nid = id(); T.zakaznici.push({ ...z, id: nid }); return nid;
+    },
+    async ulozitVozidlo(v, zid) {
+      await cekej(); const vin = v.vin.toUpperCase().replace(/\s/g, "");
+      let a = T.vozidla.find(x => x.vin === vin);
+      if (a) { for (const k in v) if (v[k] != null && k !== "km") a[k] = v[k]; if (v.km != null) a.km_posledni = v.km; }
+      else { a = { ...v, vin, id: id(), km_posledni: v.km ?? null }; delete a.km; T.vozidla.push(a); }
+      if (zid && !T.vlastnictvi.some(x => x.vozidlo_id === a.id && x.zakaznik_id === zid && !x.vlastni_do)) T.vlastnictvi.push({ id: id(), vozidlo_id: a.id, zakaznik_id: zid, vlastni_od: "2026-10-28", vlastni_do: null });
+      return a.id;
+    },
+    async dokumentyVozidla(vid) { return kopie(T.soubory.filter(s => s.vozidlo_id === vid && s.druh === "tp")); },
+    async seznamZakazniku() { return kopie(T.zakaznici.map(z => ({ ...z, vlastnictvi: T.vlastnictvi.filter(v => v.zakaznik_id === z.id).map(v => ({ ...v, vozidla: T.vozidla.find(a => a.id === v.vozidlo_id) })), zakazky: [{ count: T.zakazky.filter(k => k.zakaznik_id === z.id).length }] }))); },
+    async zakaznik(zid) { const z = T.zakaznici.find(x => x.id === zid); if (!z) return null;
+      return kopie({ ...z, vlastnictvi: T.vlastnictvi.filter(v => v.zakaznik_id === zid).map(v => ({ ...v, vozidla: T.vozidla.find(a => a.id === v.vozidlo_id) })),
+        zakazky: T.zakazky.filter(k => k.zakaznik_id === zid).map(k => ({ ...k, vozidla: T.vozidla.find(a => a.id === k.vozidlo_id) })) }); },
+    async seznamVozidel() { return kopie(T.vozidla.map(v => ({ ...v, vlastnictvi: T.vlastnictvi.filter(x => x.vozidlo_id === v.id).map(x => ({ ...x, zakaznici: T.zakaznici.find(c => c.id === x.zakaznik_id) })), zakazky: [{ count: T.zakazky.filter(k => k.vozidlo_id === v.id).length }] }))); },
+    async vozidlo(vid) { const v = T.vozidla.find(x => x.id === vid); if (!v) return null;
+      return kopie({ ...v, vlastnictvi: T.vlastnictvi.filter(x => x.vozidlo_id === vid).map(x => ({ ...x, zakaznici: T.zakaznici.find(c => c.id === x.zakaznik_id) })), zakazky: T.zakazky.filter(k => k.vozidlo_id === vid) }); },
     async vsechnyDoklady() {
       return kopie(T.doklady.map(d => { const z = T.zakazky.find(x => x.id === d.zakazka_id);
         return { ...d, zakazky: z && { id: z.id, cislo: z.cislo, zakaznici: T.zakaznici.find(c => c.id === z.zakaznik_id), vozidla: T.vozidla.find(v => v.id === z.vozidlo_id) },

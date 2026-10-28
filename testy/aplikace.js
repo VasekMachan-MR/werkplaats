@@ -316,6 +316,55 @@ const server = http.createServer((q, r) => {
   kontrola(true, "Můj účet ukazuje uložený podpis");
   await m.screenshot({ path: path.join(OUT, "10-muj-ucet.png"), fullPage: true });
 
+  // ---------- uložit zákazníka a vozidlo samostatně (bez příjmu), TP ----------
+  await p.evaluate(() => { location.hash = "#/novy"; });
+  await p.waitForSelector("#ulozit-zakaznika");
+  await p.fill('[data-pole="zakaznik.jmeno"]', "Karel Samostatný");
+  await p.fill('[data-pole="zakaznik.telefon"]', "+420 777 000 111");
+  await p.click("#ulozit-zakaznika");
+  await p.waitForSelector("text=Stávající zákazník");
+  kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.zakaznici.some(z => z.jmeno === "Karel Samostatný")), "tlačítko Uložit zákazníka uloží zákazníka bez zakázky");
+  await p.fill('[data-pole="vozidlo.vin"]', "WDB1070481A000003");
+  await p.fill('[data-pole="vozidlo.model"]', "560 SL");
+  await p.setInputFiles('[data-tp-vstup="predni"]', "testy/auto-1.jpg");
+  await p.setInputFiles('[data-tp-vstup="zadni"]', path.join(OUT, "7377-1.pdf"));
+  await p.waitForFunction(() => document.querySelectorAll(".tp-strana.nahrano").length === 2);
+  kontrola(await p.locator(".tp-strana.nahrano >> text=✓ Nahráno").count() === 2, "TP přední (fotka) i zadní (PDF) nahrány s fajfkou");
+  await p.click("#ulozit-vozidlo");
+  await p.waitForFunction(() => window.__ULOZENO__.tabulky.soubory.filter(s => s.druh === "tp").length === 2);
+  const uv = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const v = T.vozidla.find(x => x.vin === "WDB1070481A000003"); const k = T.zakaznici.find(z => z.jmeno === "Karel Samostatný");
+    return { v: !!v, typ: v?.typ, vl: T.vlastnictvi.some(x => x.vozidlo_id === v?.id && x.zakaznik_id === k?.id), tp: T.soubory.filter(s => s.druh === "tp" && s.vozidlo_id === v?.id && s.verejne).length, zak: T.zakazky.length }; });
+  kontrola(uv.v && uv.typ === "107" && uv.vl && uv.tp === 2 && uv.zak === 2, "Uložit vozidlo: auto 107 560 SL uloženo, přiřazeno Karlovi, 2 strany TP (veřejné do E-servisky), žádná nová zakázka");
+  await foto("15-ulozit-zakaznika-vozidlo");
+  await p.click("#zahodit");
+  await p.waitForSelector(".zakazka-radek");
+
+  // ---------- zákazníci a vozidla: seznamy a úpravy ----------
+  await p.click(".lista-vpravo >> text=Zákazníci");
+  await p.waitForSelector("#seznam >> text=Karel Samostatný");
+  kontrola(await p.locator("#seznam .doklad").count() === 2, "seznam zákazníků: Jan Novák a Karel Samostatný");
+  await p.fill("#filtr", "karel"); kontrola(await p.locator("#seznam .doklad").count() === 1, "hledání v zákaznících");
+  await p.click("#seznam >> text=Karel Samostatný");
+  await p.waitForSelector('#f [name="telefon"]');
+  await p.fill('#f [name="telefon"]', "+420 777 999 888"); await p.fill('#f [name="mesto"]', "Hradec Králové");
+  await p.click('#f button[type="submit"]'); await p.waitForSelector("#stav >> text=✓ Uloženo");
+  kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.zakaznici.find(z => z.jmeno === "Karel Samostatný").telefon === "+420 777 999 888"), "úprava zákazníka se uloží");
+  kontrola(await p.isVisible("text=560 SL"), "karta zákazníka ukazuje jeho auto");
+  await foto("16-zakaznik");
+  await p.click(".lista-vpravo >> text=Vozidla");
+  await p.waitForSelector("#seznam >> text=560 SL");
+  await p.click("#seznam >> text=560 SL");
+  await p.waitForSelector("#dokumenty-vozidla .dokument");
+  kontrola(await p.locator("#dokumenty-vozidla .dokument").count() === 2, "karta vozidla ukazuje 2 strany TP");
+  await p.fill('#f [name="spz"]', "5H4 1234"); await p.click('#f button[type="submit"]'); await p.waitForSelector("#stav >> text=✓ Uloženo");
+  await p.fill("#hledat-majitele", "nov"); await p.waitForSelector("#vysledky-majitel >> text=Jan Novák");
+  await p.click("#vysledky-majitel >> text=Jan Novák");
+  await p.waitForSelector("text=současný");
+  const vl = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const v = T.vozidla.find(x => x.vin === "WDB1070481A000003");
+    return T.vlastnictvi.filter(x => x.vozidlo_id === v.id).map(x => [T.zakaznici.find(c => c.id === x.zakaznik_id).jmeno, !!x.vlastni_do]); });
+  kontrola(vl.length === 2 && vl.some(([j, konec]) => j === "Karel Samostatný" && konec) && vl.some(([j, konec]) => j === "Jan Novák" && !konec) , "změna majitele: Karel ukončen, Jan Novák současný; SPZ uložena");
+  await foto("17-vozidlo");
+
   // ---------- iPhone ----------
   const ph = await b.newContext({ ...devices["iPhone 14"], locale: "cs-CZ" });
   await ph.addInitScript({ content: fs.readFileSync("testy/mock-db.js", "utf8") });
