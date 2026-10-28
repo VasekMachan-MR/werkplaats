@@ -150,20 +150,30 @@ create table dily (
 );
 
 -- ============ Doklady, podpisy, soubory ============
-create type druh_dokladu as enum ('zakazkovy_list','nabidka','parts_list','faktura','proforma','zalohova','predavaci_protokol');
+-- Číslo dokladu = číslo zakázky / pevná přípona podle druhu (-verze od druhé verze):
+--   7377/1 zakázkový list · 7377/2 cenová nabídka (7377/2-2 další verze) · 7377/3 faktura (7377/3-2 doúčtování)
+--   7377/4 předávací protokol · 7377/5 zálohová faktura · 7377/6 opravný doklad k faktuře
+create type druh_dokladu as enum ('zakazkovy_list','nabidka','faktura','predavaci_protokol','zalohova','opravny');
+create function pripona_dokladu(d druh_dokladu) returns int language sql immutable as $$
+  select case d when 'zakazkovy_list' then 1 when 'nabidka' then 2 when 'faktura' then 3
+                when 'predavaci_protokol' then 4 when 'zalohova' then 5 when 'opravny' then 6 end;
+$$;
 create table doklady (
   id uuid primary key default gen_random_uuid(),
   zakazka_id uuid not null references zakazky(id),
   nabidka_id uuid references nabidky(id),
   druh druh_dokladu not null,
-  cislo text not null,                         -- 7377, 7377-v2, 7377-2
+  verze int not null default 1,
+  cislo text not null,                         -- 7377/3, 7377/2-2 (skládá aplikace z čísla zakázky, přípony a verze)
+  variabilni_symbol text not null,             -- jen číslice pro banku: 73773, 737322
   jazyk text not null default 'cs',
   vystaveno date not null default current_date, splatnost date,
   data jsonb not null,                         -- zmrazený obsah v okamžiku vystavení
   pdf_soubor_id uuid,
   zamceno boolean not null default false,      -- vydaný doklad se už nemění
   odeslano_uol timestamptz,
-  unique (druh, cislo)
+  unique (cislo),
+  unique (zakazka_id, druh, verze)
 );
 create table podpisy (
   id uuid primary key default gen_random_uuid(),
@@ -202,5 +212,5 @@ create function dalsi_cislo(p_rada text) returns int language sql as $$
   update ciselne_rady set posledni = posledni + 1 where rada = p_rada returning posledni;
 $$;
 
--- Přístupová práva (RLS): majitel vidí vše; mechanik nevidí nákupní ceny, nákupní doklady ani faktury.
+-- Přístupová práva (RLS): majitel i mechanik vidí vše včetně cen a faktur; rozdíl rolí (např. nastavení, mazání) se doladí později.
 -- Doplní se v další migraci společně s přihlášením.
