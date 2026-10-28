@@ -141,13 +141,16 @@ const server = http.createServer((q, r) => {
   await p.locator('.dil[data-i="0"] [data-f="cislo_mb"]').fill("A 001 466 82 01");
   await p.locator('.dil[data-i="0"] [data-f="nakupni_cena"]').fill("10000");
   kontrola(await p.inputValue('.dil[data-i="0"] [data-f="prodejni_cena"]') === "13000", "díl: nákup 10 000 + 30 % marže = prodej 13 000");
-  await p.selectOption('.dil[data-i="0"] [data-f="puvod"]', "original");
   await p.locator('.dil[data-i="0"] [data-f="poznamka"]').fill("Original MB");
+  await p.selectOption('.dil[data-i="0"] [data-f="dodavatel_id"]', "d3");
+  kontrola(await p.inputValue('.dil[data-i="0"] [data-f="puvod"]') === "original", "dodavatel MB (original) → původ se sám nastaví na MB (original)");
   await p.click("#pridat-dil");
   await p.locator('.dil[data-i="1"] [data-f="nazev"]').fill("Těsnění");
   await p.selectOption('.dil[data-i="1"] [data-f="mena"]', "EUR");
   await p.locator('.dil[data-i="1"] [data-f="nakupni_cena"]').fill("10");
   kontrola(await p.inputValue('.dil[data-i="1"] [data-f="prodejni_cena"]') === "325", "díl v EUR: 10 € × 25 + 30 % = 325 Kč");
+  await p.selectOption('.dil[data-i="1"] [data-f="dodavatel_id"]', "d1");
+  kontrola(await p.inputValue('.dil[data-i="1"] [data-f="puvod"]') === "aftermarket", "jiný dodavatel (Auto Kelly) → původ Aftermarket");
   await p.waitForSelector("#stav-dilu >> text=✓ Uloženo"); await p.waitForSelector("#stav-prace >> text=✓ Uloženo");
   const souhrn = await p.textContent("#souhrn");
   const sh = souhrn.replace(/[\u00a0\u202f]/g, " ").replace(/\s+/g, " ");
@@ -204,6 +207,14 @@ const server = http.createServer((q, r) => {
   await p.click("[data-zaplaceno]");
   await p.waitForFunction(() => document.querySelectorAll(".doklad").length && !document.querySelector("[data-zaplaceno]"));
   kontrola(true, "faktura označena jako zaplacená (vydaná faktura zůstala zamčená)");
+  // omylem zaplaceno → vrátit zpět
+  await p.click('.doklad:has(b:text-is("7377-3")) [data-nezaplaceno]');
+  await p.waitForSelector('.doklad:has(b:text-is("7377-3")) [data-zaplaceno]');
+  kontrola(await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; return !T.doklady.find(d => d.cislo === "7377-3").zaplaceno && T.zakazky[0].stav === "fakturovano"; }), "„Zrušit úhradu“ vrátí fakturu na nezaplacenou a zakázku na Fakturováno");
+  kontrola(await p.isVisible('.doklad:has(b:text-is("7377-3")) [data-smazat-doklad]') && !(await p.isVisible('.doklad:has(b:text-is("7377-5")) [data-smazat-doklad]')) && !(await p.isVisible('.doklad:has(b:text-is("7377-1")) [data-smazat-doklad]')),
+    "koš: u nezaplacené faktury ano, u zálohy odečtené ve faktuře a u zakázkového listu ne");
+  await p.click('.doklad:has(b:text-is("7377-3")) [data-zaplaceno]');
+  await p.waitForSelector('.doklad:has(b:text-is("7377-3")) [data-nezaplaceno]');
   await p.click("text=🔑 Předávací protokol");
   await p.waitForSelector("#co-chybi:not([hidden])");
   kontrola(/stav tachometru/.test(await p.textContent("#co-chybi")) && /podpis zákazníka/.test(await p.textContent("#co-chybi")), "protokol chce km a podpis zákazníka");
@@ -234,6 +245,10 @@ const server = http.createServer((q, r) => {
   await p.click('#f-druh >> text=Vše');
   kontrola(await p.locator("#seznam-dokladu .doklad").count() === 5, "přehled dokladů: všech 5 dokladů zakázky 7377");
   await foto("14-prehled-dokladu");
+  kontrola(!(await p.isVisible('.doklad:has(b:text-is("7377-3")) [data-smazat-doklad]')) && await p.isVisible('.doklad:has(b:text-is("7377-2")) [data-smazat-doklad]'), "přehled: zaplacená faktura bez koše, nabídka s košem");
+  await p.click('.doklad:has(b:text-is("7377-2")) [data-smazat-doklad]');
+  await p.waitForFunction(() => document.querySelectorAll("#seznam-dokladu .doklad").length === 4);
+  kontrola(await p.evaluate(() => !window.__ULOZENO__.tabulky.doklady.some(d => d.cislo === "7377-2")), "koš smaže chybnou nabídku 7377-2 (zbývají 4 doklady)");
 
   // ---------- příjem 2: stejné auto, stávající zákazník přes hledání ----------
   await p.goto(URL0 + "#/novy");
@@ -267,6 +282,22 @@ const server = http.createServer((q, r) => {
   await p.waitForSelector(".zakazka-radek");
   kontrola(await p.locator(".zakazka-radek").count() === 2, "přehled ukazuje 2 zakázky");
   await foto("07-prehled");
+
+  // ---------- import dílů z e-mailu dodavatele ----------
+  await p.click(".zakazka-radek >> text=7378");
+  await p.waitForSelector("#import-dilu");
+  await p.click("#import-dilu");
+  await p.fill("#imp-text", "LKQ CZ s.r.o., pobočka HRADECZ - faktura 4126028275\nNázev   ks      DPH     Kč/ks bez DPH   Kč s DPH\n1.              LO 00596 / Sada ložiska kola STARLINE   1       21%     319.00  385.99\n2.\tMH KC22 / Palivový filtr KNECHT\t3\t21%\t200.00\t726.00\nCelkem s DPH 1111.99 Kč");
+  await p.click("#imp-rozpoznat");
+  await p.waitForSelector(".import-tabulka");
+  kontrola(await p.locator(".import-tabulka tbody tr").count() === 2 && await p.inputValue("#imp-dodavatel") === "d1", "import: z faktury Auto Kelly rozpoznány 2 díly, dodavatel Auto Kelly");
+  await foto("19-import-dilu");
+  await p.uncheck('tr[data-ip="1"] [data-if="vybrano"]');
+  await p.click("#imp-pridat");
+  await p.waitForSelector("#stav-dilu >> text=✓ Uloženo");
+  const di = await p.evaluate(() => window.__ULOZENO__.tabulky.dily.filter(d => d.cislo_mb === "LO 00596"));
+  kontrola(di.length === 1 && di[0].nakupni_cena === 385.99 && di[0].dodavatel_id === "d1" && di[0].puvod === "aftermarket" && di[0].stav === "objednano" && di[0].prodejni_cena === 502 && di[0].nazev === "Sada ložiska kola STARLINE",
+    "import: přidán jen vybraný díl – nákup 385,99 s DPH, prodej 502 Kč, Auto Kelly, Aftermarket, objednáno");
 
   // ---------- Lidé v dílně (majitel) ----------
   await p.evaluate(() => { location.hash = "#/lide"; });
@@ -354,6 +385,12 @@ const server = http.createServer((q, r) => {
   await p.fill('#f [name="telefon"]', "+420 777 999 888"); await p.fill('#f [name="mesto"]', "Hradec Králové");
   await p.click('#f button[type="submit"]'); await p.waitForSelector("#stav >> text=✓ Uloženo");
   kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.zakaznici.find(z => z.jmeno === "Karel Samostatný").telefon === "+420 777 999 888"), "úprava zákazníka se uloží");
+  await p.click(".lista-vpravo >> text=Zákazníci");
+  await p.waitForSelector('#seznam a[href="tel:+420777999888"]');
+  kontrola(await p.locator('#seznam a[href^="mailto:"]').count() >= 1, "seznam zákazníků: telefon je odkaz tel: a e-mail mailto:");
+  await foto("16-zakaznici-kontakty");
+  await p.click("#seznam >> text=Karel Samostatný");
+  await p.waitForSelector('#f [name="telefon"]');
   kontrola(await p.isVisible("text=560 SL"), "karta zákazníka ukazuje jeho auto");
   await foto("16-zakaznik");
   await p.click(".lista-vpravo >> text=Vozidla");

@@ -63,13 +63,27 @@ window.__WERK_DB__ = (() => {
     async ulozitPolozky(zid, pol) { await cekej(); T.polozky = T.polozky.filter(p => p.zakazka_id !== zid).concat(pol.map((p, i) => ({ ...p, zakazka_id: zid, poradi: i + 1 }))); return pol.length; },
     async dily(zid) { return kopie(T.dily.filter(d => d.zakazka_id === zid).sort((a, b) => a.poradi - b.poradi)); },
     async ulozitDily(zid, dily) { await cekej(); T.dily = T.dily.filter(d => d.zakazka_id !== zid).concat(dily.map((d, i) => ({ ...d, zakazka_id: zid, poradi: i + 1 }))); return dily.length; },
-    async dodavatele() { return [{ id: "d1", nazev: "Auto Kelly" }, { id: "d2", nazev: "Granex" }, { id: "d3", nazev: "Mercedes-Benz (originál)" }]; },
+    async dodavatele() { return [{ id: "d1", nazev: "Auto Kelly" }, { id: "d2", nazev: "Granex" }, { id: "d3", nazev: "MB (original)" }, { id: "d4", nazev: "Jiný" }]; },
     async smazatZakazku(zid) {
       const z = T.zakazky.find(x => x.id === zid);
       if (T.doklady.some(d => d.zakazka_id === zid && ["faktura", "zalohova", "opravny"].includes(d.druh))) throw new Error(`Zakázka #${z.cislo} má vystavenou fakturu`);
       for (const t of ["doklady", "polozky", "dily", "nabidky"]) T[t] = T[t].filter(x => x.zakazka_id !== zid);
       T.soubory = T.soubory.filter(x => x.zakazka_id !== zid || x.druh === "tp"); T.zakazky = T.zakazky.filter(x => x.id !== zid);
       if (window.__ULOZENO__.citac === z.cislo) window.__ULOZENO__.citac = Math.max(7376, ...T.zakazky.map(x => x.cislo)); return z.cislo;
+    },
+    async smazatDoklad(did) {
+      const d = T.doklady.find(x => x.id === did); if (!d) throw new Error("Doklad nenalezen");
+      if (!["nabidka", "faktura", "zalohova", "predavaci_protokol"].includes(d.druh)) throw new Error("Doklad nejde smazat");
+      if (T.doklady.some(x => x.zakazka_id === d.zakazka_id && x.druh === d.druh && x.verze > d.verze)) throw new Error("Smazat jde jen poslední verzi");
+      if (d.zaplaceno) throw new Error(`Doklad ${d.cislo} je označený jako zaplacený – nejdřív zrušte úhradu`);
+      if (d.druh === "zalohova" && T.doklady.some(x => x.zakazka_id === d.zakazka_id && x.druh === "faktura")) throw new Error(`Záloha ${d.cislo} je odečtená v konečné faktuře – nejdřív smažte fakturu`);
+      T.doklady = T.doklady.filter(x => x.id !== did); T.soubory = T.soubory.filter(x => x.doklad_id !== did && x.id !== d.pdf_soubor_id);
+      const z = T.zakazky.find(x => x.id === d.zakazka_id);
+      if (!T.doklady.some(x => x.zakazka_id === d.zakazka_id && x.druh === d.druh)) {
+        if (d.druh === "faktura" && ["fakturovano", "zaplaceno"].includes(z.stav)) z.stav = "v_praci";
+        if (d.druh === "nabidka" && z.stav === "nabidka") z.stav = "prijato";
+      }
+      return d.cislo;
     },
     async smazatZakaznika(zid) { if (T.zakazky.some(k => k.zakaznik_id === zid)) throw new Error("Zákazník má zakázky"); T.vlastnictvi = T.vlastnictvi.filter(x => x.zakaznik_id !== zid); T.zakaznici = T.zakaznici.filter(x => x.id !== zid); },
     async smazatVozidlo(vid) { if (T.zakazky.some(k => k.vozidlo_id === vid)) throw new Error("Vozidlo má zakázky"); T.vlastnictvi = T.vlastnictvi.filter(x => x.vozidlo_id !== vid); T.soubory = T.soubory.filter(x => x.vozidlo_id !== vid || x.zakazka_id); T.vozidla = T.vozidla.filter(x => x.id !== vid); },

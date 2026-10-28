@@ -32,6 +32,11 @@
   }
   const uloz = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* bez úložiště */ } };
   const nacti = k => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
+  // telefon / e-mail jako odkaz – na iPadu/iPhonu klik rovnou volá nebo otevře novou zprávu
+  const telOdkaz = t => { const s = String(t || "").trim(); if (!s) return ""; const n = s.replace(/[^\d+]/g, "").replace(/^00/, "+");
+    return n.replace(/\D/g, "").length >= 6 ? `<a class="kontakt-odkaz" href="tel:${esc(n)}">📞 ${esc(s)}</a>` : esc(s); };
+  const mailOdkaz = m => { const s = String(m || "").trim(); if (!s) return "";
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) ? `<a class="kontakt-odkaz" href="mailto:${esc(s)}">✉️ ${esc(s)}</a>` : esc(s); };
   const chybaText = e => (e && (e.message || e.error_description || e.msg)) || String(e);
 
   const STAVY = {
@@ -109,6 +114,7 @@
       },
       async zalozitZakazku(p) { return ok(await sb.rpc("zalozit_zakazku", { p })); },
       async smazatZakazku(id) { return ok(await sb.rpc("smazat_zakazku", { p_id: id })); },
+      async smazatDoklad(id) { return ok(await sb.rpc("smazat_doklad", { p_id: id })); },
       async smazatZakaznika(id) { return ok(await sb.rpc("smazat_zakaznika", { p_id: id })); },
       async smazatVozidlo(id) { return ok(await sb.rpc("smazat_vozidlo", { p_id: id })); },
       async ulozitZakaznika(p) { return ok(await sb.rpc("ulozit_zakaznika", { p })); },
@@ -133,7 +139,7 @@
       async dodavatele() { return ok(await sb.from("dodavatele").select("id,nazev,web,mena").order("nazev")); },
       async vsechnyDoklady() {
         return ok(await sb.from("doklady")
-          .select("id,druh,cislo,vystaveno,splatnost,celkem,zaplaceno,odeslano_uol,jazyk,zakazky(id,cislo,zakaznici(jmeno),vozidla(typ,model)),soubory!doklady_pdf_soubor_id_fkey(klic)")
+          .select("id,zakazka_id,druh,verze,cislo,vystaveno,splatnost,celkem,zaplaceno,odeslano_uol,jazyk,zakazky(id,cislo,zakaznici(jmeno),vozidla(typ,model)),soubory!doklady_pdf_soubor_id_fkey(klic)")
           .order("vystaveno", { ascending: false }).order("cislo", { ascending: false }).limit(2000));
       },
       async sazby() { return ok(await sb.from("sazby").select("nazev,kc_za_hodinu,poradi").order("poradi")); },
@@ -940,6 +946,21 @@
   const vsDokladu = (c, druh, verze = 1) => `${c}${PRIPONY[druh]}${verze > 1 ? verze : ""}`;
   const ignorujDuplicitu = async fn => { try { await fn(); } catch (e) { if (!/exists|Duplicate/i.test(chybaText(e))) throw e; } };
 
+  /* Mazání chybně vystaveného dokladu (jen majitel; server hlídá: poslední verze, nezaplacený, nepředaný účetní, záloha bez konečné faktury) */
+  const MAZATELNE_DOKLADY = ["nabidka", "faktura", "zalohova", "predavaci_protokol"];
+  function lzeSmazatDoklad(d, vsechny) {
+    if (uzivatel?.role !== "majitel" || !MAZATELNE_DOKLADY.includes(d.druh) || d.zaplaceno || d.odeslano_uol) return false;
+    if (!vsechny || d.verze == null) return true;
+    return !vsechny.some(x => x.druh === d.druh && x.zakazka_id === d.zakazka_id && (x.verze || 0) > d.verze);
+  }
+  async function smazatDokladDotaz(d, potom) {
+    if (!d) return;
+    const fa = ["faktura", "zalohova"].includes(d.druh);
+    if (!confirm(`Smazat ${(DRUHY[d.druh] || "doklad").toLowerCase()} ${d.cislo}?\n\nSmaže se i jeho PDF a podpisy. Číslo ${d.cislo} se uvolní a dostane ho další vystavený doklad.${fa ? "\n\nPoužívejte jen pro chybně vytvořené faktury, které ještě nikdo nedostal." : ""}`)) return;
+    try { await db.smazatDoklad(d.id); hlaska(`Doklad ${d.cislo} smazán.`); potom?.(); }
+    catch (e) { hlaska("Smazat nejde: " + chybaText(e), true, 9000); }
+  }
+
   /* Vykreslí doklad do rámečku → PDF → uloží PDF, podpis zákazníka, doklad (zamčený) a podpisy. Vrací {doklad, bytes, cislo}. */
   async function ulozitDoklad({ iframe, sablona, data, jazyk, zakazka_id, vozidlo_id, cisloZakazky, druh, verze = 1, vystaveno, splatnost,
                                podpisZak, jmenoZakaznika, vyhPodepsalNaIpadu = false, nabidka_id = null, prubeh = () => {}, prilohy = [] }) {
@@ -953,12 +974,14 @@
       return { bytes, otisk: await w.otiskPdf(bytes), vysledek };
     });
     prubeh("Ukládám PDF…");
-    const klicPdf = `zakazky/${cisloZakazky}/${cislo}-${SOUBOR_DOKLADU[druh][jazyk === "en" ? 1 : 0]}.pdf`;
+    // každé vystavení má vlastní složku – smazaný a znovu vystavený doklad se stejným číslem tak nikdy nepřepíše/nepřevezme starý soubor
+    const slozka = `zakazky/${cisloZakazky}/${Date.now().toString(36)}`;
+    const klicPdf = `${slozka}/${cislo}-${SOUBOR_DOKLADU[druh][jazyk === "en" ? 1 : 0]}.pdf`;
     await ignorujDuplicitu(() => db.nahrat(klicPdf, new Blob([bytes], { type: "application/pdf" }), "application/pdf"));
     const soubory = [{ zakazka_id, vozidlo_id, druh: "pdf", klic: klicPdf, nazev: `${cislo}.pdf`, velikost: bytes.length, mime: "application/pdf" }];
     let klicPodpisu = null;
     if (podpisZak) {
-      klicPodpisu = `zakazky/${cisloZakazky}/podpis-zakaznika-${cislo}.png`;
+      klicPodpisu = `${slozka}/podpis-zakaznika-${cislo}.png`;
       await ignorujDuplicitu(() => db.nahrat(klicPodpisu, dataUrlNaBlob(podpisZak), "image/png"));
       soubory.push({ zakazka_id, vozidlo_id, druh: "podpis", klic: klicPodpisu, nazev: "podpis zákazníka", mime: "image/png" });
     }
@@ -975,7 +998,7 @@
     for (const pr of prilohy) {
       prubeh(`Vytvářím ${pr.nazev}…`);
       const pb = await pdfZeSablony(pr.sablona, pr.data, jazyk, { nazev: `${pr.nazev} ${cislo}` });
-      const kl = `zakazky/${cisloZakazky}/${cislo}-${pr.slug}.pdf`;
+      const kl = `${slozka}/${cislo}-${pr.slug}.pdf`;
       await ignorujDuplicitu(() => db.nahrat(kl, new Blob([pb], { type: "application/pdf" }), "application/pdf"));
       await db.vlozit("soubory", [{ zakazka_id, vozidlo_id, doklad_id: doklad.id, druh: "pdf", klic: kl, nazev: `${cislo} ${pr.nazev}`, velikost: pb.length, mime: "application/pdf" }]);
       hotovePrilohy.push({ bytes: pb, nazev: `${cislo}-${pr.slug}.pdf` });
@@ -1131,9 +1154,11 @@
           <div class="doklad"><span><b>${esc(d.cislo)}</b> · ${DRUHY[d.druh] || d.druh}${d.celkem != null ? ` · <b>${kc(d.celkem)}</b>` : ""}<br>
             <small class="mutted">vystaveno ${datumCz(d.vystaveno)}${d.splatnost ? ` · ${d.druh === "nabidka" ? "platnost" : "splatnost"} ${datumCz(d.splatnost)}` : ""}${["faktura", "zalohova"].includes(d.druh) ? (d.zaplaceno ? ` · <b style="color:var(--zelena)">zaplaceno ${datumCz(d.zaplaceno)}</b>` : " · nezaplaceno") : ""}</small></span>
             <span class="radek-tlacitek">
-              ${["faktura", "zalohova"].includes(d.druh) && !d.zaplaceno ? `<button class="tl tl-male" data-zaplaceno="${d.id}">✓ Zaplaceno</button>` : ""}
+              ${["faktura", "zalohova"].includes(d.druh) ? (d.zaplaceno ? `<button class="tl tl-male" data-nezaplaceno="${d.id}" title="Omylem označeno jako zaplacené? Vrátit zpět">↺ Zrušit úhradu</button>`
+                : `<button class="tl tl-male" data-zaplaceno="${d.id}">✓ Zaplaceno</button>`) : ""}
               ${d.soubory?.klic ? `<button class="tl tl-male" data-pdf="${esc(d.soubory.klic)}">Otevřít PDF</button>` : ""}
-              ${(z.soubory || []).filter(f => f.doklad_id === d.id && f.klic !== d.soubory?.klic && f.druh === "pdf").map(f => `<button class="tl tl-male" data-pdf="${esc(f.klic)}">${/parts list/.test(f.nazev || "") ? "Parts list" : "Příloha"}</button>`).join("")}</span></div>`).join("")
+              ${(z.soubory || []).filter(f => f.doklad_id === d.id && f.klic !== d.soubory?.klic && f.druh === "pdf").map(f => `<button class="tl tl-male" data-pdf="${esc(f.klic)}">${/parts list/.test(f.nazev || "") ? "Parts list" : "Příloha"}</button>`).join("")}
+              ${lzeSmazatDoklad(d, doklady) ? `<button class="tl tl-male tl-kos" data-smazat-doklad="${d.id}" title="Smazat doklad ${esc(d.cislo)}" aria-label="Smazat doklad ${esc(d.cislo)}">🗑</button>` : ""}</span></div>`).join("")
           || `<div class="info pozor">Zakázkový list zatím nebyl uložen.</div>`}</div>
         <div class="radek-tlacitek" style="margin-top:14px">
           <a class="tl tl-hlavni" href="#/zakazka/${id}/nabidka">📝 Cenová nabídka</a>
@@ -1165,8 +1190,8 @@
       <section class="karta"><h2>Dokumenty vozidla <span class="napoveda" style="font-weight:400">(v E-servisce ke stažení)</span></h2><div class="fotky" id="dokumenty-vozidla"><span class="mutted">Načítám…</span></div>
         <p style="margin:10px 0 0"><a href="#/vozidlo/${z.vozidlo_id || v.id}">Upravit vozidlo a TP →</a> · <a href="#/zakaznik/${z.zakaznik_id || c.id}">Upravit zákazníka →</a></p></section>
       <section class="karta"><h2>Zákazník</h2><dl class="udaje">
-        ${[["Jméno", c.jmeno], ["Kontaktní osoba", c.kontaktni_osoba], ["Telefon", c.telefon], ["E-mail", c.email], ["Adresa", [c.ulice, [c.psc, c.mesto].filter(Boolean).join(" "), c.zeme].filter(Boolean).join(", ")], ["IČO", c.ico], ["DIČ", c.dic]]
-          .filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join("")}</dl></section>
+        ${[["Jméno", esc(c.jmeno)], ["Kontaktní osoba", esc(c.kontaktni_osoba)], ["Telefon", telOdkaz(c.telefon)], ["E-mail", mailOdkaz(c.email)], ["Adresa", esc([c.ulice, [c.psc, c.mesto].filter(Boolean).join(" "), c.zeme].filter(Boolean).join(", "))], ["IČO", esc(c.ico)], ["DIČ", esc(c.dic)]]
+          .filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${b}</dd></div>`).join("")}</dl></section>
       <section class="karta"><h2>Příjem ${datumCz(z.datum_prijmu)}</h2>
         <dl class="udaje">${z.predpoklad_dokonceni ? `<div><dt>Předpoklad dokončení</dt><dd>${datumCz(z.predpoklad_dokonceni)}</dd></div>` : ""}
           ${z.odhad_ceny != null ? `<div><dt>Odhadovaná cena</dt><dd>${kc(z.odhad_ceny)}</dd></div>` : ""}</dl>
@@ -1203,6 +1228,16 @@
         const fa = doklady.find(x => x.id === b.dataset.zaplaceno);
         if (fa?.druh === "faktura" && !["predano"].includes(z.stav)) await db.upravit("zakazky", id, { stav: "zaplaceno" });
         hlaska("Úhrada zapsána."); detail(id);
+      } catch (e) { hlaska(chybaText(e), true); }
+    });
+    app.querySelectorAll("[data-smazat-doklad]").forEach(b => b.onclick = () => smazatDokladDotaz(doklady.find(x => x.id === b.dataset.smazatDoklad), () => detail(id)));
+    app.querySelectorAll("[data-nezaplaceno]").forEach(b => b.onclick = async () => {
+      const fa = doklady.find(x => x.id === b.dataset.nezaplaceno);
+      if (!confirm(`Zrušit úhradu dokladu ${fa?.cislo || ""}? Doklad bude zase vedený jako nezaplacený.`)) return;
+      try {
+        await db.upravit("doklady", b.dataset.nezaplaceno, { zaplaceno: null });
+        if (fa?.druh === "faktura" && z.stav === "zaplaceno") await db.upravit("zakazky", id, { stav: "fakturovano" });
+        hlaska("Úhrada zrušena – doklad je zase nezaplacený."); detail(id);
       } catch (e) { hlaska(chybaText(e), true); }
     });
     if (fotky.length) {
@@ -1332,28 +1367,31 @@
           ${d.mena === "EUR" ? `<label>Kurz<input class="vstup cislo" data-f="kurz" value="${d.kurz ?? 25}" inputmode="decimal"></label>` : ""}
           <label>Marže %<input class="vstup cislo" data-f="marze_pct" value="${d.marze_pct ?? 30}" inputmode="decimal"></label>
           <label>Prodej / ks (Kč)<input class="vstup cislo" data-f="prodejni_cena" value="${d.prodejni_cena ?? ""}" inputmode="numeric"></label>
-          <label>Původ<select class="vstup" data-f="puvod"><option value="" ${!d.puvod ? "selected" : ""}>—</option><option value="original" ${d.puvod === "original" ? "selected" : ""}>Originál MB</option><option value="aftermarket" ${d.puvod === "aftermarket" ? "selected" : ""}>Aftermarket</option></select></label>
+          <label>Původ<select class="vstup" data-f="puvod"><option value="" ${!d.puvod ? "selected" : ""}>—</option><option value="original" ${d.puvod === "original" ? "selected" : ""}>MB (original)</option><option value="aftermarket" ${d.puvod === "aftermarket" ? "selected" : ""}>Aftermarket</option></select></label>
           <label class="siroke">Poznámka (Remarks v parts listu)<input class="vstup" data-f="poznamka" value="${esc(d.poznamka || "")}" placeholder="např. Original MB, + o-rings"></label>
           <span class="celkem-dil ${d.stav === "nepouzito" ? "mutted" : ""}">${d.stav === "nepouzito" ? "nepoužito" : kc(cenaDilu(d))}</span>
         </div>
       </div>`).join("")}
       <div class="radek-tlacitek" style="margin-top:12px">
         <button type="button" class="tl" id="pridat-dil">＋ Přidat díl</button>
+        <button type="button" class="tl" id="import-dilu" aria-expanded="${!!E.imp}">📥 Import z e-mailu</button>
         ${E.dily.length ? `<button type="button" class="tl" id="parts-list">📄 Parts list (PDF)</button>
           <label class="cip zaskrt"><input type="checkbox" id="parts-ceny" checked> s cenami</label>` : ""}
         <span class="napoveda">Prodejní cena = nákup × kurz + marže (výchozí 30 %). Jde přepsat ručně.</span>
-      </div>`;
+      </div>
+      ${E.imp ? panelImportu() : ""}`;
     el.querySelectorAll(".dil[data-i]").forEach(r => {
       const d = E.dily[+r.dataset.i];
       r.querySelectorAll("[data-f]").forEach(inp => inp.addEventListener(inp.tagName === "SELECT" ? "change" : "input", () => {
         const f = inp.dataset.f;
         d[f] = ["mnozstvi", "nakupni_cena", "kurz", "marze_pct", "prodejni_cena"].includes(f) ? cisloZ(inp.value) : inp.value;
         if (f === "mena") { d.kurz = d.mena === "EUR" ? (d.kurz && d.kurz !== 1 ? d.kurz : 25) : 1; }
+        if (f === "dodavatel_id" && d.dodavatel_id) d.puvod = puvodPodleDodavatele(d.dodavatel_id);   // MB (original) → original, ostatní → aftermarket
         if (["nakupni_cena", "kurz", "marze_pct", "mena"].includes(f)) {          // přepočítat prodejní cenu
           d.prodejni_cena = d.nakupni_cena == null ? null : prodejDilu(d);
           const pc = r.querySelector('[data-f="prodejni_cena"]'); if (pc) pc.value = d.prodejni_cena ?? "";
         }
-        if (f === "mena" || f === "stav") { vykresliDily(); }
+        if (f === "mena" || f === "stav" || f === "dodavatel_id") { vykresliDily(); }
         else { const c = r.querySelector(".celkem-dil"); if (c) c.textContent = d.stav === "nepouzito" ? "nepoužito" : kc(cenaDilu(d)); }
         vykresliSouhrnZakazky(); ulozitPozdeji("dily");
       }));
@@ -1373,10 +1411,93 @@
         if (okno) okno.location = u; else window.open(u, "_blank");
       } catch (e) { okno?.close(); hlaska("Parts list se nepodařil: " + chybaText(e), true); }
     };
+    el.querySelector("#import-dilu").onclick = () => { E.imp = E.imp ? null : { text: "", vysledek: null }; vykresliDily(); if (E.imp) el.querySelector("#imp-text")?.focus(); };
+    if (E.imp) obsluhaImportu(el);
     el.querySelector("#pridat-dil").onclick = () => {
       E.dily.push({ id: uuid(), nazev: "", mnozstvi: 1, jednotka: "ks", mena: "CZK", kurz: 1, marze_pct: 30, stav: "potreba" });
       vykresliDily(); ulozitPozdeji("dily");
       const n = el.querySelectorAll('.dil [data-f="nazev"]'); n[n.length - 1]?.focus();
+    };
+  }
+
+  /* ---------- import dílů z e-mailu dodavatele (pevný převodník v import-dilu.js) ---------- */
+  const jeMbDodavatel = id => /^MB\b|mercedes/i.test(E?.dodavatele.find(x => x.id === id)?.nazev || "");
+  const puvodPodleDodavatele = id => !id ? null : jeMbDodavatel(id) ? "original" : "aftermarket";
+  function panelImportu() {
+    const I = E.imp, v = I.vysledek;
+    return `<div class="import-dilu" id="panel-importu">
+      <b>Import dílů z e-mailu dodavatele</b>
+      <p class="napoveda" style="margin:4px 0 10px">Zkopírujte text e-mailu (Auto Kelly – faktura nebo potvrzení objednávky, Landsmann…) nebo tabulku z Excelu a vložte sem.
+        Nejpřesnější je <b>CSV příloha faktury Auto Kelly</b> (soubor 4126….csv). Ceny se berou s DPH.</p>
+      <textarea class="vstup" id="imp-text" placeholder="Sem vložte text e-mailu…">${esc(I.text)}</textarea>
+      <div class="radek-tlacitek" style="margin-top:8px">
+        <button type="button" class="tl tl-hlavni" id="imp-rozpoznat">Rozpoznat díly</button>
+        <label class="tl" style="cursor:pointer">📎 CSV / TXT soubor<input type="file" id="imp-soubor" accept=".csv,.txt,text/csv,text/plain" hidden></label>
+        <button type="button" class="tl" id="imp-zavrit">Zavřít</button>
+      </div>
+      ${v ? (v.polozky.length ? `
+        <div class="radek-tlacitek" style="margin-top:12px">
+          <span class="napoveda">Rozpoznáno: <b>${esc(v.format)}</b> · ${v.polozky.length} ${v.polozky.length === 1 ? "položka" : v.polozky.length < 5 ? "položky" : "položek"}</span>
+          <select class="vstup" id="imp-dodavatel" style="max-width:220px"><option value="">Dodavatel…</option>${E.dodavatele.map(x => `<option value="${x.id}" ${x.id === I.dodavatel_id ? "selected" : ""}>${esc(x.nazev)}</option>`).join("")}</select>
+          <select class="vstup" id="imp-stav" style="max-width:180px">${STAVY_DILU.map(([k, t]) => `<option value="${k}" ${k === (I.stav || "objednano") ? "selected" : ""}>${t}</option>`).join("")}</select>
+        </div>
+        ${v.polozky.some(p => p.odhad) ? `<div class="info pozor" style="margin-top:8px">Text nemá známý formát dodavatele – řádky jsou odhad. Zkontrolujte prosím názvy, čísla a ceny.</div>` : ""}
+        <table class="import-tabulka"><thead><tr><th></th><th>Název</th><th>Číslo dílu</th><th class="c">Ks</th><th class="c">Nákup / ks</th></tr></thead><tbody>
+        ${v.polozky.map((p, i) => `<tr class="${p.odhad ? "odhad" : ""}" data-ip="${i}">
+          <td><input type="checkbox" data-if="vybrano" ${p.vybrano !== false ? "checked" : ""} aria-label="Přidat"></td>
+          <td><input class="vstup" data-if="nazev" value="${esc(p.nazev)}"></td>
+          <td><input class="vstup" data-if="cislo" value="${esc(p.cislo)}" spellcheck="false"></td>
+          <td class="c"><input class="vstup cislo" data-if="mnozstvi" value="${p.mnozstvi}" inputmode="decimal" style="width:64px"></td>
+          <td class="c"><input class="vstup cislo" data-if="cena" value="${p.cena ?? ""}" inputmode="decimal" style="width:100px"> ${p.mena === "EUR" ? "€" : "Kč"}</td></tr>`).join("")}
+        </tbody></table>
+        <div class="radek-tlacitek" style="margin-top:10px"><button type="button" class="tl tl-hlavni" id="imp-pridat">＋ Přidat vybrané do zakázky</button></div>`
+        : `<div class="info pozor" style="margin-top:10px">V textu jsem nenašel žádné díly. Zkuste zkopírovat celý e-mail (i s tabulkou položek), nebo CSV přílohu faktury.</div>`) : ""}
+    </div>`;
+  }
+  function obsluhaImportu(el) {
+    const I = E.imp;
+    const t = el.querySelector("#imp-text");
+    t.addEventListener("input", () => { I.text = t.value; });
+    const rozpoznat = () => {
+      const v = window.rozeberDily(I.text);
+      I.vysledek = v;
+      const najdi = n => E.dodavatele.find(x => x.nazev.toLowerCase() === String(n || "").toLowerCase());
+      I.dodavatel_id = (najdi(v.dodavatel) || (v.dodavatel ? najdi("Jiný") : null) || {}).id || I.dodavatel_id || "";
+      vykresliDily();
+    };
+    el.querySelector("#imp-rozpoznat").onclick = rozpoznat;
+    el.querySelector("#imp-zavrit").onclick = () => { E.imp = null; vykresliDily(); };
+    el.querySelector("#imp-soubor").onchange = async e => {
+      const f = e.target.files[0]; if (!f) return;
+      const buf = await f.arrayBuffer();
+      let text;
+      try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch (err) { text = new TextDecoder("windows-1250").decode(buf); }
+      I.text = text; rozpoznat();
+    };
+    const v = I.vysledek; if (!v || !v.polozky.length) return;
+    el.querySelector("#imp-dodavatel").onchange = e => { I.dodavatel_id = e.target.value; };
+    el.querySelector("#imp-stav").onchange = e => { I.stav = e.target.value; };
+    el.querySelectorAll("tr[data-ip]").forEach(r => {
+      const p = v.polozky[+r.dataset.ip];
+      r.querySelectorAll("[data-if]").forEach(inp => inp.addEventListener(inp.type === "checkbox" ? "change" : "input", () => {
+        const f = inp.dataset.if;
+        p[f] = f === "vybrano" ? inp.checked : ["mnozstvi", "cena"].includes(f) ? cisloZ(inp.value) : inp.value;
+      }));
+    });
+    el.querySelector("#imp-pridat").onclick = () => {
+      const vybrane = v.polozky.filter(p => p.vybrano !== false && (p.nazev || p.cislo));
+      if (!vybrane.length) return hlaska("Není vybraný žádný díl.", true);
+      const dod = I.dodavatel_id || null;
+      for (const p of vybrane) {
+        const d = { id: uuid(), nazev: p.nazev || "", cislo_mb: p.cislo || "", mnozstvi: p.mnozstvi || 1, jednotka: "ks", nakupni_cena: p.cena ?? null,
+          mena: p.mena === "EUR" ? "EUR" : "CZK", kurz: p.mena === "EUR" ? 25 : 1, marze_pct: 30, stav: I.stav || "objednano",
+          dodavatel_id: dod, puvod: puvodPodleDodavatele(dod) };
+        d.prodejni_cena = d.nakupni_cena == null ? null : prodejDilu(d);
+        E.dily.push(d);
+      }
+      E.imp = null;
+      vykresliDily(); vykresliSouhrnZakazky(); ulozitPozdeji("dily");
+      hlaska(`Přidáno ${vybrane.length} ${vybrane.length === 1 ? "díl" : vybrane.length < 5 ? "díly" : "dílů"}.`);
     };
   }
 
@@ -1555,9 +1676,9 @@
     app.innerHTML = `<h1>Doklady</h1><div class="nacitani">Načítám doklady…</div>`;
     let vse = [];
     try { vse = await db.vsechnyDoklady(); } catch (e) { app.innerHTML = `<h1>Doklady</h1><div class="info chyba">${esc(chybaText(e))}</div>`; return; }
-    const F = nacti("werk-filtr-dokladu") || { druh: "faktury", mesic: "", nezaplacene: false };
+    const F = { druh: "vse", mesic: "", nezaplacene: false };          // po otevření z menu vždy „Vše“
     const mesice = [...new Set(vse.map(d => String(d.vystaveno).slice(0, 7)))].sort().reverse();
-    const DRUHY_FILTR = [["faktury", "Faktury"], ["nabidka", "Nabídky"], ["predavaci_protokol", "Protokoly"], ["zakazkovy_list", "Zakázkové listy"], ["vse", "Vše"]];
+    const DRUHY_FILTR = [["vse", "Vše"], ["faktury", "Faktury"], ["nabidka", "Nabídky"], ["predavaci_protokol", "Protokoly"], ["zakazkovy_list", "Zakázkové listy"]];
     const jeFa = d => d.druh === "faktura" || d.druh === "zalohova";
     const poSplatnosti = d => jeFa(d) && !d.zaplaceno && d.splatnost && d.splatnost < dnes();
     app.innerHTML = `
@@ -1570,7 +1691,6 @@
       <div class="dlazdice" id="dlazdice"></div>
       <div class="doklady" id="seznam-dokladu"></div>`;
     const vykresli = () => {
-      uloz("werk-filtr-dokladu", F);
       const r = vse.filter(d => (F.druh === "vse" || (F.druh === "faktury" ? jeFa(d) : d.druh === F.druh))
         && (!F.mesic || String(d.vystaveno).startsWith(F.mesic)) && (!F.nezaplacene || (jeFa(d) && !d.zaplaceno)));
       const fa = r.filter(d => d.druh === "faktura"), za = r.filter(d => d.druh === "zalohova");
@@ -1586,12 +1706,16 @@
           ${jeFa(d) ? (d.zaplaceno ? ` · <b style="color:var(--zelena)">zaplaceno ${datumCz(d.zaplaceno)}</b>` : poSplatnosti(d) ? ` · <b style="color:var(--cervena)">po splatnosti</b>` : " · nezaplaceno") : ""}</small></span>
           <span class="radek-tlacitek">${d.celkem != null ? `<b style="font-variant-numeric:tabular-nums">${kc(d.celkem)}</b>` : ""}
             ${d.soubory?.klic ? `<button class="tl tl-male" data-pdf="${esc(d.soubory.klic)}">PDF</button>` : ""}
-            ${d.zakazky?.id ? `<a class="tl tl-male" href="#/zakazka/${d.zakazky.id}">#${d.zakazky.cislo}</a>` : ""}</span></div>`).join("")
+            ${d.zakazky?.id ? `<a class="tl tl-male" href="#/zakazka/${d.zakazky.id}">#${d.zakazky.cislo}</a>` : ""}
+            ${lzeSmazatDoklad(d, vse) ? `<button class="tl tl-male tl-kos" data-smazat-doklad="${d.id}" title="Smazat doklad ${esc(d.cislo)}" aria-label="Smazat doklad ${esc(d.cislo)}">🗑</button>` : ""}</span></div>`).join("")
         : `<div class="prazdne">Žádné doklady pro tento výběr.</div>`;
       app.querySelectorAll("[data-pdf]").forEach(b => b.onclick = async () => {
         const okno = window.open("", "_blank");
         try { const u = await db.odkaz(b.dataset.pdf, 600); if (okno) okno.location = u; else location.href = u; } catch (e) { okno?.close(); hlaska(chybaText(e), true); }
       });
+      app.querySelectorAll("[data-smazat-doklad]").forEach(b => b.onclick = () => smazatDokladDotaz(vse.find(x => x.id === b.dataset.smazatDoklad), async () => {
+        try { vse = await db.vsechnyDoklady(); } catch (e) { hlaska(chybaText(e), true); } vykresli();
+      }));
     };
     app.querySelector("#f-druh").onclick = e => { const b = e.target.closest("button"); if (!b) return; F.druh = b.dataset.k;
       app.querySelectorAll("#f-druh button").forEach(x => x.setAttribute("aria-pressed", x === b)); vykresli(); };
@@ -1628,12 +1752,14 @@
       app.querySelector("#seznam").innerHTML = r.length ? r.map(z => {
         const auta = (z.vlastnictvi || []).filter(x => !x.vlastni_do && x.vozidla).map(x => [x.vozidla.typ, x.vozidla.model].filter(Boolean).join(" ")).filter(Boolean);
         const pocet = z.zakazky?.[0]?.count ?? 0;
-        return `<a class="doklad odkaz-radek" href="#/zakaznik/${z.id}"><span><b>${esc(z.jmeno)}</b>${z.je_firma ? ` <span class="stitek">firma</span>` : ""}<br>
-          <small class="mutted">${esc([z.telefon, z.email, z.mesto].filter(Boolean).join(" · "))}</small></span>
-          <span class="mutted" style="text-align:right">${esc(auta.join(", "))}<br><small>${pocet} ${pocet === 1 ? "zakázka" : pocet > 1 && pocet < 5 ? "zakázky" : "zakázek"}</small></span></a>`;
+        return `<div class="doklad odkaz-radek" data-href="#/zakaznik/${z.id}"><span><a class="jmeno-odkaz" href="#/zakaznik/${z.id}"><b>${esc(z.jmeno)}</b></a>${z.je_firma ? ` <span class="stitek">firma</span>` : ""}<br>
+          <small class="mutted kontakty">${[telOdkaz(z.telefon), mailOdkaz(z.email), esc(z.mesto || "")].filter(Boolean).join(" · ")}</small></span>
+          <span class="mutted" style="text-align:right">${esc(auta.join(", "))}<br><small>${pocet} ${pocet === 1 ? "zakázka" : pocet > 1 && pocet < 5 ? "zakázky" : "zakázek"}</small></span></div>`;
       }).join("") : `<div class="prazdne">${data.length ? "Nikdo nenalezen." : "Zatím žádní zákazníci."}</div>`;
     };
     vykresli(""); app.querySelector("#filtr").oninput = e => vykresli(e.target.value);
+    // klik na řádek otevře zákazníka; klik na telefon / e-mail rovnou volá / píše
+    app.querySelector("#seznam").onclick = e => { if (e.target.closest("a")) return; const r = e.target.closest("[data-href]"); if (r) location.hash = r.dataset.href; };
   }
   async function zakaznikDetail(id) {
     const novy = id === "novy";
@@ -1728,7 +1854,7 @@
           <label class="tl">📷 TP – zadní strana<input type="file" accept="image/*,application/pdf" data-tp="TP – zadní strana" hidden></label>
           <span class="napoveda" id="stav-tp">Zobrazí se v E-servisce mezi dokumenty ke stažení.</span></div></section>
       <section class="karta"><h2>Majitel</h2>
-        <div class="doklady">${majitele.map(x => `<div class="doklad"><span><a href="#/zakaznik/${x.zakaznici.id}"><b>${esc(x.zakaznici.jmeno)}</b></a><br><small class="mutted">${esc([x.zakaznici.telefon, x.zakaznici.email].filter(Boolean).join(" · "))}</small></span>
+        <div class="doklady">${majitele.map(x => `<div class="doklad"><span><a href="#/zakaznik/${x.zakaznici.id}"><b>${esc(x.zakaznici.jmeno)}</b></a><br><small class="mutted kontakty">${[telOdkaz(x.zakaznici.telefon), mailOdkaz(x.zakaznici.email)].filter(Boolean).join(" · ")}</small></span>
           <small class="mutted">${x.vlastni_do ? `${datumCz(x.vlastni_od)} – ${datumCz(x.vlastni_do)}` : `od ${datumCz(x.vlastni_od)} · <b style="color:var(--zelena)">současný</b>`}</small></div>`).join("") || `<span class="mutted">Majitel není zadaný.</span>`}</div>
         <p class="popis" style="margin:14px 0 8px">Změna majitele – staré zakázky a doklady zůstanou předchozímu majiteli:</p>
         <input class="vstup" id="hledat-majitele" type="search" placeholder="Najít nového majitele: jméno, telefon, e-mail" autocomplete="off">

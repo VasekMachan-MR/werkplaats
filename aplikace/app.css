@@ -339,3 +339,23 @@ select.vstup { -webkit-appearance: none; appearance: none; background: #fff url(
 @media (max-width: 1100px) { .lista-vpravo .uzivatel-tl span { display: none; } }
 .tl-smazat { color: var(--cervena); border-color: #f1b5ae; background: #fff; }
 .tl-smazat:hover, .tl-smazat:active { background: var(--cervena); border-color: var(--cervena); color: #fff; }
+
+/* malý koš u dokladu */
+.tl-kos { min-width: 38px; padding: 6px 8px; font-size: 15px; line-height: 1; color: var(--cervena); border-color: #f1b5ae; background: #fff; }
+.tl-kos:hover, .tl-kos:active { background: #fdecea; border-color: var(--cervena); }
+
+/* import dílů */
+.import-dilu { border: 1px dashed var(--linka, #c9ced6); border-radius: 12px; padding: 14px; margin-top: 12px; background: #fafbfc; }
+.import-dilu textarea { width: 100%; min-height: 140px; font: 14px/1.4 ui-monospace, Menlo, monospace; }
+.import-tabulka { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
+.import-tabulka th, .import-tabulka td { text-align: left; padding: 6px 6px; border-bottom: 1px solid #e6e8ec; vertical-align: middle; }
+.import-tabulka td.c, .import-tabulka th.c { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.import-tabulka input.vstup { min-height: 36px; padding: 4px 8px; font-size: 14px; }
+.import-tabulka tr.odhad td { background: #fff8e6; }
+
+/* klikací telefon a e-mail v seznamech */
+div.odkaz-radek { cursor: pointer; }
+.jmeno-odkaz { color: inherit; text-decoration: none; }
+.kontakty { display: inline-flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; }
+.kontakt-odkaz { display: inline-block; padding: 6px 2px; color: var(--navy-2); text-decoration: none; font-weight: 500; white-space: nowrap; }
+.kontakt-odkaz:active { text-decoration: underline; }
