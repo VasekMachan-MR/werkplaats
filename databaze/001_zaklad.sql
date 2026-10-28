@@ -1,4 +1,4 @@
--- Werkplaats – základní datový model (NÁVRH ke schválení, zatím nespuštěno)
+-- Werkplaats – základní datový model (schváleno 28. 10. 2026)
 -- PostgreSQL / Supabase, region EU (Frankfurt)
 
 -- ============ Uživatelé a role ============
@@ -154,7 +154,7 @@ create table dily (
 --   7377/1 zakázkový list · 7377/2 cenová nabídka (7377/2-2 další verze) · 7377/3 faktura (7377/3-2 doúčtování)
 --   7377/4 předávací protokol · 7377/5 zálohová faktura · 7377/6 opravný doklad k faktuře
 create type druh_dokladu as enum ('zakazkovy_list','nabidka','faktura','predavaci_protokol','zalohova','opravny');
-create function pripona_dokladu(d druh_dokladu) returns int language sql immutable as $$
+create function pripona_dokladu(d public.druh_dokladu) returns int language sql immutable set search_path = '' as $$
   select case d when 'zakazkovy_list' then 1 when 'nabidka' then 2 when 'faktura' then 3
                 when 'predavaci_protokol' then 4 when 'zalohova' then 5 when 'opravny' then 6 end;
 $$;
@@ -208,9 +208,7 @@ create table postupy (                         -- pracovní postupy a znalosti (
 -- ============ Číslování (bez mezer, nikdy dvakrát) ============
 create table ciselne_rady (rada text primary key, posledni int not null);
 insert into ciselne_rady values ('zakazky', 7376);
-create function dalsi_cislo(p_rada text) returns int language sql as $$
-  update ciselne_rady set posledni = posledni + 1 where rada = p_rada returning posledni;
+create function dalsi_cislo(p_rada text) returns int language sql set search_path = '' as $$
+  update public.ciselne_rady set posledni = posledni + 1 where rada = p_rada returning posledni;
 $$;
 
--- Přístupová práva (RLS): majitel i mechanik vidí vše včetně cen a faktur; rozdíl rolí (např. nastavení, mazání) se doladí později.
--- Doplní se v další migraci společně s přihlášením.

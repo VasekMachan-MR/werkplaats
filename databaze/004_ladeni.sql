@@ -1,0 +1,21 @@
+-- Ladění podle doporučení Supabase: oddělená pravidla pro správu uživatelů, indexy cizích klíčů
+drop policy sprava on uzivatele;
+create policy pridat on uzivatele for insert to authenticated with check ((select soukrome.je_majitel()));
+create policy upravit on uzivatele for update to authenticated using ((select soukrome.je_majitel())) with check ((select soukrome.je_majitel()));
+create policy odebrat on uzivatele for delete to authenticated using ((select soukrome.je_majitel()));
+create index on dily (dodavatel_id);
+create index on dily (motorizace_id);
+create index on dily (nakupni_doklad_id);
+create index on doklady (nabidka_id);
+create index on emaily (doklad_id);
+create index on katalog_modely (rada_id);
+create index on katalog_motorizace (model_id);
+create index on nakupni_doklady (dodavatel_id);
+create index on podpisy (doklad_id);
+create index on polozky (nabidka_id);
+create index on postupy (model_id);
+create index on servisni_plan (motorizace_id);
+create index on servisni_plan (vozidlo_id);
+create index on vlastnictvi (zakaznik_id);
+create index on vozidla (model_id);
+create index on vozidla (motorizace_id);
