@@ -123,6 +123,43 @@ const NABIDKA = {
   }
 };
 
+/* Zálohová faktura (7377-5) – stejný list jako faktura; nové texty zadní strany (ke schválení Vaškem) */
+const ZALOHOVA = {
+  cs: {
+    titul: "ZÁLOHOVÁ FAKTURA", splatnost: "Datum splatnosti:",
+    backpage: [
+      ["Platební podmínky:", [
+        "Záloha je splatná k datu uvedenému na přední straně. Platbu lze provést na účet uvedený na faktuře.",
+        "Při bankovním převodu prosím uveďte variabilní symbol uvedený na přední straně."]],
+      ["Zúčtování zálohy:", [
+        "Uhrazená záloha bude odečtena v konečné faktuře za provedené práce a dodaný materiál.",
+        "Zálohová faktura není daňovým dokladem."]],
+      ["Archivace a zpracování osobních údajů:", [
+        "Faktury, dokumentace a fotografie vozidla jsou archivovány v souladu s platnými zákony a GDPR.",
+        "Zákazník může požádat o výmaz údajů e-mailem, pokud to neodporuje zákonným povinnostem."]],
+      ["Poděkování:", [
+        "Děkujeme, že jste si vybrali Mercedes Restorations. Vážíme si vaší důvěry."]]
+    ]
+  },
+  en: {
+    titul: "ADVANCE INVOICE", splatnost: "Due date:",
+    backpage: [
+      ["Payment terms:", [
+        "The advance payment is due on the date indicated on the front. Payment can be made to the account",
+        "listed on the invoice. Please include the variable symbol shown on the front."]],
+      ["Settlement of the advance:", [
+        "The advance paid will be deducted in the final invoice for the work carried out and parts supplied.",
+        "This advance invoice is not a tax document."]],
+      ["Archiving and Processing of Personal Data:", [
+        "Invoices, documentation and photographs of the vehicle are archived in accordance with applicable laws",
+        "and the GDPR. The customer may request the deletion of their data via email, provided that this",
+        "does not conflict with legal obligations."]],
+      ["Thank you!", [
+        "Thank you for choosing Mercedes Restorations. We appreciate your trust."]]
+    ]
+  }
+};
+
 /* Sloupce tabulky položek (středy podle originálu) */
 const COL = { popisX: 61.7, popisStred: 196.0, mn: 357.7, mj: 389.1, cena: 433.9, celkem: 503.4 };
 const MAX_RADKU = 13;
@@ -194,9 +231,9 @@ function strana1(d, tx) {
 
   // materiál a celkem
   const material = Number(d.material || 0), celkem = soucetPrace + material;
-  h += T(COL.popisX, 554.8, tx.material) + T(COL.celkem, 553.8, cislo0(material), { c: true });
+  if (!d.bezMaterialu) h += T(COL.popisX, 554.8, tx.material) + T(COL.celkem, 553.8, cislo0(material), { c: true });   // zálohová faktura: řádek materiálu prázdný
   h += T(COL.popisStred, 567.5, tx.celkemRadek, { b: true, c: true });
-  h += T(COL.mn, 567.5, mnozstvi(soucetHodin), { b: true, c: true });
+  if (!d.bezMaterialu) h += T(COL.mn, 567.5, mnozstvi(soucetHodin), { b: true, c: true });
   h += T(COL.celkem, 567.7, `${cislo0(celkem)} ${tx.mena}`, { b: true, c: true });
 
   // upozornění
@@ -238,7 +275,7 @@ function strana2(tx) {
 
 window.render = async function (data, lang = "cs") {
   await nactiPisma();
-  const tx = { ...TEXTY[lang], ...(data.druh === "nabidka" ? NABIDKA[lang] : {}), lang };
+  const tx = { ...TEXTY[lang], ...(data.druh === "nabidka" ? NABIDKA[lang] : data.druh === "zalohova" ? ZALOHOVA[lang] : {}), lang };
   const s1 = strana1(data, tx);
   document.getElementById("doc").innerHTML = s1.html + strana2(tx);
   return { celkem: s1.celkem };

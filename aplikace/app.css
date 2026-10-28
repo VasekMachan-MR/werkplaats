@@ -305,3 +305,16 @@ select.vstup { -webkit-appearance: none; appearance: none; background: #fff url(
   .dil-r1 > [data-f="nazev"] { grid-column: 1 / -1; }
   .dil-r2 label { width: calc(50% - 4px); }
 }
+
+/* přehled dokladů */
+.dlazdice { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.dlazdice:empty { display: none; }
+.dlazdice-k { background: #fff; border-radius: 12px; box-shadow: var(--stin); padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; }
+.dlazdice-k small { color: var(--sedy); font-weight: 600; font-size: 13px; }
+.dlazdice-k b { font-size: 24px; color: var(--navy); font-variant-numeric: tabular-nums; }
+.dlazdice-k span { font-size: 13px; color: var(--sedy); }
+.dlazdice-k.cervena b { color: var(--cervena); }
+.cip.zaskrt { display: inline-flex; align-items: center; gap: 8px; border-style: solid; cursor: pointer; }
+.cip.zaskrt input { width: 20px; height: 20px; accent-color: var(--navy); }
+.lista-vpravo { flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 600px) { .lista-vpravo .tl { padding: 6px 9px; font-size: 13px; } }

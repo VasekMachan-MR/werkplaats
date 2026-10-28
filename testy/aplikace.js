@@ -165,23 +165,37 @@ const server = http.createServer((q, r) => {
   await p.waitForSelector(".velke-cislo >> text=7377-2", { timeout: 8000 }).catch(async e => { console.log("HLÁŠKA:", await p.textContent("#hlaska"), chyby, p.url()); await p.screenshot({ path: path.join(OUT, "chyba.png") }); throw e; });
   await p.click("text=Detail zakázky");
   await p.waitForSelector("text=📝 Cenová nabídka");
+  // zálohová faktura na materiál (předvyplněno 13 325 Kč, text s číslem nabídky) → zaplaceno
+  await p.click("text=💰 Zálohová faktura");
+  await p.waitForSelector("#vystavit:not([disabled])");
+  kontrola(await p.inputValue('[data-d="castka"]') === "13325" && /dle cenové nabídky 7377-2/.test(await p.inputValue('[data-d="popis"]')), "zálohová: předvyplněno 13 325 Kč a text „Záloha na materiál dle cenové nabídky 7377-2“");
+  await p.click("#vystavit");
+  await p.waitForSelector(".velke-cislo >> text=7377-5");
+  await p.click("text=Detail zakázky");
+  await p.waitForSelector("[data-zaplaceno]");
+  await p.click("[data-zaplaceno]");
+  await p.waitForSelector("text=zaplaceno 5. 11. 2026");
   await p.click("text=💳 Faktura");
   await p.waitForSelector("#vystavit:not([disabled])");
+  kontrola((await p.textContent("#k-uhrade")).replace(/\s/g, "") === "9050Kč", "faktura: odečte zaplacenou zálohu → k úhradě 9 050 Kč");
   await foto("12-faktura-nahled");
   await p.click("#vystavit");
   await p.waitForSelector(".velke-cislo >> text=7377-3");
-  const uf = await p.evaluate(() => ({ d: window.__ULOZENO__.tabulky.doklady, z: window.__ULOZENO__.tabulky.zakazky, pdf: Object.entries(window.__ULOZENO__.soubory).filter(([k]) => /7377-[23]-/.test(k)).map(([k, v]) => [k, Array.from(v)]) }));
+  const uf = await p.evaluate(() => ({ d: window.__ULOZENO__.tabulky.doklady, z: window.__ULOZENO__.tabulky.zakazky, pdf: Object.entries(window.__ULOZENO__.soubory).filter(([k]) => /7377-[235]-/.test(k)).map(([k, v]) => [k, Array.from(v)]) }));
   const fa = uf.d.find(x => x.cislo === "7377-3"), na = uf.d.find(x => x.cislo === "7377-2");
-  kontrola(na && na.celkem === 22375 && fa && fa.celkem === 22375 && fa.variabilni_symbol === "73773", "nabídka i faktura 22 375 Kč, VS faktury 73773");
+  const za = uf.d.find(x => x.cislo === "7377-5");
+  kontrola(na && na.celkem === 22375 && za && za.celkem === 13325 && za.variabilni_symbol === "73775" && fa && fa.celkem === 9050 && fa.variabilni_symbol === "73773", "nabídka 22 375, záloha 13 325 (VS 73775), faktura 9 050 (VS 73773)");
   for (const [k, v] of uf.pdf) fs.writeFileSync(path.join(OUT, path.basename(k)), Buffer.from(v));
   const txtFa = require("child_process").execFileSync("pdftotext", ["-l", "1", "-layout", path.join(OUT, "7377-3-faktura.pdf"), "-"]).toString();
-  kontrola(/FAKTURA\s+#\s*7377-3/.test(txtFa) && /Variabilní symbol:\s+73773/.test(txtFa) && /22 375,00 Kč/.test(txtFa) && /Likvidace kapalin/.test(txtFa) && /13 325/.test(txtFa), "PDF faktury: číslo 7377-3, VS 73773, položky, materiál 13 325, celkem 22 375,00 Kč");
+  kontrola(/FAKTURA\s+#\s*7377-3/.test(txtFa) && /Variabilní symbol:\s+73773/.test(txtFa) && /9 050,00 Kč/.test(txtFa) && /Likvidace kapalin/.test(txtFa) && /Odečet zálohy 7377-5\s+-13 325/.test(txtFa) && /13 325/.test(txtFa), "PDF faktury: 7377-3, VS 73773, materiál 13 325, odečet zálohy −13 325, k úhradě 9 050,00 Kč");
+  const txtZa = require("child_process").execFileSync("pdftotext", ["-layout", path.join(OUT, "7377-5-zalohova-faktura.pdf"), "-"]).toString();
+  kontrola(/ZÁLOHOVÁ FAKTURA\s+#\s*7377-5/.test(txtZa) && /13 325,00 Kč/.test(txtZa) && /Zúčtování zálohy/.test(txtZa), "PDF zálohové faktury: 7377-5, 13 325,00 Kč, zadní strana o zúčtování zálohy");
   const txtNa = require("child_process").execFileSync("pdftotext", ["-l", "1", "-layout", path.join(OUT, "7377-2-cenova-nabidka.pdf"), "-"]).toString();
   kontrola(/CENOVÁ NABÍDKA/.test(txtNa) && /Datum platnosti:/.test(txtNa), "PDF nabídky: CENOVÁ NABÍDKA s datem platnosti");
   await p.click("text=Detail zakázky");
   await p.waitForSelector("[data-zaplaceno]");
   await p.click("[data-zaplaceno]");
-  await p.waitForSelector("text=zaplaceno 5. 11. 2026");
+  await p.waitForFunction(() => document.querySelectorAll(".doklad").length && !document.querySelector("[data-zaplaceno]"));
   kontrola(true, "faktura označena jako zaplacená (vydaná faktura zůstala zamčená)");
   await p.click("text=🔑 Předávací protokol");
   await p.waitForSelector("#co-chybi:not([hidden])");
@@ -205,6 +219,14 @@ const server = http.createServer((q, r) => {
   await p.click("text=Detail zakázky");
   await p.waitForSelector("text=7377-4");
   await foto("13-detail-doklady");
+  // přehled dokladů
+  await p.click(".lista-vpravo >> text=Doklady");
+  await p.waitForSelector(".dlazdice-k");
+  const dl = (await p.textContent("#dlazdice")).replace(/\s/g, "");
+  kontrola(/Faktury9050Kč1ks\+zálohové13325Kč/.test(dl) && /Nezaplaceno0Kč0ks/.test(dl), "přehled dokladů: faktury 9 050 Kč + zálohové 13 325 Kč, nic nezaplaceného");
+  await p.click('#f-druh >> text=Vše');
+  kontrola(await p.locator("#seznam-dokladu .doklad").count() === 5, "přehled dokladů: všech 5 dokladů zakázky 7377");
+  await foto("14-prehled-dokladu");
 
   // ---------- příjem 2: stejné auto, stávající zákazník přes hledání ----------
   await p.goto(URL0 + "#/novy");

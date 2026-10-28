@@ -64,6 +64,11 @@ window.__WERK_DB__ = (() => {
     async dily(zid) { return kopie(T.dily.filter(d => d.zakazka_id === zid).sort((a, b) => a.poradi - b.poradi)); },
     async ulozitDily(zid, dily) { await cekej(); T.dily = T.dily.filter(d => d.zakazka_id !== zid).concat(dily.map((d, i) => ({ ...d, zakazka_id: zid, poradi: i + 1 }))); return dily.length; },
     async dodavatele() { return [{ id: "d1", nazev: "Auto Kelly" }, { id: "d2", nazev: "Granex" }, { id: "d3", nazev: "Mercedes-Benz (originál)" }]; },
+    async vsechnyDoklady() {
+      return kopie(T.doklady.map(d => { const z = T.zakazky.find(x => x.id === d.zakazka_id);
+        return { ...d, zakazky: z && { id: z.id, cislo: z.cislo, zakaznici: T.zakaznici.find(c => c.id === z.zakaznik_id), vozidla: T.vozidla.find(v => v.id === z.vozidlo_id) },
+          soubory: T.soubory.find(s => s.id === d.pdf_soubor_id) }; }).sort((a, b) => b.cislo.localeCompare(a.cislo)));
+    },
     async sazby() { return [{ nazev: "Inspekce", kc_za_hodinu: 1200 }, { nazev: "Ostatní práce", kc_za_hodinu: 1500 }]; },
     async nahrat(klic, blob, typ, prubeh) {
       if (S[klic]) throw new Error("The resource already exists");
