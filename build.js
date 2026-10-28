@@ -17,7 +17,10 @@ const vendor = path.join(DIST, "vendor"); fs.mkdirSync(vendor, { recursive: true
 for (const [z, n] of [
   ["node_modules/@supabase/supabase-js/dist/umd/supabase.js", "supabase.js"],
   ["node_modules/pdf-lib/dist/pdf-lib.min.js", "pdf-lib.min.js"],
-  ["node_modules/@pdf-lib/fontkit/dist/fontkit.umd.min.js", "fontkit.umd.min.js"]
+  ["node_modules/@pdf-lib/fontkit/dist/fontkit.umd.min.js", "fontkit.umd.min.js"],
+  // čtení PDF faktur dodavatelů při importu dílů (načte se až při prvním PDF)
+  ["node_modules/pdfjs-dist/legacy/build/pdf.min.js", "pdf.min.js"],
+  ["node_modules/pdfjs-dist/legacy/build/pdf.worker.min.js", "pdf.worker.min.js"]
 ]) fs.copyFileSync(path.join(__dirname, z), path.join(vendor, n));
 let verze = new Date().toISOString();
 try { verze = execSync("git rev-parse --short HEAD", { cwd: __dirname }).toString().trim() + "-" + Date.now(); } catch (e) { /* bez gitu */ }

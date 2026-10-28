@@ -298,6 +298,26 @@ const server = http.createServer((q, r) => {
   const di = await p.evaluate(() => window.__ULOZENO__.tabulky.dily.filter(d => d.cislo_mb === "LO 00596"));
   kontrola(di.length === 1 && di[0].nakupni_cena === 385.99 && di[0].dodavatel_id === "d1" && di[0].puvod === "aftermarket" && di[0].stav === "objednano" && di[0].prodejni_cena === 502 && di[0].nazev === "Sada ložiska kola STARLINE",
     "import: přidán jen vybraný díl – nákup 385,99 s DPH, prodej 502 Kč, Auto Kelly, Aftermarket, objednáno");
+  // PDF faktura Granexu (vyrobená pro test, stejné rozložení řádků)
+  {
+    const { PDFDocument } = require("pdf-lib"), fontkit = require("@pdf-lib/fontkit");
+    const doc = await PDFDocument.create(); doc.registerFontkit(fontkit);
+    const font = await doc.embedFont(fs.readFileSync("dokumenty/sablony/assets/fonts/LiberationSans-Regular.ttf"));
+    const pg = doc.addPage([595, 842]); let y = 800;
+    const radek = t => { pg.drawText(t, { x: 40, y, size: 8, font }); y -= 12; };
+    ["Faktura – Daňový doklad 26569121", "Granex.cz", "Označení dodávky Počet M.J. Cena za M.J. DPH % bez DPH DPH Celkem s DPH",
+     "Pouzdro, řadicí tyč FEBI BILSTEIN 08224 12 ks 23,14 Kč 21 % 277,69 Kč 58,31 Kč 336 Kč",
+     "Montážní sada, řídicí mechanismus MEYLE 014", "033 0001", "2 ks 236,36 Kč 21 % 472,73 Kč 99,27 Kč 572 Kč",
+     "DPD – Zásilková služba 1 ks 114,88 Kč 21 % 114,88 Kč 24,12 Kč 139 Kč", "Základ Výše DPH Celkem s DPH"].forEach(radek);
+    fs.writeFileSync(path.join(OUT, "granex-test.pdf"), await doc.save());
+  }
+  await p.click("#import-dilu");
+  await p.setInputFiles("#imp-soubor", path.join(OUT, "granex-test.pdf"));
+  await p.waitForSelector(".import-tabulka", { timeout: 15000 });
+  const radkyPdf = await p.$$eval(".import-tabulka tbody tr", tr => tr.map(r => [...r.querySelectorAll("input.vstup")].map(i => i.value)));
+  kontrola(radkyPdf.length === 2 && radkyPdf[1][0] === "Montážní sada, řídicí mechanismus MEYLE" && radkyPdf[1][1] === "014 033 0001" && radkyPdf[1][3] === "286" && await p.inputValue("#imp-dodavatel") === "d2",
+    "import z PDF faktury Granexu: 2 díly, název přes 2 řádky, 286 Kč/ks, dodavatel Granex " + JSON.stringify(radkyPdf));
+  await p.click("#imp-zavrit");
 
   // ---------- Lidé v dílně (majitel) ----------
   await p.evaluate(() => { location.hash = "#/lide"; });

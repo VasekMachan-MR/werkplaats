@@ -1428,11 +1428,11 @@
     return `<div class="import-dilu" id="panel-importu">
       <b>Import dílů z e-mailu dodavatele</b>
       <p class="napoveda" style="margin:4px 0 10px">Zkopírujte text e-mailu (Auto Kelly – faktura nebo potvrzení objednávky, Landsmann…) nebo tabulku z Excelu a vložte sem.
-        Nejpřesnější je <b>CSV příloha faktury Auto Kelly</b> (soubor 4126….csv). Ceny se berou s DPH.</p>
+        Nejpřesnější je <b>faktura v příloze</b> – PDF od Granexu, CSV nebo PDF od Auto Kelly (tlačítko „📎 Faktura“). Ceny se berou s DPH.</p>
       <textarea class="vstup" id="imp-text" placeholder="Sem vložte text e-mailu…">${esc(I.text)}</textarea>
       <div class="radek-tlacitek" style="margin-top:8px">
         <button type="button" class="tl tl-hlavni" id="imp-rozpoznat">Rozpoznat díly</button>
-        <label class="tl" style="cursor:pointer">📎 CSV / TXT soubor<input type="file" id="imp-soubor" accept=".csv,.txt,text/csv,text/plain" hidden></label>
+        <label class="tl" style="cursor:pointer">📎 Faktura (PDF / CSV)<input type="file" id="imp-soubor" accept=".pdf,.csv,.txt,application/pdf,text/csv,text/plain" hidden></label>
         <button type="button" class="tl" id="imp-zavrit">Zavřít</button>
       </div>
       ${v ? (v.polozky.length ? `
@@ -1471,7 +1471,15 @@
       const f = e.target.files[0]; if (!f) return;
       const buf = await f.arrayBuffer();
       let text;
-      try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch (err) { text = new TextDecoder("windows-1250").decode(buf); }
+      if (/\.pdf$/i.test(f.name) || f.type === "application/pdf") {
+        const h = prekryv("Čtu PDF…");
+        try { text = await window.textZPdf(new Uint8Array(buf)); }
+        catch (err) { h?.zavri(); return hlaska("PDF se nepodařilo přečíst: " + chybaText(err), true); }
+        h?.zavri();
+        if (!text.trim()) return hlaska("V PDF není text (asi je to sken) – zkopírujte prosím text e-mailu.", true, 7000);
+      } else {
+        try { text = new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch (err) { text = new TextDecoder("windows-1250").decode(buf); }
+      }
       I.text = text; rozpoznat();
     };
     const v = I.vysledek; if (!v || !v.polozky.length) return;

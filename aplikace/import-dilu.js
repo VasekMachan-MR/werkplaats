@@ -4,7 +4,8 @@
    2. Auto Kelly / LKQ – text e-mailu „Faktura 4126…“
    3. Auto Kelly – e-mail „Přijali jsme Vaši objednávku…“ (e-shop)
    4. Landsmann – e-mail „informace o objednávce č. Z…“
-   5. cokoli dalšího po řádcích: tabulka zkopírovaná z Excelu / webu, nebo „číslo název 2 ks 450 Kč“ (odhad – zkontrolovat)
+   5. Granex – e-mail „Vaše nová objednávka“ / „předána dopravci“ i text PDF faktury (faktura_….pdf)
+   6. cokoli dalšího po řádcích: tabulka zkopírovaná z Excelu / webu, nebo „číslo název 2 ks 450 Kč“ (odhad – zkontrolovat)
    Ceny se berou S DPH – firma není plátce DPH, takže DPH je pro ni náklad.
    Výsledek: { dodavatel: "Auto Kelly" | null, format, polozky: [{ nazev, cislo, mnozstvi, cena (za 1 ks), mena, odhad }] } */
 
@@ -62,6 +63,17 @@
     return out.length ? { format: "Auto Kelly – faktura z e-mailu", polozky: out } : null;
   }
 
+  /* 2b) Auto Kelly / LKQ – PDF účtenka faktury: „Sada ložiska kola STARLINE“ / „LO 00596“ / „1 ks × 385.99 385.99 C“ */
+  function lkqPdf(t) {
+    if (!/LKQ|autokelly/i.test(t)) return null;
+    const r = t.split(/\r?\n/).map(x => x.trim()).filter(Boolean), out = [];
+    for (let i = 2; i < r.length; i++) {
+      const m = r[i].match(/^(\d+(?:[.,]\d+)?)\s*ks\s*[×x]\s*(\d[\d ]*[.,]\d{2})\s+(\d[\d ]*[.,]\d{2})/);
+      if (m) out.push({ nazev: r[i - 2], cislo: r[i - 1], mnozstvi: cislo(m[1]) || 1, cena: zaokr(cislo(m[2])), mena: "CZK" });
+    }
+    return out.length ? { format: "Auto Kelly – PDF faktura", polozky: out } : null;
+  }
+
   /* 3) Auto Kelly e-shop: bloky  název / kód / ks / „386 Kč“ / dostupné od  (po řádcích nebo buňkách tabulky) */
   function akObjednavka(t) {
     if (!/Cena s DPH/i.test(t) || !/Ks/.test(t)) return null;
@@ -95,7 +107,71 @@
     return out.length ? { format: "Landsmann – objednávka", polozky: out } : null;
   }
 
-  /* 5) obecně po řádcích – odhad */
+  /* Číslo dílu z konce názvu e-shopu: „Pouzdro, řadicí tyč FEBI BILSTEIN 08224“ → 08224, „MANN-FILTER W 719/13“ → W 719/13,
+     „ATE 03.9901-8110.2 Čistič brzd 500ml“ → 03.9901-8110.2. Název zůstává celý (i se značkou), jen bez čísla na konci. */
+  const jeJednotka = w => /^[-–]?\d+([.,]\d+)?\s?(ml|l|L|kg|g|mm|cm|m|V|W|Ah)$/.test(w) || /°/.test(w) || /^\d+W[-‑]\d+$/.test(w);
+  function rozdelKod(text) {
+    const w = text.trim().split(/\s+/);
+    let i = w.length;
+    while (i > 0) {
+      const t = w[i - 1];
+      if (jeJednotka(t)) break;
+      // písmenná předpona čísla („W 719/13“, „PF 1055/1“) jen když za ní hned následuje číslice
+      if (/\d/.test(t) || (/^[A-Z]{1,3}$/.test(t) && i < w.length && /^\d/.test(w[i])) || (i === w.length && /^x$/i.test(t))) i--; else break;
+    }
+    const run = w.slice(i);
+    // musí obsahovat číslici a předcházet mu značka (VELKÝMI písmeny), jinak to není kód
+    if (run.some(t => /\d/.test(t)) && i > 0 && /^[A-ZÄÖÜ][A-ZÄÖÜ0-9&-]{1,}$/.test(w[i - 1])) {
+      return { nazev: w.slice(0, i).join(" "), cislo: run.join(" ") };
+    }
+    // značka na začátku: „ATE 03.9901-8110.2 Čistič brzd“
+    if (w.length > 2 && /^[A-ZÄÖÜ][A-ZÄÖÜ-]{1,}$/.test(w[0]) && /\d/.test(w[1]) && /[.\-]/.test(w[1]) && !jeJednotka(w[1]))
+      return { nazev: [w[0], ...w.slice(2)].join(" "), cislo: w[1] };
+    return { nazev: text.trim(), cislo: "" };
+  }
+
+  /* 5a) Granex – e-mail s objednávkou: „12× Pouzdro, řadicí tyč FEBI BILSTEIN 08224 <odkaz>“ / „Skladem…“ / „• 336 Kč (12× 28 Kč)“ */
+  function granexObjednavka(t) {
+    const radky = t.split(/\r?\n/).map(r => r.replace(/<https?:[^>]*>/g, " ").replace(/\[https?:[^\]]*\]/g, " ").replace(/\u00a0/g, " ").trim());
+    const RE_HLAV = /(?:^|\s)(\d+)\s?[×x]\s+(\S.*)$/;
+    const RE_CENA = /^•?\s*(\d[\d ]*(?:,\d+)?)\s*Kč(?:\s*\((\d+)\s?[×x]\s*(\d[\d ]*(?:,\d+)?)\s*Kč\))?\s*$/;
+    const out = [];
+    for (let i = 0; i < radky.length; i++) {
+      if (radky[i].startsWith("•")) continue;
+      const h = radky[i].match(RE_HLAV); if (!h) continue;
+      if (/\b(DPD|PPL|Zásilkov|Balíkovna|doprav|Apple Pay|Google Pay|GoPay|dobírk|platb)/i.test(h[2])) continue;
+      let kat = "", cena = null;
+      for (let j = i + 1; j < Math.min(i + 5, radky.length); j++) {
+        const r = radky[j];
+        const k = r.match(/^Katalogové číslo\s+(\S+)/i); if (k) { kat = k[1]; continue; }
+        const c = r.match(RE_CENA); if (c) { cena = c[3] ? cislo(c[3]) : cislo(c[1]) / (Number(h[1]) || 1); break; }
+        if (RE_HLAV.test(r) && !r.startsWith("•")) break;
+      }
+      if (cena == null) continue;
+      const rk = rozdelKod(h[2]);
+      out.push({ nazev: rk.nazev, cislo: kat || rk.cislo, mnozstvi: Number(h[1]) || 1, cena: zaokr(cena), mena: "CZK" });
+    }
+    return out.length ? { format: "Granex – objednávka", polozky: out } : null;
+  }
+
+  /* 5b) Granex – text PDF faktury: „Název … 12 ks 23,14 Kč 21 % 277,69 Kč 58,31 Kč 336 Kč“ (název může být na víc řádcích) */
+  function granexFaktura(t) {
+    const z = t.search(/Označení dodávky\s+Počet/i); if (z < 0) return null;
+    let usek = t.slice(z).replace(/^Označení dodávky[^\n]*\n/i, "");
+    const k = usek.search(/\nZáklad\s+Výše DPH/i); if (k > 0) usek = usek.slice(0, k);
+    usek = usek.split(/\r?\n/).filter(r => !/Veškeré zboží|obstaral prodávající|Společnost registrována|Fakturu vygeneroval|^Strana \d/i.test(r)).join(" ").replace(/\s+/g, " ");
+    const re = /(.+?)\s(\d+(?:,\d+)?)\s(?:ks|l|kg|m|sada|pár|bal)\s(\d[\d ]*,\d{2})\sKč\s\d+\s?%\s(?:\d[\d ]*(?:,\d{2})?)\sKč\s(?:\d[\d ]*(?:,\d{2})?)\sKč\s(\d[\d ]*(?:,\d{2})?)\sKč\s?/g;
+    const out = []; let m;
+    while ((m = re.exec(usek))) {
+      const nazev = m[1].trim();
+      if (/^(DPD|PPL|Zásilkov|Apple Pay|Google Pay|GoPay|Doprava|Dobírka)/i.test(nazev)) continue;
+      const mn = cislo(m[2]) || 1, rk = rozdelKod(nazev);
+      out.push({ nazev: rk.nazev, cislo: rk.cislo, mnozstvi: mn, cena: zaokr(cislo(m[4]) / mn), mena: "CZK" });
+    }
+    return out.length ? { format: "Granex – faktura (PDF)", polozky: out } : null;
+  }
+
+  /* 6) obecně po řádcích – odhad */
   const RE_MB = /\b[AN]\s?\d{3}\s?\d{3}\s?\d{2}\s?\d{2}(?:\s?\d{2})?\b|\b[AN]\d{10,12}\b/;
   function obecne(t) {
     const out = [];
@@ -143,13 +219,41 @@
   function rozeberDily(text) {
     const t = String(text || "").replace(/\r\n/g, "\n");
     const dodavatel = poznejDodavatele(t);
-    for (const f of [lkqCsv, lkqFaktura, akObjednavka, landsmann, obecne]) {
+    for (const f of [lkqCsv, lkqFaktura, lkqPdf, granexFaktura, granexObjednavka, akObjednavka, landsmann, obecne]) {
       const r = f(t);
       if (r) return { dodavatel, ...r };
     }
     return { dodavatel, format: null, polozky: [] };
   }
 
+  /* Text z PDF (faktura dodavatele) – pdf.js se načte až při prvním PDF. Řádky v pořadí, jak je PDF zapisuje (nový řádek při změně výšky). */
+  let pdfjs = null;
+  async function textZPdf(data) {
+    if (!pdfjs) pdfjs = new Promise((hotovo, chyba) => {
+      const s = document.createElement("script"); s.src = "vendor/pdf.min.js";
+      s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdf.worker.min.js"; hotovo(window.pdfjsLib); };
+      s.onerror = () => { pdfjs = null; chyba(new Error("Nepodařilo se načíst čtečku PDF")); };
+      document.head.appendChild(s);
+    });
+    const lib = await pdfjs;
+    const pdf = await lib.getDocument({ data, isEvalSupported: false, disableFontFace: true }).promise;
+    let text = "";
+    for (let n = 1; n <= pdf.numPages; n++) {
+      const obsah = await (await pdf.getPage(n)).getTextContent();
+      let y = null;
+      for (const it of obsah.items) {
+        if (!("str" in it)) continue;
+        const y2 = it.transform[5];
+        if (y !== null && Math.abs(y2 - y) > 1) text += "\n"; else if (y !== null && it.str && !/\s$/.test(text) && !/^\s/.test(it.str)) text += " ";
+        text += it.str; y = y2;
+        if (it.hasEOL) { text += "\n"; y = null; }
+      }
+      text += "\n\n";
+    }
+    return text.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
+  }
+
   koren.rozeberDily = rozeberDily;
-  if (typeof module !== "undefined") module.exports = { rozeberDily };
+  koren.textZPdf = textZPdf;
+  if (typeof module !== "undefined") module.exports = { rozeberDily, rozdelKod };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -51,5 +51,34 @@ ok(r.polozky[0].cislo === "A 126 420 12 20" && r.polozky[0].nazev === "Brzdové 
 ok(r.polozky[1].cislo === "A1160160221" && r.polozky[1].mnozstvi === 2 && r.polozky[1].nazev === "Těsnění víka ventilů", "obecný: 2 ks těsnění", r.polozky[1]);
 ok(rozeberDily("Dobrý den, posílám fotky auta.").polozky.length === 0, "běžný e-mail bez dílů → nic");
 
+// 6) Granex – e-mail s objednávkou
+const gx = `Vaše nová objednávka\nVážený zákazníku,\npotvrzujeme přijetí Vaší objednávky 572918.\nGranex.cz <https://granex.cz/?utm_source=x>\n\n+420608862512\nKontakt <https://granex.cz/kontakt>\n` +
+  `Obchodní podmínky <https://granex.cz/informace/obchodni-podminky> 12× Pouzdro, řadicí tyč FEBI BILSTEIN 08224 <https://granex.cz/front/product/default/52024>\nSkladem > 5 ks.\n• 336 Kč (12× 28 Kč)\n` +
+  `2× Tlumič pérování BILSTEIN 24-011839 <https://granex.cz/tlumic>\nSkladem > 5 ks.\n• 5 008 Kč (2× 2 504 Kč)\n` +
+  `4× ATE 03.9901-8110.2 Čistič brzd 500ml <https://granex.cz/x>\nSkladem na prodejně.\n• 276 Kč (4× 69 Kč)\n` +
+  `2× Valvoline ALL Climate 15W‑40 4L <https://granex.cz/x>\nKatalogové číslo VA872785\n• Skladem > 5 ks.\n• 1 848 Kč (2× 924 Kč)\n` +
+  `1× Olejový filtr MANN-FILTER PF 1055/1 x <https://granex.cz/x>\nSkladem 1 ks.\n• 324 Kč\n` +
+  `1× K2 NANO SPRYSK Zimní kapalina do ostřikovačů -40°C 5L <https://granex.cz/x>\nSkladem > 5 ks.\n• 181 Kč\n` +
+  `1× DPD – Zásilková služba\n139 Kč\n1× Apple Pay\n\nObjednávka je zaplacena. Celková cena 8 073 Kč včetně DPH`;
+r = rozeberDily(gx);
+ok(r.format === "Granex – objednávka" && r.dodavatel === "Granex" && r.polozky.length === 6, "Granex objednávka: 6 dílů (bez dopravy a platby)", r);
+const g = Object.fromEntries(r.polozky.map(p => [p.cislo || p.nazev, p]));
+ok(g["08224"]?.nazev === "Pouzdro, řadicí tyč FEBI BILSTEIN" && g["08224"].mnozstvi === 12 && g["08224"].cena === 28, "Granex: 12× pouzdro FEBI 08224 po 28 Kč", r.polozky[0]);
+ok(g["24-011839"]?.cena === 2504 && g["03.9901-8110.2"]?.nazev === "ATE Čistič brzd 500ml" && g["03.9901-8110.2"].cena === 69, "Granex: tlumič 2 504 Kč/ks, ATE čistič – číslo ze začátku názvu", r.polozky);
+ok(g["VA872785"]?.cena === 924 && g["PF 1055/1 x"]?.cena === 324 && r.polozky.some(p => /K2 NANO/.test(p.nazev) && p.cislo === "" && p.cena === 181), "Granex: katalogové číslo oleje, MANN PF 1055/1 x, kapalina bez čísla", r.polozky);
+
+// 7) Granex – text PDF faktury (název přes víc řádků, zalomení stránky)
+const gf = `Faktura – Daňový doklad 26569121\nOznačení dodávky Počet M.J. Cena za M.J. DPH % bez DPH DPH Celkem s DPH\n` +
+  `Pouzdro, řadicí tyč FEBI BILSTEIN 08224 12 ks 23,14 Kč 21 % 277,69 Kč 58,31 Kč 336 Kč\n` +
+  `Tlumič pérování BILSTEIN 24-011839 2 ks 2 069,42 Kč 21 % 4 138,84 Kč 869,16 Kč 5 008 Kč\n` +
+  `Montážní sada, řídicí mechanismus MEYLE 014\n033 0001\n2 ks 236,36 Kč 21 % 472,73 Kč 99,27 Kč 572 Kč\n\n` +
+  `Veškeré zboží je určeno k odborné montáži. Dodavatel neručí za škody.\nFakturu vygeneroval e-shop od kvikshop.com\n` +
+  `Brzdová hadice TRW PHB136 2 ks 212,40 Kč 21 % 424,79 Kč 89,21 Kč 514 Kč\nDPD – Zásilková služba 1 ks 114,88 Kč 21 % 114,88 Kč 24,12 Kč 139 Kč\n` +
+  `Apple Pay 1 ks 0 Kč 21 % 0 Kč 0 Kč 0 Kč\nZáklad Výše DPH Celkem s DPH\n21 % 22 714,88 Kč 4 770,12 Kč\n`;
+r = rozeberDily(gf + "\ngranex.cz");
+ok(r.format === "Granex – faktura (PDF)" && r.polozky.length === 4, "Granex faktura: 4 díly (bez DPD, Apple Pay, patičky)", r);
+ok(r.polozky[2].nazev === "Montážní sada, řídicí mechanismus MEYLE" && r.polozky[2].cislo === "014 033 0001" && r.polozky[2].cena === 286, "Granex faktura: název přes 2 řádky, MEYLE 014 033 0001, 286 Kč/ks", r.polozky[2]);
+ok(r.polozky[3].cislo === "PHB136" && r.polozky[3].nazev === "Brzdová hadice TRW" && r.polozky[3].cena === 257, "Granex faktura: řádek po zalomení stránky (TRW PHB136, 257 Kč)", r.polozky[3]);
+
 console.log(chyb ? `\n${chyb} chyb` : "\nVše v pořádku");
 process.exit(chyb ? 1 : 0);
