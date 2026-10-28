@@ -1,5 +1,5 @@
 /* Werkplaats – dílenská aplikace Mercedes Restorations
-   Fáze 1: přihlášení, přehled zakázek, příjem vozu (zákazník → auto → závady → fotky → podpis → zakázkový list 7377/1), detail zakázky. */
+   Fáze 1: přihlášení, přehled zakázek, příjem vozu (zákazník → auto → závady → fotky → podpis → zakázkový list 7377-1), detail zakázky. */
 (() => {
   "use strict";
   const K = window.WERK_KONFIG;
@@ -8,6 +8,11 @@
   /* ================= pomocné funkce ================= */
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const dnes = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const plusDni = (d, n) => {                       // "2026-10-28" + 60 → "2026-12-27"
+    const [y, m, dd] = String(d).split("-").map(Number); const x = new Date(y, m - 1, dd + n);
+    return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+  };
+  const DNI_DOKONCENI = 60;                          // předpoklad dokončení = převzetí + 60 dní
   const datumCz = d => { if (!d) return ""; const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${+m[3]}. ${+m[2]}. ${m[1]}` : d; };
   const kc = n => (n == null || n === "" ? "" : Number(n).toLocaleString("cs-CZ", { maximumFractionDigits: 0 }) + " Kč");
   const cisloZ = s => { const t = String(s ?? "").replace(/\s/g, "").replace(",", "."); return t === "" ? null : Number(t); };
@@ -204,8 +209,9 @@
     return {
       zakaznik: { id: null, je_firma: false, jmeno: "", kontaktni_osoba: "", ico: "", dic: "", ulice: "", psc: "", mesto: "", zeme: "Česká Republika", telefon: "", email: "", jazyk: "cs" },
       vozidlo: { vin: "", typ: "", model: "", rok: "", spz: "", barva: "", verze: "EU", jednotka_tachometru: "km" },
-      zakazka: { datum_prijmu: dnes(), predpoklad_dokonceni: "", km_prijem: "", nadrz_prijem: "1/2", tp_prilozen: true, zavady: [""], stav_prijem: [""], odhad_ceny: "", jazyk: "cs" },
-      fotky: [], podpisZakaznik: null, vysledek: null, krok: "formular"
+      zakazka: { datum_prijmu: dnes(), predpoklad_dokonceni: plusDni(dnes(), DNI_DOKONCENI), km_prijem: "", nadrz_prijem: "1/2", tp_prilozen: true, zavady: [""], stav_prijem: [""], odhad_ceny: "", jazyk: "cs" },
+      fotky: [], podpisZakaznik: null, vysledek: null, krok: "formular",
+      rucne: { datum: false, dokonceni: false }       // true = datum změněné ručně, pak ho aplikace sama nepřepisuje
     };
   }
   let P = null;               // rozpracovaný příjem
@@ -219,7 +225,14 @@
   }
 
   function prijem() {
-    P = nacti(KONCEPT) || novyPrijem();
+    const koncept = nacti(KONCEPT);
+    P = koncept || novyPrijem();
+    P.rucne = P.rucne || { datum: false, dokonceni: false };
+    if (!P.vysledek) {                                 // rozpracovaný příjem z jiného dne: datum vždy dnešní
+      if (!P.rucne.datum) P.zakazka.datum_prijmu = dnes();
+      if (!P.rucne.dokonceni) P.zakazka.predpoklad_dokonceni = plusDni(P.zakazka.datum_prijmu, DNI_DOKONCENI);
+      if (koncept) ulozKoncept();
+    }
     if (P.krok === "podpis") return prijemPodpis();
     vykresliFormular();
   }
@@ -295,10 +308,9 @@
         <div class="mrizka">
           ${pole("zakazka.datum_prijmu", "Datum převzetí", { typ: "date", sirka: "s2" })}
           ${pole("zakazka.km_prijem", `Stav tachometru (${v.jednotka_tachometru === "mi" ? "míle" : "km"})`, { sirka: "s2", attrs: 'inputmode="numeric"' })}
-          ${pole("zakazka.predpoklad_dokonceni", "Předpoklad dokončení", { typ: "date", sirka: "s2" })}
+          ${pole("zakazka.predpoklad_dokonceni", "Předpoklad dokončení", { typ: "date", sirka: "s2", napoveda: P.rucne.dokonceni ? "" : `Převzetí + ${DNI_DOKONCENI} dní` })}
           <div class="s4"><label class="pole">Stav nádrže</label>${segment("zakazka.nadrz_prijem", NADRZ.map(n => [n, n]))}</div>
           <div class="s2"><label class="pole">TP přiložen</label>${segment("zakazka.tp_prilozen", [[true, "Ano"], [false, "Ne"]])}</div>
-          ${pole("zakazka.odhad_ceny", "Odhadovaná cena (Kč)", { sirka: "s2", attrs: 'inputmode="numeric" placeholder="40 000"', napoveda: "Nevyplníte-li, na listu nebude." })}
         </div>
       </section>
 
@@ -308,15 +320,23 @@
       </section>
 
       <section class="karta" id="sekce-stav">
-        <h2><span class="cislo-kroku">5</span>Stav při převzetí</h2>
+        <h2><span class="cislo-kroku">5</span>Stav při převzetí do opravy</h2>
         ${seznamRadku("stav_prijem", 7)}
       </section>
 
+      <section class="karta" id="sekce-odhad">
+        <h2><span class="cislo-kroku">6</span>Odhadovaná cena</h2>
+        <div class="mrizka">
+          ${pole("zakazka.odhad_ceny", "Odhadovaná cena (Kč)", { sirka: "s2", attrs: 'inputmode="numeric" placeholder="40 000"', napoveda: "Nevyplníte-li, na listu nebude." })}
+        </div>
+      </section>
+
       <section class="karta" id="sekce-fotky">
-        <h2><span class="cislo-kroku">6</span>Fotky při převzetí</h2>
+        <h2><span class="cislo-kroku">7</span>Fotky a videa při převzetí</h2>
         <div class="radek-tlacitek">
           <label class="tl tl-hlavni">📷 Vyfotit<input id="foto-kamera" type="file" accept="image/*" capture="environment" hidden></label>
-          <label class="tl">Vybrat z galerie<input id="foto-galerie" type="file" accept="image/*" multiple hidden></label>
+          <label class="tl tl-hlavni">🎥 Natočit video<input id="video-kamera" type="file" accept="video/*" capture="environment" hidden></label>
+          <label class="tl">Vybrat z galerie<input id="foto-galerie" type="file" accept="image/*,video/*" multiple hidden></label>
           <span class="napoveda" id="pocet-fotek"></span>
         </div>
         <div class="fotky" id="fotky"></div>
@@ -341,6 +361,19 @@
         let h = inp.value;
         if (inp.dataset.pole === "vozidlo.vin") { h = h.toUpperCase(); }
         nastavHodnotu(inp.dataset.pole, h);
+        if (inp.dataset.pole === "zakazka.datum_prijmu" && h) {
+          P.rucne.datum = h !== dnes();
+          if (!P.rucne.dokonceni) {                      // dokončení se posouvá s datem převzetí
+            P.zakazka.predpoklad_dokonceni = plusDni(h, DNI_DOKONCENI);
+            const d = app.querySelector('[data-pole="zakazka.predpoklad_dokonceni"]'); if (d) d.value = P.zakazka.predpoklad_dokonceni;
+          }
+          ulozKoncept();
+        }
+        if (inp.dataset.pole === "zakazka.predpoklad_dokonceni") {
+          P.rucne.dokonceni = !!h && h !== plusDni(P.zakazka.datum_prijmu, DNI_DOKONCENI);
+          const n = inp.parentElement.querySelector(".napoveda"); if (n) n.textContent = P.rucne.dokonceni ? "" : `Převzetí + ${DNI_DOKONCENI} dní`;
+          ulozKoncept();
+        }
       });
     });
     const vinInp = app.querySelector('[data-pole="vozidlo.vin"]');
@@ -358,7 +391,8 @@
         const cesta = seg.dataset.segment, h = JSON.parse(b.dataset.hodnota);
         nastavHodnotu(cesta, h);
         if (cesta === "zakaznik.jazyk") P.zakazka.jazyk = h;
-        if (["zakaznik.je_firma", "zakaznik.jazyk", "vozidlo.jednotka_tachometru"].includes(cesta)) { ulozKoncept(); return vykresliFormularZachovatPozici(); }
+        if (cesta === "vozidlo.verze") P.vozidlo.jednotka_tachometru = h === "US" ? "mi" : "km";   // US auta mají tachometr v mílích
+        if (["zakaznik.je_firma", "zakaznik.jazyk", "vozidlo.jednotka_tachometru", "vozidlo.verze"].includes(cesta)) { ulozKoncept(); return vykresliFormularZachovatPozici(); }
         seg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
       });
     });
@@ -390,7 +424,7 @@
     const jiny = app.querySelector("#jiny-zakaznik");
     if (jiny) jiny.onclick = () => { P.zakaznik = novyPrijem().zakaznik; P.zakaznik.jazyk = P.zakazka.jazyk; ulozKoncept(); vykresliFormularZachovatPozici(); };
     // fotky
-    ["#foto-kamera", "#foto-galerie"].forEach(s => app.querySelector(s).addEventListener("change", e => { pridejFotky([...e.target.files]); e.target.value = ""; }));
+    ["#foto-kamera", "#video-kamera", "#foto-galerie"].forEach(s => app.querySelector(s).addEventListener("change", e => { pridejFotky([...e.target.files]); e.target.value = ""; }));
     // spodní lišta
     app.querySelector("#zahodit").onclick = () => {
       if (!confirm("Opravdu zahodit rozpracovaný příjem? Vyplněné údaje se smažou.")) return;
@@ -479,34 +513,69 @@
       img.src = url;
     });
   }
+  /* Video: nezmenšuje se (to iPad v prohlížeči neumí), jen se z něj vezme náhled prvního záběru */
+  const MAX_VIDEO_MB = 50;
+  const jeVideo = s => /^video\//.test(s.type) || /\.(mov|mp4|m4v|webm)$/i.test(s.name || "");
+  function nahledVidea(soubor) {
+    return new Promise(ok => {
+      const url = URL.createObjectURL(soubor), v = document.createElement("video");
+      const konec = n => { URL.revokeObjectURL(url); ok(n); };
+      v.muted = true; v.playsInline = true; v.preload = "auto";
+      v.onloadeddata = () => { v.currentTime = Math.min(0.5, (v.duration || 1) / 2); };
+      v.onseeked = () => {
+        try {
+          const st = 320 / Math.max(v.videoWidth, v.videoHeight), c = document.createElement("canvas");
+          c.width = Math.round(v.videoWidth * st); c.height = Math.round(v.videoHeight * st);
+          c.getContext("2d").drawImage(v, 0, 0, c.width, c.height); konec(c.toDataURL("image/jpeg", 0.7));
+        } catch (e) { konec(null); }
+      };
+      v.onerror = () => konec(null);
+      setTimeout(() => konec(null), 8000);
+      v.src = url;
+    });
+  }
   async function pridejFotky(soubory) {
     for (const s of soubory) {
-      const id = uuid();
-      const f = { id, klic: null, nahled: null, stav: "nahravam", nazev: s.name };
+      const id = uuid(), video = jeVideo(s);
+      if (video && s.size > MAX_VIDEO_MB * 1024 * 1024) {
+        hlaska(`Video má ${Math.round(s.size / 1048576)} MB – nahrát jde nejvýš ${MAX_VIDEO_MB} MB (zhruba 30–40 s ve Full HD). Natočte prosím kratší.`, true, 8000);
+        continue;
+      }
+      const mime = video ? (s.type || "video/quicktime") : "image/jpeg";
+      const f = { id, klic: null, nahled: null, stav: "nahravam", nazev: s.name, video, mime };
       P.fotky.push(f); vykresliFotky();
       try {
-        const { blob, nahled } = await zmensi(s);
-        f.nahled = nahled; blobyFotek[id] = blob; vykresliFotky();
+        if (video) { blobyFotek[id] = s; f.nahled = await nahledVidea(s); }
+        else { const { blob, nahled } = await zmensi(s); f.nahled = nahled; blobyFotek[id] = blob; }
+        vykresliFotky();
         await nahrajFotku(f);
       } catch (e) { f.stav = "chyba"; vykresliFotky(); hlaska(chybaText(e), true); }
     }
   }
+  const PRIPONA = { "video/quicktime": "mov", "video/mp4": "mp4", "video/webm": "webm", "video/x-m4v": "m4v", "image/jpeg": "jpg" };
   async function nahrajFotku(f) {
-    const d = new Date();
-    const klic = `fotky/${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${f.id}.jpg`;
+    const d = new Date(), mime = f.mime || "image/jpeg";
+    const klic = `${f.video ? "videa" : "fotky"}/${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${f.id}.${PRIPONA[mime] || "bin"}`;
     f.stav = "nahravam"; vykresliFotky();
-    try { await db.nahrat(klic, blobyFotek[f.id], "image/jpeg"); f.klic = klic; f.stav = "nahrano"; delete blobyFotek[f.id]; }
+    try { await db.nahrat(klic, blobyFotek[f.id], mime); f.klic = klic; f.stav = "nahrano"; delete blobyFotek[f.id]; }
     catch (e) { if (/exists|Duplicate/i.test(chybaText(e))) { f.klic = klic; f.stav = "nahrano"; } else { f.stav = "chyba"; } }
     vykresliFotky(); ulozKoncept();
   }
   function vykresliFotky() {
     const el = document.getElementById("fotky"); if (!el || !P) return;
     el.innerHTML = P.fotky.map((f, i) => `<div class="fotka">${f.nahled ? `<img src="${f.nahled}" alt="">` : ""}
+      ${f.video ? `<span class="ikona-videa">▶</span>` : ""}
       ${f.stav !== "nahrano" ? `<span class="stav-fotky ${f.stav === "chyba" ? "chyba" : ""}">${f.stav === "chyba" ? "Nenahráno – klepněte" : "Nahrávám…"}</span>` : ""}
       <button type="button" class="odebrat" data-i="${i}" aria-label="Odebrat fotku">×</button></div>`).join("");
     el.querySelectorAll(".odebrat").forEach(b => b.onclick = () => { const f = P.fotky.splice(+b.dataset.i, 1)[0]; delete blobyFotek[f.id]; vykresliFotky(); ulozKoncept(); });
     el.querySelectorAll(".stav-fotky.chyba").forEach((s, i) => s.onclick = () => { const f = P.fotky.filter(x => x.stav === "chyba")[i]; if (blobyFotek[f.id]) nahrajFotku(f); });
-    const n = document.getElementById("pocet-fotek"); if (n) n.textContent = P.fotky.length ? `${P.fotky.length} ${P.fotky.length === 1 ? "fotka" : P.fotky.length < 5 ? "fotky" : "fotek"}` : "";
+    const n = document.getElementById("pocet-fotek"); if (n) n.textContent = popisPoctu(P.fotky);
+  }
+
+  function popisPoctu(soubory) {
+    const v = soubory.filter(f => f.video).length, f = soubory.length - v;
+    const sklon = (n, a, b, c) => `${n} ${n === 1 ? a : n < 5 ? b : c}`;
+    return [f && sklon(f, "fotka", "fotky", "fotek"), v && sklon(v, "video", "videa", "videí")].filter(Boolean).join(", ");
   }
 
   /* ---------- data pro šablonu zakázkového listu ---------- */
@@ -514,7 +583,7 @@
     const z = P.zakaznik, v = P.vozidlo, k = P.zakazka, en = k.jazyk === "en";
     const odhad = cisloZ(k.odhad_ceny);
     return {
-      cislo: cislo ? `${cislo}/1` : null,                      // zakázkový list = číslo zakázky /1
+      cislo: cislo ? `${cislo}-1` : null,                      // zakázkový list = číslo zakázky -1
       zakaznik: { jmeno: z.jmeno.trim(), ulice: z.ulice.trim(), mesto: [z.psc.trim(), z.mesto.trim()].filter(Boolean).join(" "), zeme: z.zeme.trim(), telefon: z.telefon.trim(), email: z.email.trim() },
       zavady: k.zavady.map(s => s.trim()).filter(Boolean),
       vozidlo: { znacka: "Mercedes-Benz", typ: v.typ.trim(), model: v.model.trim(), rok: String(v.rok).trim(), vin: v.vin.replace(/\s/g, "") },
@@ -626,7 +695,7 @@
       p.text("Vytvářím zakázkový list…");
       const data = dataZakazkovehoListu(cislo, podpisVyh, podpisZak);
       const w = await vykresliSablonu(iframe, "zakazkovy-list.html", data, P.zakazka.jazyk);
-      const bytes = await w.dokumentDoPdf(w.document, { nazev: `${P.zakazka.jazyk === "en" ? "Work order" : "Zakázkový list"} ${cislo}/1`, predmet: `${data.vozidlo.typ} ${data.vozidlo.model} · ${data.vozidlo.vin}` });
+      const bytes = await w.dokumentDoPdf(w.document, { nazev: `${P.zakazka.jazyk === "en" ? "Work order" : "Zakázkový list"} ${cislo}-1`, predmet: `${data.vozidlo.typ} ${data.vozidlo.model} · ${data.vozidlo.vin}` });
       const otisk = await w.otiskPdf(bytes);
       // 4) uložit PDF a podpis zákazníka
       p.text("Ukládám PDF…");
@@ -642,7 +711,7 @@
       // 5) doklad (zamčený) + podpisy
       const ulozenaData = { ...data }; delete ulozenaData.podpisVyhotovil; delete ulozenaData.podpisZakaznik;
       const [doklad] = await db.vlozit("doklady", [{
-        zakazka_id, druh: "zakazkovy_list", verze: 1, cislo: `${cislo}/1`, variabilni_symbol: `${cislo}1`, jazyk: P.zakazka.jazyk,
+        zakazka_id, druh: "zakazkovy_list", verze: 1, cislo: `${cislo}-1`, variabilni_symbol: `${cislo}1`, jazyk: P.zakazka.jazyk,
         vystaveno: P.zakazka.datum_prijmu, data: ulozenaData, pdf_soubor_id: pdfSoubor.id, zamceno: true
       }]);
       await db.upravit("soubory", pdfSoubor.id, { doklad_id: doklad.id });
@@ -651,7 +720,7 @@
         { doklad_id: doklad.id, role: "vyhotovil", jmeno: uzivatel.jmeno || "Václav Macháň", zpusob: "ulozeny", otisk_dokumentu: otisk }
       ]);
       // 6) fotky k zakázce
-      if (P.fotky.length) await db.vlozit("soubory", P.fotky.map(f => ({ zakazka_id, vozidlo_id, druh: "foto", faze: "prijem", klic: f.klic, nazev: f.nazev || null, mime: "image/jpeg" })));
+      if (P.fotky.length) await db.vlozit("soubory", P.fotky.map(f => ({ zakazka_id, vozidlo_id, druh: f.video ? "video" : "foto", faze: "prijem", klic: f.klic, nazev: f.nazev || null, mime: f.mime || "image/jpeg" })));
       posledniPdf = { zakazka_id, cislo, bytes, nazev: `${cislo}-1.pdf` };
       uloz(KONCEPT, null); P = null;
       p.zavri();
@@ -674,7 +743,7 @@
     app.innerHTML = `<div class="karta hotovo">
       <div class="fajfka">✓</div>
       <div class="mutted">Zakázkový list uložen</div>
-      <div class="velke-cislo">${pdf ? `${pdf.cislo}/1` : ""}</div>
+      <div class="velke-cislo">${pdf ? `${pdf.cislo}-1` : ""}</div>
       <p class="mutted">PDF je uložené u zakázky. Zákazníkovi ho můžete hned poslat.</p>
       <div class="radek-tlacitek">
         ${pdf ? `<button class="tl tl-hlavni tl-velke" id="sdilet">Poslat / sdílet PDF</button><button class="tl tl-velke" id="otevrit">Otevřít PDF</button>` : ""}
@@ -700,7 +769,7 @@
     try { z = await db.detail(id); } catch (e) { app.innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
     if (!z) { app.innerHTML = `<div class="info chyba">Zakázka nenalezena.</div>`; return; }
     const v = z.vozidla || {}, c = z.zakaznici || {};
-    const fotky = (z.soubory || []).filter(s => s.druh === "foto" && !s.smazano);
+    const fotky = (z.soubory || []).filter(s => (s.druh === "foto" || s.druh === "video") && !s.smazano).map(s => ({ ...s, video: s.druh === "video" }));
     const jedn = v.jednotka_tachometru === "mi" ? "mi" : "km";
     app.innerHTML = `
       <div class="hlavicka-prehledu">
@@ -725,9 +794,9 @@
         <dl class="udaje">${z.predpoklad_dokonceni ? `<div><dt>Předpoklad dokončení</dt><dd>${datumCz(z.predpoklad_dokonceni)}</dd></div>` : ""}
           ${z.odhad_ceny != null ? `<div><dt>Odhadovaná cena</dt><dd>${kc(z.odhad_ceny)}</dd></div>` : ""}</dl>
         ${z.zavady?.length ? `<p style="margin:14px 0 0"><b>Závady a objednané opravy</b></p><ul class="odrazky">${z.zavady.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
-        ${z.stav_prijem?.length ? `<p style="margin:14px 0 0"><b>Stav při převzetí</b></p><ul class="odrazky">${z.stav_prijem.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
+        ${z.stav_prijem?.length ? `<p style="margin:14px 0 0"><b>Stav při převzetí do opravy</b></p><ul class="odrazky">${z.stav_prijem.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
       </section>
-      <section class="karta"><h2>Fotky (${fotky.length})</h2><div class="fotky" id="fotky-detail"></div></section>`;
+      <section class="karta"><h2>Fotky a videa${fotky.length ? ` (${popisPoctu(fotky)})` : ""}</h2><div class="fotky" id="fotky-detail"></div></section>`;
     app.querySelectorAll("[data-pdf]").forEach(b => b.onclick = async () => {
       const okno = window.open("", "_blank");
       try { const u = await db.odkaz(b.dataset.pdf, 600); if (okno) okno.location = u; else location.href = u; }
@@ -736,7 +805,9 @@
     if (fotky.length) {
       try {
         const odk = await db.odkazy(fotky.map(f => f.klic));
-        app.querySelector("#fotky-detail").innerHTML = odk.map(o => `<a class="fotka" href="${esc(o.signedUrl)}" target="_blank" rel="noopener"><img src="${esc(o.signedUrl)}" alt="" loading="lazy"></a>`).join("");
+        app.querySelector("#fotky-detail").innerHTML = odk.map((o, i) => fotky[i].video
+          ? `<div class="fotka"><video src="${esc(o.signedUrl)}#t=0.5" controls playsinline preload="metadata"></video></div>`
+          : `<a class="fotka" href="${esc(o.signedUrl)}" target="_blank" rel="noopener"><img src="${esc(o.signedUrl)}" alt="" loading="lazy"></a>`).join("");
       } catch (e) { app.querySelector("#fotky-detail").innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; }
     }
   }

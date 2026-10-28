@@ -151,8 +151,8 @@ create table dily (
 
 -- ============ Doklady, podpisy, soubory ============
 -- Číslo dokladu = číslo zakázky / pevná přípona podle druhu (-verze od druhé verze):
---   7377/1 zakázkový list · 7377/2 cenová nabídka (7377/2-2 další verze) · 7377/3 faktura (7377/3-2 doúčtování)
---   7377/4 předávací protokol · 7377/5 zálohová faktura · 7377/6 opravný doklad k faktuře
+--   7377-1 zakázkový list · 7377-2 cenová nabídka (7377-2-2 další verze) · 7377-3 faktura (7377-3-2 doúčtování)
+--   7377-4 předávací protokol · 7377-5 zálohová faktura · 7377-6 opravný doklad k faktuře  (pomlčka – změněno 28. 10.)
 create type druh_dokladu as enum ('zakazkovy_list','nabidka','faktura','predavaci_protokol','zalohova','opravny');
 create function pripona_dokladu(d public.druh_dokladu) returns int language sql immutable set search_path = '' as $$
   select case d when 'zakazkovy_list' then 1 when 'nabidka' then 2 when 'faktura' then 3
@@ -164,7 +164,7 @@ create table doklady (
   nabidka_id uuid references nabidky(id),
   druh druh_dokladu not null,
   verze int not null default 1,
-  cislo text not null,                         -- 7377/3, 7377/2-2 (skládá aplikace z čísla zakázky, přípony a verze)
+  cislo text not null,                         -- 7377-3, 7377-2-2 (skládá aplikace z čísla zakázky, přípony a verze)
   variabilni_symbol text not null,             -- jen číslice pro banku: 73773, 737322
   jazyk text not null default 'cs',
   vystaveno date not null default current_date, splatnost date,

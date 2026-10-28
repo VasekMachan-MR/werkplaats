@@ -37,6 +37,19 @@ const server = http.createServer((q, r) => {
 
   // ---------- příjem 1: nový zákazník ----------
   await p.click("text=Nový příjem vozu");
+  const dnesek = await p.evaluate(() => { const d = new Date(); return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0")].join("-"); });
+  const za60 = await p.evaluate(() => { const d = new Date(); d.setDate(d.getDate() + 60); return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0")].join("-"); });
+  kontrola(await p.inputValue('[data-pole="zakazka.datum_prijmu"]') === dnesek, "datum převzetí = dnešek");
+  kontrola(await p.inputValue('[data-pole="zakazka.predpoklad_dokonceni"]') === za60, "předpoklad dokončení = dnešek + 60 dní");
+  await p.fill('[data-pole="zakazka.datum_prijmu"]', "2026-11-02");
+  kontrola(await p.inputValue('[data-pole="zakazka.predpoklad_dokonceni"]') === "2027-01-01", "změna data převzetí posune dokončení (2. 11. → 1. 1.)");
+  await p.fill('[data-pole="zakazka.datum_prijmu"]', dnesek);
+  await p.click('[data-segment="vozidlo.verze"] >> text=US');
+  kontrola(await p.getAttribute('[data-segment="vozidlo.jednotka_tachometru"] button[aria-pressed="true"]', "data-hodnota") === '"mi"', "US verze přepne tachometr na míle");
+  kontrola(await p.isVisible("text=Stav tachometru (míle)"), "popisek tachometru v mílích");
+  await p.click('[data-segment="vozidlo.verze"] >> text=EU');
+  kontrola(await p.getAttribute('[data-segment="vozidlo.jednotka_tachometru"] button[aria-pressed="true"]', "data-hodnota") === '"km"', "EU verze vrátí km");
+  kontrola(await p.isVisible("text=Stav při převzetí do opravy") && await p.isVisible("#sekce-odhad >> text=6") && await p.isVisible("#sekce-fotky >> text=7"), "pořadí: 6 Odhadovaná cena, 7 Fotky");
   await p.fill('[data-pole="zakaznik.jmeno"]', "Jan Novák");
   await p.fill('[data-pole="zakaznik.ulice"]', "Lipová 12");
   await p.fill('[data-pole="zakaznik.psc"]', "500 02");
@@ -68,9 +81,13 @@ const server = http.createServer((q, r) => {
   await p.setInputFiles("#foto-galerie", ["testy/auto-1.jpg", "testy/auto-2.jpg"]);
   await p.waitForFunction(() => document.querySelectorAll("#fotky .fotka img").length === 2 && !document.querySelector(".stav-fotky"));
   kontrola(true, "2 fotky zmenšeny a nahrány");
+  await p.setInputFiles("#video-kamera", "testy/video-test.webm");
+  await p.waitForFunction(() => document.querySelectorAll("#fotky .fotka").length === 3 && !document.querySelector(".stav-fotky"));
+  kontrola(await p.locator("#fotky .ikona-videa").count() === 1 && await p.locator("#fotky .fotka img").count() === 3, "video nahráno i s náhledem");
+  kontrola((await p.textContent("#pocet-fotek")) === "2 fotky, 1 video", "počet: 2 fotky, 1 video");
   // rozpracovaný příjem přežije obnovení stránky
   await p.reload(); await p.waitForSelector('[data-pole="zakaznik.jmeno"]');
-  kontrola(await p.inputValue('[data-pole="zakaznik.jmeno"]') === "Jan Novák" && await p.locator("#fotky .fotka").count() === 2, "rozpracovaný příjem přežil obnovení stránky");
+  kontrola(await p.inputValue('[data-pole="zakaznik.jmeno"]') === "Jan Novák" && await p.locator("#fotky .fotka").count() === 3, "rozpracovaný příjem přežil obnovení stránky");
   await foto("02-prijem-formular");
 
   await p.click("#k-podpisu");
@@ -87,19 +104,21 @@ const server = http.createServer((q, r) => {
   await foto("03-nahled-podpis");
   await p.click("#ulozit");
   await p.waitForSelector("text=Zakázkový list uložen");
-  kontrola(await p.isVisible("text=7377/1"), "uloženo jako 7377/1");
-  kontrola((await p.evaluate(() => document.querySelector(".velke-cislo").textContent)) === "7377/1", "číslo dokladu 7377/1");
+  kontrola(await p.isVisible("text=7377-1"), "uloženo jako 7377-1");
+  kontrola((await p.evaluate(() => document.querySelector(".velke-cislo").textContent)) === "7377-1", "číslo dokladu 7377-1");
   await foto("04-hotovo");
 
   const ulozeno = await p.evaluate(() => ({ t: window.__ULOZENO__.tabulky, pdf: Object.entries(window.__ULOZENO__.soubory).filter(([k]) => k.endsWith(".pdf")).map(([k, v]) => [k, Array.from(v)]) }));
-  kontrola(ulozeno.t.doklady.length === 1 && ulozeno.t.doklady[0].cislo === "7377/1" && ulozeno.t.doklady[0].variabilni_symbol === "73771" && ulozeno.t.doklady[0].zamceno, "doklad 7377/1, VS 73771, uzamčený");
+  kontrola(ulozeno.t.doklady.length === 1 && ulozeno.t.doklady[0].cislo === "7377-1" && ulozeno.t.doklady[0].variabilni_symbol === "73771" && ulozeno.t.doklady[0].zamceno, "doklad 7377-1, VS 73771, uzamčený");
   kontrola(ulozeno.t.podpisy.length === 2 && ulozeno.t.podpisy.every(x => /^[0-9a-f]{64}$/.test(x.otisk_dokumentu)), "2 podpisy s otiskem SHA-256");
-  kontrola(ulozeno.t.soubory.filter(s => s.druh === "foto").length === 2, "fotky přiřazené k zakázce");
+  kontrola(ulozeno.t.soubory.filter(s => s.druh === "foto").length === 2 && ulozeno.t.soubory.filter(s => s.druh === "video" && s.mime === "video/webm" && /^videa\/.*\.webm$/.test(s.klic)).length === 1, "2 fotky a 1 video přiřazené k zakázce");
   kontrola(ulozeno.t.zakazky[0].zavady.length === 5 && ulozeno.t.zakazky[0].km_prijem === 123456 && ulozeno.t.zakazky[0].odhad_ceny === 40000, "závady, km a odhad uložené");
   fs.writeFileSync(path.join(OUT, "7377-1.pdf"), Buffer.from(ulozeno.pdf[0][1]));
 
   await p.click("text=Detail zakázky");
   await p.waitForSelector("text=Otevřít PDF");
+  await p.waitForSelector("#fotky-detail video");
+  kontrola(await p.locator("#fotky-detail video").count() === 1 && await p.locator("#fotky-detail img").count() === 2, "detail ukazuje 2 fotky a přehrávatelné video");
   await foto("05-detail");
 
   // ---------- příjem 2: stejné auto, stávající zákazník přes hledání ----------
@@ -125,7 +144,7 @@ const server = http.createServer((q, r) => {
   await p.mouse.up(); await p.waitForTimeout(300);
   await p.click("#ulozit");
   await p.waitForSelector("text=Zakázkový list uložen");
-  kontrola(await p.isVisible("text=7378/1"), "druhá zakázka 7378/1 (anglicky)");
+  kontrola(await p.isVisible("text=7378-1"), "druhá zakázka 7378-1 (anglicky)");
   const u2 = await p.evaluate(() => ({ t: window.__ULOZENO__.tabulky, pdf: Object.entries(window.__ULOZENO__.soubory).filter(([k]) => k.includes("7378") && k.endsWith(".pdf")).map(([k, v]) => [k, Array.from(v)]) }));
   kontrola(u2.t.zakaznici.length === 1 && u2.t.vozidla.length === 1 && u2.t.vlastnictvi.length === 1, "zákazník i auto jen jednou (nic zdvojeného)");
   fs.writeFileSync(path.join(OUT, "7378-1.pdf"), Buffer.from(u2.pdf[0][1]));

@@ -7,7 +7,7 @@ Firemní systém autoservisu Mercedes Restorations s.r.o.:
 ## Co už funguje (fáze 1 – příjem vozu)
 Přihlášení → přehled zakázek → nový příjem: zákazník (pozná stávajícího), auto podle VIN (pozná známé auto, z VIN doplní typ),
 nádrž, km, TP, závady a stav (rychlé texty), fotky (zmenšené, rovnou nahrané), náhled zakázkového listu,
-podpis zákazníka prstem / perem → **zakázkový list 7377/1** jako PDF (1:1 s původním Excelem), uložený a uzamčený, s otiskem SHA-256.
+podpis zákazníka prstem / perem → **zakázkový list 7377-1** jako PDF (1:1 s původním Excelem), uložený a uzamčený, s otiskem SHA-256.
 
 ## Složky
 - `aplikace/` – webová aplikace (PWA), bez sestavovacích nástrojů
@@ -17,8 +17,8 @@ podpis zákazníka prstem / perem → **zakázkový list 7377/1** jako PDF (1:1 
 - `build.js` – sestaví `dist/` pro Cloudflare Pages (`npm run build`, výstupní složka `dist`)
 
 ## Číslování
-Číslo zakázky (od 7377) + přípona podle dokladu: `/1` zakázkový list, `/2` nabídka (`/2-2` další verze), `/3` faktura,
-`/4` předávací protokol, `/5` zálohová faktura, `/6` opravný doklad. Variabilní symbol = číslo bez lomítka (7377/3 → 73773).
+Číslo zakázky (od 7377) + pomlčka a přípona podle dokladu: `-1` zakázkový list, `-2` nabídka (`-2-2` další verze), `-3` faktura
+(`-3-2` doúčtování), `-4` předávací protokol, `-5` zálohová faktura, `-6` opravný doklad. Variabilní symbol = jen číslice (7377-3 → 73773).
 
 ## Pravidla
 - Osobní údaje zákazníků a podpisy nikdy do gitu – patří do databáze / zabezpečeného úložiště.
