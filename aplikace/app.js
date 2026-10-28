@@ -1356,11 +1356,13 @@
       E.marze = Number(Object.entries(pocty).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 30);
     }
     el.innerHTML = `
-      ${E.dily.length ? `<div class="marze-vse">
+      ${E.dily.length ? `<details class="marze-sbal" id="marze-sbal" ${E.marzeOtevrena ? "open" : ""}>
+        <summary><span class="sipka" aria-hidden="true">▸</span> Marže <span class="mutted">(${mnozstviCz(E.marze)} %)</span></summary>
+        <div class="marze-vse">
         <label>Marže pro všechny díly<span class="marze-pole"><input class="vstup cislo" id="marze-vse" value="${E.marze}" inputmode="decimal" aria-label="Marže v procentech"> %</span></label>
         <button type="button" class="tl tl-hlavni tl-male" id="marze-pouzit">Použít na všechny díly</button>
         <span class="napoveda">Přepočítá prodejní cenu všech dílů s nákupní cenou. U jednotlivých dílů jde marže dál změnit zvlášť.</span>
-      </div>` : ""}
+      </div></details>` : ""}
       ${E.dily.map((d, i) => `
       <div class="dil" data-i="${i}">
         <div class="dil-r1">
@@ -1422,6 +1424,8 @@
         if (okno) okno.location = u; else window.open(u, "_blank");
       } catch (e) { okno?.close(); hlaska("Parts list se nepodařil: " + chybaText(e), true); }
     };
+    const ms = el.querySelector("#marze-sbal");
+    if (ms) ms.addEventListener("toggle", () => { E.marzeOtevrena = ms.open; if (ms.open) el.querySelector("#marze-vse")?.focus(); });
     const mv = el.querySelector("#marze-vse");
     if (mv) {
       const pouzit = () => {

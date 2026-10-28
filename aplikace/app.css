@@ -362,7 +362,14 @@ div.odkaz-radek { cursor: pointer; }
 .kontakt-odkaz:active { text-decoration: underline; }
 
 /* společná marže pro všechny díly */
-.marze-vse { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; padding: 12px 14px; margin-bottom: 12px; border-radius: 12px; background: var(--modra-svetla); }
+.marze-sbal { margin-bottom: 12px; }
+.marze-sbal > summary { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 12px; border: 1.5px solid var(--linka); border-radius: 10px;
+  font-weight: 600; color: var(--navy); cursor: pointer; list-style: none; user-select: none; -webkit-user-select: none; }
+.marze-sbal > summary::-webkit-details-marker { display: none; }
+.marze-sbal > summary .sipka { display: inline-block; transition: transform .15s; }
+.marze-sbal[open] > summary .sipka { transform: rotate(90deg); }
+.marze-sbal > summary .mutted { font-weight: 400; }
+.marze-vse { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; padding: 12px 14px; margin-top: 8px; border-radius: 12px; background: var(--modra-svetla); }
 .marze-vse label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--sedy); }
 .marze-vse .marze-pole { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-weight: 600; }
 .marze-vse input { width: 84px; min-height: 40px; }

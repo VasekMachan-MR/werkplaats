@@ -319,7 +319,9 @@ const server = http.createServer((q, r) => {
     "import z PDF faktury Granexu: 2 díly, název přes 2 řádky, 286 Kč/ks, dodavatel Granex " + JSON.stringify(radkyPdf));
   await p.click("#imp-zavrit");
   // společná marže pro všechny díly
-  kontrola(await p.inputValue("#marze-vse") === "30", "master marže ukazuje 30 % (marže dílů zakázky)");
+  kontrola(!(await p.isVisible("#marze-vse")) && await p.isVisible("#marze-sbal > summary"), "marže pro všechny díly je schovaná pod rozbalovací šipkou");
+  await p.click("#marze-sbal > summary");
+    kontrola(await p.inputValue("#marze-vse") === "30", "master marže ukazuje 30 % (marže dílů zakázky)");
   await p.fill("#marze-vse", "40"); await p.click("#marze-pouzit");
   await p.waitForSelector("#stav-dilu >> text=✓ Uloženo");
   const dm = await p.evaluate(() => window.__ULOZENO__.tabulky.dily.find(d => d.cislo_mb === "LO 00596"));
