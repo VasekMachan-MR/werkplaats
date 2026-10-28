@@ -1,0 +1,14 @@
+{
+ "cislo": 7372,
+ "dily": [
+  { "nazev": "722.4 reseal kit", "mnozstvi": 1, "cislo": "MERC126.OHK05", "cena": 4710 },
+  { "nazev": "O/HAUL kit precision", "mnozstvi": 1, "cislo": "MERC123.OHK07", "cena": 3140 },
+  { "nazev": "Aut. Trans. parts. shipping", "cena": 748 },
+  { "nazev": "Aut trans fluid + filter kit", "mnozstvi": 1, "cislo": "MEYLE0141351600", "cena": 4018 },
+  { "nazev": "Engine oil Valvoline MaxLife", "mnozstvi": 8.5, "cislo": "15W-40", "cena": 3035 },
+  { "nazev": "Engine oil filter Mann", "mnozstvi": 1, "cislo": "H 929 x", "cena": 301 },
+  { "nazev": "Air filter Mann", "mnozstvi": 1, "cislo": "C 40 174", "cena": 708 },
+  { "nazev": "Power steering box filter Mann", "mnozstvi": 1, "cislo": "H 85", "cena": 281 },
+  { "nazev": "Power steering box fluid", "mnozstvi": 1, "cislo": "MEYLE0140192300", "cena": 455 }
+ ]
+}

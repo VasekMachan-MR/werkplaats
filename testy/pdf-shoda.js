@@ -6,7 +6,7 @@ fs.mkdirSync(VYSTUP, { recursive: true });
 const sablony = path.resolve('dokumenty/sablony');
 const pripady = fs.readdirSync('dokumenty/testovaci-data').filter(f => f.endsWith('.json')).map(f => ({
   jmeno: f.replace('.json', ''),
-  sablona: /^(faktura|nabidka)/.test(f) ? 'faktura.html' : 'zakazkovy-list.html',
+  sablona: /^(faktura|nabidka)/.test(f) ? 'faktura.html' : /^parts-list/.test(f) ? 'parts-list.html' : 'zakazkovy-list.html',
   jazyk: /-en/.test(f) ? 'en' : 'cs',
   data: JSON.parse(fs.readFileSync(path.join('dokumenty/testovaci-data', f)))
 }));

@@ -17,15 +17,15 @@ const FIRMA = {
 
 const BARVA = "#092a4f";
 /* Pozice v podkladech = horní hrana písma v PDF; CSS box začíná o kousek výš. */
-const KAL = { sans: 0.043, serif: 0.033 };
+const KAL = { sans: 0.043, serif: 0.033, calibri: 0.043 };
 
 const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
 /* Excel umisťuje každý znak na mřížku 0,98 pt – napodobujeme, aby šířky textů seděly s originálem. */
-const Q = 0.98;
+const Q = window.MR_MRIZKA || 0.98;       // parts list je z Excelu tištěného na 100 % → mřížka 1 pt
 const _ctx = document.createElement("canvas").getContext("2d");
 function adv(ch, size, bold, serif) {
-  _ctx.font = `${bold ? 700 : 400} 100px ${serif ? '"MR Serif"' : '"MR Sans"'}`;
+  _ctx.font = `${bold ? 700 : 400} 100px ${serif === "calibri" ? '"MR Calibri"' : serif ? '"MR Serif"' : '"MR Sans"'}`;
   const w = _ctx.measureText(ch).width / 100 * size;
   return Math.max(0, Math.round(w / Q)) * Q;
 }
@@ -36,11 +36,11 @@ function spans(text, size, bold, serif) {
 /* Šířka textu v pt (stejně jako ho vykreslí T) */
 const sirka = (text, size, bold, serif) => [...String(text ?? "")].reduce((a, ch) => a + adv(ch, size, bold, serif), 0);
 /* Když se text nevejde do maxW, zmenší písmo (min. 7,8 pt) a případně zkrátí se „…“ */
-function vejdeSe(text, size, bold, maxW) {
+function vejdeSe(text, size, bold, maxW, serif = false, minSize = 7.8) {
   let s = size;
-  while (s > 7.8 && sirka(text, s, bold) > maxW) s = Math.round((s - 0.2) * 10) / 10;
+  while (s > minSize && sirka(text, s, bold, serif) > maxW) s = Math.round((s - 0.2) * 10) / 10;
   let t = String(text);
-  if (sirka(t, s, bold) > maxW) { while (t.length > 1 && sirka(t + "…", s, bold) > maxW) t = t.slice(0, -1); t += "…"; }
+  if (sirka(t, s, bold, serif) > maxW) { while (t.length > 1 && sirka(t + "…", s, bold, serif) > maxW) t = t.slice(0, -1); t += "…"; }
   return { text: t, size: s };
 }
 /* Zalomí text do řádků širokých max. maxW (pt) – po slovech */
@@ -68,10 +68,10 @@ function odrazky(x, y, polozky, maxRadku, maxW = 278, krok = 12.75) {
 /* Text na pozici x,y (pt). opts: size, b (tučně), serif, c (na střed x), r (zarovnat vpravo k x), ink (černá) */
 function T(x, y, text, opts = {}) {
   if (text == null || text === "") return "";
-  if (opts.maxW) { const f = vejdeSe(text, opts.size || 9.8, !!opts.b, opts.maxW); text = f.text; opts = { ...opts, size: f.size }; }
-  const size = opts.size || 9.8, serif = !!opts.serif, bold = !!opts.b;
-  const dy = (serif ? KAL.serif : KAL.sans) * size;
-  const cls = ["t", bold ? "b" : "", serif ? "serif" : "", opts.c ? "c" : "", opts.r ? "r" : "", opts.ink ? "ink" : ""].join(" ");
+  if (opts.maxW) { const f = vejdeSe(text, opts.size || 9.8, !!opts.b, opts.maxW, opts.calibri ? "calibri" : !!opts.serif, opts.minSize); text = f.text; opts = { ...opts, size: f.size }; }
+  const size = opts.size || 9.8, serif = opts.calibri ? "calibri" : !!opts.serif, bold = !!opts.b;
+  const dy = (serif === "calibri" ? KAL.calibri : serif ? KAL.serif : KAL.sans) * size;
+  const cls = ["t", bold ? "b" : "", serif === "calibri" ? "calibri" : serif ? "serif" : "", opts.c ? "c" : "", opts.r ? "r" : "", opts.ink ? "ink" : ""].join(" ");
   return `<div class="${cls}" style="left:${x}pt;top:${(y - dy).toFixed(2)}pt;font-size:${size}pt">${spans(text, size, bold, serif)}</div>`;
 }
 const L = (x0, y0, x1, y1, fill = BARVA) =>
@@ -102,5 +102,5 @@ function paticka(strana, celkem) {
 }
 
 async function nactiPisma() {
-  await Promise.all(['400 10px "MR Sans"', '700 10px "MR Sans"', '400 10px "MR Serif"'].map(f => document.fonts.load(f, "Aá")));
+  await Promise.all(['400 10px "MR Sans"', '700 10px "MR Sans"', '400 10px "MR Serif"', '400 10px "MR Calibri"', '700 10px "MR Calibri"'].map(f => document.fonts.load(f, "Aá")));
 }

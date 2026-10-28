@@ -1,0 +1,10 @@
+{
+ "ceny": false,
+ "dily": [
+  { "nazev": "Fuel pump intermediate holder", "mnozstvi": 1, "cislo": "A2014920116", "poznamka": "Original MB", "puvod": "original" },
+  { "nazev": "Exhaust pipe stop rubber", "mnozstvi": 2, "cislo": "A1239870940", "poznamka": "Original MB", "puvod": "original" },
+  { "nazev": "Fuel pump Bosch", "mnozstvi": 2, "cislo": "A0030915301", "poznamka": "+ o-rings", "puvod": "aftermarket" },
+  { "nazev": "Coolant 325.0", "mnozstvi": "9l", "poznamka": "up to -36°C", "puvod": "aftermarket" },
+  { "nazev": "ATF cooler hose - right", "cislo": "A 019 997 85 82", "poznamka": "Original MB", "puvod": "original" }
+ ]
+}

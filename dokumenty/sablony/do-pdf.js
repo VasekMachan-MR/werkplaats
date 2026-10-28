@@ -42,10 +42,13 @@
     await Promise.all([...doc.images].map(i => i.complete ? null : i.decode().catch(() => null)));
 
     const pisma = {};
-    const soubor = { "sans-400": "LiberationSans-Regular", "sans-700": "LiberationSans-Bold", "serif-400": "LiberationSerif-Regular", "serif-700": "LiberationSerif-Regular" };
+    const soubor = { "sans-400": "LiberationSans-Regular", "sans-700": "LiberationSans-Bold", "serif-400": "LiberationSerif-Regular", "serif-700": "LiberationSerif-Regular",
+                     "calibri-400": "Carlito-Regular", "calibri-700": "Carlito-Bold" };
     async function pismo(rodina, vaha) {
-      const k = `${/serif/i.test(rodina) && !/sans/i.test(rodina) ? "serif" : "sans"}-${Number(vaha) >= 600 ? 700 : 400}`;
-      if (!pisma[k]) pisma[k] = pdf.embedFont(await bajty(`assets/fonts/${soubor[k]}.ttf`, base), { subset: true });
+      const r = /calibri/i.test(rodina) ? "calibri" : /serif/i.test(rodina) && !/sans/i.test(rodina) ? "serif" : "sans";
+      const k = `${r}-${Number(vaha) >= 600 ? 700 : 400}`;
+      // Carlito se při podmnožině písma rozbije (chybějící znaky) → vkládá se celé
+      if (!pisma[k]) pisma[k] = pdf.embedFont(await bajty(`assets/fonts/${soubor[k]}.ttf`, base), { subset: r !== "calibri" });
       return pisma[k];
     }
     const obrazky = {};

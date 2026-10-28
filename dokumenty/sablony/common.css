@@ -2,6 +2,9 @@
 @font-face { font-family: "MR Sans"; src: url("assets/fonts/LiberationSans-Regular.ttf"); font-weight: 400; }
 @font-face { font-family: "MR Sans"; src: url("assets/fonts/LiberationSans-Bold.ttf"); font-weight: 700; }
 @font-face { font-family: "MR Serif"; src: url("assets/fonts/LiberationSerif-Regular.ttf"); font-weight: 400; }
+/* Carlito = metricky shodné s Calibri (licence SIL OFL) – sloupec REMARKS v parts listu */
+@font-face { font-family: "MR Calibri"; src: url("assets/fonts/Carlito-Regular.ttf"); font-weight: 400; }
+@font-face { font-family: "MR Calibri"; src: url("assets/fonts/Carlito-Bold.ttf"); font-weight: 700; }
 
 @page { size: 595pt 842pt; margin: 0; }
 html, body { margin: 0; padding: 0; background: #fff; }
@@ -10,6 +13,7 @@ html, body { margin: 0; padding: 0; background: #fff; }
 .t { position: absolute; white-space: pre; line-height: 1; color: #092a4f; font-family: "MR Sans"; font-size: 9.8pt; }
 .b { font-weight: 700; }
 .serif { font-family: "MR Serif"; }
+.calibri { font-family: "MR Calibri"; }
 .ink { color: #000; }
 .c { transform: translateX(-50%); }
 .r { transform: translateX(-100%); }

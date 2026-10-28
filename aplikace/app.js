@@ -715,6 +715,29 @@
   }
 
   /* Šablonu načte do rámečku, vykreslí a vrátí okno rámečku (pro náhled i pro PDF) */
+  /* PDF ze šablony mimo obrazovku (přílohy jako parts list) */
+  const skryteRamecky = {};
+  async function pdfZeSablony(sablona, data, jazyk = "cs", meta = {}) {
+    let f = skryteRamecky[sablona];
+    if (!f || !f.isConnected) {
+      f = document.createElement("iframe");
+      f.setAttribute("aria-hidden", "true"); f.tabIndex = -1;
+      f.style.cssText = "position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;visibility:hidden";
+      document.body.appendChild(f); skryteRamecky[sablona] = f;
+    }
+    return vFronte(f, async () => {
+      const w = await vykresliSablonuHned(f, sablona, data, jazyk);
+      return w.dokumentDoPdf(w.document, meta);
+    });
+  }
+  /* Parts list (příloha nabídky a faktury) – díly kromě nepoužitých; cena = prodejní cena × množství */
+  function dataPartsListu(z, dily, ceny = true) {
+    const mn = d => { const n = Number(d.mnozstvi); if (!d.jednotka || d.jednotka === "ks") return isNaN(n) ? d.mnozstvi : n; return `${mnozstviCz(n)}${d.jednotka}`; };
+    return { cislo: z.cislo, ceny, dily: dily.filter(d => d.stav !== "nepouzito" && (d.nazev || d.cislo_mb)).map(d => ({
+      nazev: d.nazev || "", mnozstvi: mn(d), cislo: d.cislo_mb || "", cena: ceny && d.prodejni_cena != null ? zaokrouhli(Number(d.prodejni_cena) * (Number(d.mnozstvi) || 0)) : null,
+      poznamka: d.poznamka || "", puvod: d.puvod || null })) };
+  }
+
   /* Vykreslování do jednoho rámečku jde vždy po jednom (náhled se nesmí přepsat uprostřed tvorby PDF) */
   function vFronte(iframe, fn) {
     const p = (iframe._fronta || Promise.resolve()).then(fn, fn);
@@ -830,7 +853,7 @@
 
   /* Vykreslí doklad do rámečku → PDF → uloží PDF, podpis zákazníka, doklad (zamčený) a podpisy. Vrací {doklad, bytes, cislo}. */
   async function ulozitDoklad({ iframe, sablona, data, jazyk, zakazka_id, vozidlo_id, cisloZakazky, druh, verze = 1, vystaveno, splatnost,
-                               podpisZak, jmenoZakaznika, vyhPodepsalNaIpadu = false, nabidka_id = null, prubeh = () => {} }) {
+                               podpisZak, jmenoZakaznika, vyhPodepsalNaIpadu = false, nabidka_id = null, prubeh = () => {}, prilohy = [] }) {
     const cislo = cisloDokladu(cisloZakazky, druh, verze);
     prubeh(`Vytvářím ${NAZEV_DOKLADU.cs[druh].toLowerCase()}…`);
     const { bytes, otisk, vysledek } = await vFronte(iframe, async () => {          // vykreslit a hned převést na PDF – nic mezi to nevleze
@@ -858,10 +881,20 @@
       celkem: vysledek.celkem ?? null
     }]);
     await db.upravit("soubory", pdfSoubor.id, { doklad_id: doklad.id });
+    // přílohy (parts list) – samostatná PDF navázaná na doklad
+    const hotovePrilohy = [];
+    for (const pr of prilohy) {
+      prubeh(`Vytvářím ${pr.nazev}…`);
+      const pb = await pdfZeSablony(pr.sablona, pr.data, jazyk, { nazev: `${pr.nazev} ${cislo}` });
+      const kl = `zakazky/${cisloZakazky}/${cislo}-${pr.slug}.pdf`;
+      await ignorujDuplicitu(() => db.nahrat(kl, new Blob([pb], { type: "application/pdf" }), "application/pdf"));
+      await db.vlozit("soubory", [{ zakazka_id, vozidlo_id, doklad_id: doklad.id, druh: "pdf", klic: kl, nazev: `${cislo} ${pr.nazev}`, velikost: pb.length, mime: "application/pdf" }]);
+      hotovePrilohy.push({ bytes: pb, nazev: `${cislo}-${pr.slug}.pdf` });
+    }
     const podpisy = [{ doklad_id: doklad.id, role: "vyhotovil", jmeno: uzivatel.jmeno, uzivatel_id: uzivatel.id, zpusob: vyhPodepsalNaIpadu ? "ipad" : "ulozeny", otisk_dokumentu: otisk }];
     if (podpisZak) podpisy.unshift({ doklad_id: doklad.id, role: "zakaznik", jmeno: jmenoZakaznika, zpusob: "ipad", otisk_dokumentu: otisk, obrazek_soubor_id: podpisSoubor.id });
     await db.vlozit("podpisy", podpisy);
-    posledniPdf = { zakazka_id, cislo, bytes, nazev: `${cislo}.pdf`, druh, jazyk };
+    posledniPdf = { zakazka_id, cislo, bytes, nazev: `${cislo}.pdf`, druh, jazyk, prilohy: hotovePrilohy };
     return { doklad, bytes, cislo };
   }
 
@@ -924,13 +957,15 @@
         <a class="tl tl-velke" href="#/">Přehled</a>
       </div></div>`;
     if (!pdf) return;
-    const soubor = new File([pdf.bytes], pdf.nazev, { type: "application/pdf" });
-    app.querySelector("#otevrit").onclick = () => window.open(URL.createObjectURL(soubor), "_blank");
+    const soubory = [pdf, ...(pdf.prilohy || [])].map(x => new File([x.bytes], x.nazev, { type: "application/pdf" }));
+    if (soubory.length > 1) app.querySelector("#otevrit").insertAdjacentHTML("afterend", soubory.slice(1).map((f, i) => `<button class="tl tl-velke" data-priloha="${i + 1}">Otevřít ${/parts-list/.test(f.name) ? "parts list" : "přílohu"}</button>`).join(""));
+    app.querySelector("#otevrit").onclick = () => window.open(URL.createObjectURL(soubory[0]), "_blank");
+    app.querySelectorAll("[data-priloha]").forEach(b => b.onclick = () => window.open(URL.createObjectURL(soubory[+b.dataset.priloha]), "_blank"));
     app.querySelector("#sdilet").onclick = async () => {
-      if (navigator.canShare && navigator.canShare({ files: [soubor] })) {
-        try { await navigator.share({ files: [soubor], title: pdf.nazev }); } catch (e) { /* zrušeno */ }
+      if (navigator.canShare && navigator.canShare({ files: soubory })) {
+        try { await navigator.share({ files: soubory, title: pdf.nazev }); } catch (e) { /* zrušeno */ }
       } else {
-        const a = document.createElement("a"); a.href = URL.createObjectURL(soubor); a.download = pdf.nazev; a.click();
+        for (const f of soubory) { const a = document.createElement("a"); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); await cekej(300); }
       }
     };
   }
@@ -1004,7 +1039,8 @@
             <small class="mutted">vystaveno ${datumCz(d.vystaveno)}${d.splatnost ? ` · ${d.druh === "nabidka" ? "platnost" : "splatnost"} ${datumCz(d.splatnost)}` : ""}${["faktura", "zalohova"].includes(d.druh) ? (d.zaplaceno ? ` · <b style="color:var(--zelena)">zaplaceno ${datumCz(d.zaplaceno)}</b>` : " · nezaplaceno") : ""}</small></span>
             <span class="radek-tlacitek">
               ${["faktura", "zalohova"].includes(d.druh) && !d.zaplaceno ? `<button class="tl tl-male" data-zaplaceno="${d.id}">✓ Zaplaceno</button>` : ""}
-              ${d.soubory?.klic ? `<button class="tl tl-male" data-pdf="${esc(d.soubory.klic)}">Otevřít PDF</button>` : ""}</span></div>`).join("")
+              ${d.soubory?.klic ? `<button class="tl tl-male" data-pdf="${esc(d.soubory.klic)}">Otevřít PDF</button>` : ""}
+              ${(z.soubory || []).filter(f => f.doklad_id === d.id && f.klic !== d.soubory?.klic && f.druh === "pdf").map(f => `<button class="tl tl-male" data-pdf="${esc(f.klic)}">${/parts list/.test(f.nazev || "") ? "Parts list" : "Příloha"}</button>`).join("")}</span></div>`).join("")
           || `<div class="info pozor">Zakázkový list zatím nebyl uložen.</div>`}</div>
         <div class="radek-tlacitek" style="margin-top:14px">
           <a class="tl tl-hlavni" href="#/zakazka/${id}/nabidka">📝 Cenová nabídka</a>
@@ -1088,7 +1124,7 @@
         if (co === "prace") await db.ulozitPolozky(zid, E.polozky.map(p => ({ typ: p.typ, popis: p.popis || "", mnozstvi: p.mnozstvi ?? null, jednotka: p.jednotka || null, sazba: p.sazba ?? null, castka: p.castka ?? null })));
         else await db.ulozitDily(zid, E.dily.map(d => ({ id: d.id, nazev: d.nazev, cislo_mb: d.cislo_mb, vyrobce: d.vyrobce, dodavatel_id: d.dodavatel_id || null,
           mnozstvi: d.mnozstvi, jednotka: d.jednotka || "ks", nakupni_cena: d.nakupni_cena ?? null, mena: d.mena || "CZK", kurz: d.kurz ?? 1,
-          marze_pct: d.marze_pct ?? 30, prodejni_cena: d.prodejni_cena ?? null, stav: d.stav || "potreba", poznamka: d.poznamka || null })));
+          marze_pct: d.marze_pct ?? 30, prodejni_cena: d.prodejni_cena ?? null, stav: d.stav || "potreba", puvod: d.puvod || null, poznamka: d.poznamka || null })));
         if (el && el.isConnected) el.textContent = "✓ Uloženo";
       } catch (e) {
         if (el && el.isConnected) el.innerHTML = `<span style="color:var(--cervena)">Neuloženo – ${esc(chybaText(e))}</span>`;
@@ -1187,11 +1223,15 @@
           ${d.mena === "EUR" ? `<label>Kurz<input class="vstup cislo" data-f="kurz" value="${d.kurz ?? 25}" inputmode="decimal"></label>` : ""}
           <label>Marže %<input class="vstup cislo" data-f="marze_pct" value="${d.marze_pct ?? 30}" inputmode="decimal"></label>
           <label>Prodej / ks (Kč)<input class="vstup cislo" data-f="prodejni_cena" value="${d.prodejni_cena ?? ""}" inputmode="numeric"></label>
+          <label>Původ<select class="vstup" data-f="puvod"><option value="" ${!d.puvod ? "selected" : ""}>—</option><option value="original" ${d.puvod === "original" ? "selected" : ""}>Originál MB</option><option value="aftermarket" ${d.puvod === "aftermarket" ? "selected" : ""}>Aftermarket</option></select></label>
+          <label class="siroke">Poznámka (Remarks v parts listu)<input class="vstup" data-f="poznamka" value="${esc(d.poznamka || "")}" placeholder="např. Original MB, + o-rings"></label>
           <span class="celkem-dil ${d.stav === "nepouzito" ? "mutted" : ""}">${d.stav === "nepouzito" ? "nepoužito" : kc(cenaDilu(d))}</span>
         </div>
       </div>`).join("")}
       <div class="radek-tlacitek" style="margin-top:12px">
         <button type="button" class="tl" id="pridat-dil">＋ Přidat díl</button>
+        ${E.dily.length ? `<button type="button" class="tl" id="parts-list">📄 Parts list (PDF)</button>
+          <label class="cip zaskrt"><input type="checkbox" id="parts-ceny" checked> s cenami</label>` : ""}
         <span class="napoveda">Prodejní cena = nákup × kurz + marže (výchozí 30 %). Jde přepsat ručně.</span>
       </div>`;
     el.querySelectorAll(".dil[data-i]").forEach(r => {
@@ -1214,6 +1254,16 @@
       if ((d.nazev || d.nakupni_cena) && !confirm(`Smazat díl „${d.nazev || "bez názvu"}“?`)) return;
       E.dily.splice(+b.dataset.smazDil, 1); vykresliDily(); vykresliSouhrnZakazky(); ulozitPozdeji("dily");
     });
+    const plb = el.querySelector("#parts-list");
+    if (plb) plb.onclick = async () => {
+      const okno = window.open("", "_blank");
+      try {
+        await dokoncitUkladani();
+        const b = await pdfZeSablony("parts-list.html", dataPartsListu(E.z, E.dily, el.querySelector("#parts-ceny").checked), "cs", { nazev: `Parts list ${E.z.cislo}` });
+        const u = URL.createObjectURL(new Blob([b], { type: "application/pdf" }));
+        if (okno) okno.location = u; else window.open(u, "_blank");
+      } catch (e) { okno?.close(); hlaska("Parts list se nepodařil: " + chybaText(e), true); }
+    };
     el.querySelector("#pridat-dil").onclick = () => {
       E.dily.push({ id: uuid(), nazev: "", mnozstvi: 1, jednotka: "ks", mena: "CZK", kurz: 1, marze_pct: 30, stav: "potreba" });
       vykresliDily(); ulozitPozdeji("dily");
@@ -1372,7 +1422,9 @@
         if (!vyh && mujPad && !mujPad.prazdny()) { const png = mujPad.png(); await db.ulozitMujPodpis(uzivatel.id, png); uzivatel.podpis_obrazek = png; }
         let nabidka_id = null;
         if (druh === "nabidka") { const [n] = await db.vlozit("nabidky", [{ zakazka_id: id, verze, stav: "odeslano", platnost: f.platnost }]); nabidka_id = n.id; }
-        await ulozitDoklad({ iframe, sablona, data: data(), jazyk, zakazka_id: id, vozidlo_id: z.vozidlo_id || z.vozidla?.id, cisloZakazky: z.cislo, druh, verze,
+        const pl = dataPartsListu(z, dily, true);
+        const prilohy = (druh === "nabidka" || druh === "faktura") && pl.dily.length ? [{ sablona: "parts-list.html", data: pl, nazev: "parts list", slug: "parts-list" }] : [];
+        await ulozitDoklad({ iframe, sablona, data: data(), jazyk, zakazka_id: id, vozidlo_id: z.vozidlo_id || z.vozidla?.id, cisloZakazky: z.cislo, druh, verze, prilohy,
           vystaveno: druh === "predavaci_protokol" ? f.prevzeti : f.vystaveno, splatnost: ["faktura", "zalohova"].includes(druh) ? f.splatnost : druh === "nabidka" ? f.platnost : null,
           podpisZak: pad.png(), jmenoZakaznika: z.zakaznici?.jmeno || "", vyhPodepsalNaIpadu: !vyh, nabidka_id, prubeh: p.text });
         // stav zakázky

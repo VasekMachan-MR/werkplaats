@@ -318,3 +318,4 @@ select.vstup { -webkit-appearance: none; appearance: none; background: #fff url(
 .cip.zaskrt input { width: 20px; height: 20px; accent-color: var(--navy); }
 .lista-vpravo { flex-wrap: wrap; justify-content: flex-end; }
 @media (max-width: 600px) { .lista-vpravo .tl { padding: 6px 9px; font-size: 13px; } }
+.dil-r2 label.siroke { width: auto; flex: 1 1 220px; }

@@ -140,6 +140,8 @@ const server = http.createServer((q, r) => {
   await p.locator('.dil[data-i="0"] [data-f="cislo_mb"]').fill("A 001 466 82 01");
   await p.locator('.dil[data-i="0"] [data-f="nakupni_cena"]').fill("10000");
   kontrola(await p.inputValue('.dil[data-i="0"] [data-f="prodejni_cena"]') === "13000", "díl: nákup 10 000 + 30 % marže = prodej 13 000");
+  await p.selectOption('.dil[data-i="0"] [data-f="puvod"]', "original");
+  await p.locator('.dil[data-i="0"] [data-f="poznamka"]').fill("Original MB");
   await p.click("#pridat-dil");
   await p.locator('.dil[data-i="1"] [data-f="nazev"]').fill("Těsnění");
   await p.selectOption('.dil[data-i="1"] [data-f="mena"]', "EUR");
@@ -186,6 +188,10 @@ const server = http.createServer((q, r) => {
   const za = uf.d.find(x => x.cislo === "7377-5");
   kontrola(na && na.celkem === 22375 && za && za.celkem === 13325 && za.variabilni_symbol === "73775" && fa && fa.celkem === 9050 && fa.variabilni_symbol === "73773", "nabídka 22 375, záloha 13 325 (VS 73775), faktura 9 050 (VS 73773)");
   for (const [k, v] of uf.pdf) fs.writeFileSync(path.join(OUT, path.basename(k)), Buffer.from(v));
+  const plSoubory = await p.evaluate(() => window.__ULOZENO__.tabulky.soubory.filter(f => /parts-list/.test(f.klic)).map(f => [f.klic, f.doklad_id]));
+  kontrola(plSoubory.length === 2 && plSoubory.every(([, d]) => d), "parts list přiložen k nabídce i k faktuře (ne k zálohové)");
+  const txtPl = require("child_process").execFileSync("pdftotext", ["-layout", path.join(OUT, "7377-3-parts-list.pdf"), "-"]).toString();
+  kontrola(/PARTS LIST\s+#7377/.test(txtPl) && /Hydraulické čerpadlo ASD\s+1\s+A 001 466 82 01\s+13 000,00 CZK\s+Original MB/.test(txtPl) && /TOTAL\s+13 325,00 CZK/.test(txtPl) && /Original part/.test(txtPl), "PDF parts listu: díl s číslem, cenou a poznámkou, TOTAL 13 325,00 CZK, legenda barev");
   const txtFa = require("child_process").execFileSync("pdftotext", ["-l", "1", "-layout", path.join(OUT, "7377-3-faktura.pdf"), "-"]).toString();
   kontrola(/FAKTURA\s+#\s*7377-3/.test(txtFa) && /Variabilní symbol:\s+73773/.test(txtFa) && /9 050,00 Kč/.test(txtFa) && /Likvidace kapalin/.test(txtFa) && /Odečet zálohy 7377-5\s+-13 325/.test(txtFa) && /13 325/.test(txtFa), "PDF faktury: 7377-3, VS 73773, materiál 13 325, odečet zálohy −13 325, k úhradě 9 050,00 Kč");
   const txtZa = require("child_process").execFileSync("pdftotext", ["-layout", path.join(OUT, "7377-5-zalohova-faktura.pdf"), "-"]).toString();
