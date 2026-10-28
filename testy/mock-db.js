@@ -64,6 +64,15 @@ window.__WERK_DB__ = (() => {
     async dily(zid) { return kopie(T.dily.filter(d => d.zakazka_id === zid).sort((a, b) => a.poradi - b.poradi)); },
     async ulozitDily(zid, dily) { await cekej(); T.dily = T.dily.filter(d => d.zakazka_id !== zid).concat(dily.map((d, i) => ({ ...d, zakazka_id: zid, poradi: i + 1 }))); return dily.length; },
     async dodavatele() { return [{ id: "d1", nazev: "Auto Kelly" }, { id: "d2", nazev: "Granex" }, { id: "d3", nazev: "Mercedes-Benz (originál)" }]; },
+    async smazatZakazku(zid) {
+      const z = T.zakazky.find(x => x.id === zid);
+      if (T.doklady.some(d => d.zakazka_id === zid && ["faktura", "zalohova", "opravny"].includes(d.druh))) throw new Error(`Zakázka #${z.cislo} má vystavenou fakturu`);
+      for (const t of ["doklady", "polozky", "dily", "nabidky"]) T[t] = T[t].filter(x => x.zakazka_id !== zid);
+      T.soubory = T.soubory.filter(x => x.zakazka_id !== zid || x.druh === "tp"); T.zakazky = T.zakazky.filter(x => x.id !== zid);
+      if (window.__ULOZENO__.citac === z.cislo) window.__ULOZENO__.citac = Math.max(7376, ...T.zakazky.map(x => x.cislo)); return z.cislo;
+    },
+    async smazatZakaznika(zid) { if (T.zakazky.some(k => k.zakaznik_id === zid)) throw new Error("Zákazník má zakázky"); T.vlastnictvi = T.vlastnictvi.filter(x => x.zakaznik_id !== zid); T.zakaznici = T.zakaznici.filter(x => x.id !== zid); },
+    async smazatVozidlo(vid) { if (T.zakazky.some(k => k.vozidlo_id === vid)) throw new Error("Vozidlo má zakázky"); T.vlastnictvi = T.vlastnictvi.filter(x => x.vozidlo_id !== vid); T.soubory = T.soubory.filter(x => x.vozidlo_id !== vid || x.zakazka_id); T.vozidla = T.vozidla.filter(x => x.id !== vid); },
     async ulozitZakaznika(z) {
       await cekej(); if (!z.jmeno) throw new Error("Chybí jméno zákazníka");
       if (z.id) { Object.assign(T.zakaznici.find(c => c.id === z.id), z); return z.id; }

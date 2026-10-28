@@ -108,6 +108,9 @@
           .eq("vin", vin.toUpperCase().replace(/\s/g, "")).maybeSingle());
       },
       async zalozitZakazku(p) { return ok(await sb.rpc("zalozit_zakazku", { p })); },
+      async smazatZakazku(id) { return ok(await sb.rpc("smazat_zakazku", { p_id: id })); },
+      async smazatZakaznika(id) { return ok(await sb.rpc("smazat_zakaznika", { p_id: id })); },
+      async smazatVozidlo(id) { return ok(await sb.rpc("smazat_vozidlo", { p_id: id })); },
       async ulozitZakaznika(p) { return ok(await sb.rpc("ulozit_zakaznika", { p })); },
       async ulozitVozidlo(p, zakaznikId) { return ok(await sb.rpc("ulozit_vozidlo", { p, p_zakaznik: zakaznikId || null })); },
       async seznamZakazniku() {
@@ -1117,7 +1120,10 @@
     app.innerHTML = `
       <div class="hlavicka-prehledu">
         <div><div class="mutted">Zakázka · ${esc(c.jmeno || "")}</div><h1 style="margin:0">#${z.cislo} · ${esc([v.typ, v.model].filter(Boolean).join(" ") || "Mercedes-Benz")}</h1></div>
-        <span class="stitek ${["predano", "zaplaceno", "hotovo"].includes(z.stav) ? "hotovo" : ""}">${STAVY[z.stav] || z.stav}</span>
+        <span class="radek-tlacitek"><span class="stitek ${["predano", "zaplaceno", "hotovo"].includes(z.stav) ? "hotovo" : z.stav === "zruseno" ? "zruseno" : ""}">${STAVY[z.stav] || z.stav}</span>
+          ${uzivatel.role === "majitel" ? (doklady.some(d => ["faktura", "zalohova", "opravny"].includes(d.druh))
+            ? (z.stav !== "zruseno" ? `<button class="tl tl-male tl-smazat" id="zrusit-zakazku">✕ Zrušit zakázku</button>` : "")
+            : `<button class="tl tl-male tl-smazat" id="smazat-zakazku">🗑 Smazat</button>`) : ""}</span>
       </div>
 
       <section class="karta"><h2>Doklady</h2>
@@ -1169,6 +1175,19 @@
       </section>
       <section class="karta"><h2>Fotky a videa${fotky.length ? ` (${popisPoctu(fotky)})` : ""}</h2><div class="fotky" id="fotky-detail"></div></section>`;
 
+    const sz = app.querySelector("#smazat-zakazku");
+    if (sz) sz.onclick = async () => {
+      const odp = prompt(`Smazat zakázku #${z.cislo} včetně zakázkového listu, nabídek, protokolu, prací, dílů a fotek? Nejde to vrátit.\n\nPro potvrzení napište číslo zakázky:`);
+      if (odp == null) return;
+      if (odp.trim() !== String(z.cislo)) return hlaska("Číslo nesouhlasí – nic se nesmazalo.", true);
+      try { await dokoncitUkladani(); await db.smazatZakazku(id); E = null; hlaska(`Zakázka #${z.cislo} smazána.`); location.hash = "#/"; }
+      catch (e) { hlaska("Smazat nejde: " + chybaText(e), true, 8000); }
+    };
+    const zr = app.querySelector("#zrusit-zakazku");
+    if (zr) zr.onclick = async () => {
+      if (!confirm(`Zakázka #${z.cislo} má vystavenou fakturu, proto ji nejde smazat (faktury se musí archivovat). Označit ji jako zrušenou?`)) return;
+      try { await db.upravit("zakazky", id, { stav: "zruseno" }); hlaska("Zakázka zrušena."); detail(id); } catch (e) { hlaska(chybaText(e), true); }
+    };
     vykresliPrace(); vykresliDily(); vykresliSouhrnZakazky();
     vykresliDokumentyVozidla(z.vozidlo_id || v.id, app.querySelector("#dokumenty-vozidla"));
     app.querySelectorAll("[data-pdf]").forEach(b => b.onclick = async () => {
@@ -1634,12 +1653,20 @@
           ${ZAK_POLE.map(([k, t, w, pov]) => `<label class="pole ${w}"><span class="${pov ? "povinne" : ""}">${t}</span><input name="${k}" value="${esc(z[k] ?? "")}" ${k === "email" ? 'type="email" inputmode="email"' : k === "telefon" ? 'type="tel"' : ""}></label>`).join("")}
           <div class="s3"><label class="pole">Jazyk dokladů</label><div class="segment" id="jazyk"><button type="button" data-h="cs" aria-pressed="${z.jazyk !== "en"}">Čeština</button><button type="button" data-h="en" aria-pressed="${z.jazyk === "en"}">English</button></div></div>
           <label class="pole s6">Poznámka<textarea name="poznamka" rows="2">${esc(z.poznamka || "")}</textarea></label>
-          <div class="s6 radek-tlacitek"><button class="tl tl-hlavni" type="submit">💾 Uložit</button><span class="napoveda" id="stav"></span></div>
+          <div class="s6 radek-tlacitek"><button class="tl tl-hlavni" type="submit">💾 Uložit</button>
+            ${!novy && uzivatel.role === "majitel" ? `<button class="tl tl-smazat" type="button" id="smazat">🗑 Smazat zákazníka</button>` : ""}<span class="napoveda" id="stav"></span></div>
         </form></section>
       ${novy ? "" : `
       <section class="karta"><h2>Auta</h2><div class="doklady">${auta.map(x => `<a class="doklad odkaz-radek" href="#/vozidlo/${x.vozidla.id}"><span><b>${esc([x.vozidla.typ, x.vozidla.model].filter(Boolean).join(" ") || "Mercedes-Benz")}</b>${x.vozidla.rok ? ` (${x.vozidla.rok})` : ""}<br>
         <small class="mutted">${esc(x.vozidla.vin)}${x.vozidla.spz ? " · " + esc(x.vozidla.spz) : ""}</small></span><small class="mutted">${x.vlastni_do ? `bývalý majitel do ${datumCz(x.vlastni_do)}` : `majitel od ${datumCz(x.vlastni_od)}`}</small></a>`).join("") || `<span class="mutted">Žádné auto.</span>`}</div></section>
       <section class="karta"><h2>Zakázky</h2><div class="doklady">${(z.zakazky || []).sort((a, b) => b.cislo - a.cislo).map(k => `<a class="doklad odkaz-radek" href="#/zakazka/${k.id}"><span><b>#${k.cislo}</b> · ${esc([k.vozidla?.typ, k.vozidla?.model].filter(Boolean).join(" "))}<br><small class="mutted">přijato ${datumCz(k.datum_prijmu)}</small></span><span class="stitek">${STAVY[k.stav] || k.stav}</span></a>`).join("") || `<span class="mutted">Žádné zakázky.</span>`}</div></section>`}`;
+    const sm = app.querySelector("#smazat");
+    if (sm) sm.onclick = async () => {
+      const pocet = (z.zakazky || []).length;
+      if (pocet) return hlaska(`${z.jmeno} má ${pocet} ${pocet === 1 ? "zakázku" : pocet < 5 ? "zakázky" : "zakázek"} – nejdřív je smažte (nebo zákazníka nechte).`, true, 7000);
+      if (!confirm(`Smazat zákazníka ${z.jmeno}? Jeho auta zůstanou v systému, jen bez majitele. Nejde to vrátit.`)) return;
+      try { await db.smazatZakaznika(id); hlaska("Zákazník smazán."); location.hash = "#/zakaznici"; } catch (e) { hlaska("Smazat nejde: " + chybaText(e), true, 7000); }
+    };
     const f = app.querySelector("#f"); let jeFirma = !!z.je_firma, jazyk = z.jazyk || "cs";
     const seg = (sel, fn) => app.querySelector(sel).onclick = e => { const b = e.target.closest("button"); if (!b) return; fn(JSON.parse(JSON.stringify(b.dataset.h))); app.querySelectorAll(sel + " button").forEach(x => x.setAttribute("aria-pressed", x === b)); };
     seg("#firma", h => (jeFirma = h === "true")); seg("#jazyk", h => (jazyk = h));
@@ -1691,7 +1718,8 @@
           <div class="s2"><label class="pole">Verze</label><div class="segment" id="verze">${["EU", "US", "JP"].map(x => `<button type="button" data-h="${x}" aria-pressed="${(v.verze || "EU") === x}">${x}</button>`).join("")}</div></div>
           <div class="s2"><label class="pole">Tachometr</label><div class="segment" id="jedn">${[["km", "km"], ["mi", "míle"]].map(([x, t]) => `<button type="button" data-h="${x}" aria-pressed="${(v.jednotka_tachometru || "km") === x}">${t}</button>`).join("")}</div></div>
           <label class="pole s6">Poznámka<textarea name="poznamka" rows="2">${esc(v.poznamka || "")}</textarea></label>
-          <div class="s6 radek-tlacitek"><button class="tl tl-hlavni" type="submit">💾 Uložit</button><span class="napoveda" id="stav"></span></div>
+          <div class="s6 radek-tlacitek"><button class="tl tl-hlavni" type="submit">💾 Uložit</button>
+            ${uzivatel.role === "majitel" ? `<button class="tl tl-smazat" type="button" id="smazat">🗑 Smazat vozidlo</button>` : ""}<span class="napoveda" id="stav"></span></div>
         </form></section>
       <section class="karta"><h2>Technický průkaz (TP)</h2>
         <div class="fotky" id="dokumenty-vozidla"></div>
@@ -1707,6 +1735,13 @@
         <div class="vysledky" id="vysledky-majitel"></div></section>
       <section class="karta"><h2>Zakázky</h2><div class="doklady">${(v.zakazky || []).sort((a, b) => b.cislo - a.cislo).map(k => `<a class="doklad odkaz-radek" href="#/zakazka/${k.id}"><span><b>#${k.cislo}</b> · přijato ${datumCz(k.datum_prijmu)}<br><small class="mutted">${k.km_prijem != null ? `${Number(k.km_prijem).toLocaleString("cs-CZ")} ${v.jednotka_tachometru === "mi" ? "mi" : "km"}` : ""}</small></span><span class="stitek">${STAVY[k.stav] || k.stav}</span></a>`).join("") || `<span class="mutted">Žádné zakázky.</span>`}</div></section>`;
     vykresliDokumentyVozidla(id, app.querySelector("#dokumenty-vozidla"), true);
+    const sm = app.querySelector("#smazat");
+    if (sm) sm.onclick = async () => {
+      const pocet = (v.zakazky || []).length;
+      if (pocet) return hlaska(`Auto má ${pocet} ${pocet === 1 ? "zakázku" : pocet < 5 ? "zakázky" : "zakázek"} – nejdřív je smažte.`, true, 7000);
+      if (!confirm(`Smazat vozidlo ${[v.typ, v.model].filter(Boolean).join(" ")} (${v.vin}) včetně TP? Nejde to vrátit.`)) return;
+      try { await db.smazatVozidlo(id); hlaska("Vozidlo smazáno."); location.hash = "#/vozidla"; } catch (e) { hlaska("Smazat nejde: " + chybaText(e), true, 7000); }
+    };
     let verze = v.verze || "EU", jedn = v.jednotka_tachometru || "km";
     const seg = (sel, fn) => app.querySelector(sel).onclick = e => { const b = e.target.closest("button"); if (!b) return; fn(b.dataset.h); app.querySelectorAll(sel + " button").forEach(x => x.setAttribute("aria-pressed", x === b)); };
     seg("#verze", h => { verze = h; if (h === "US" && jedn !== "mi") { jedn = "mi"; app.querySelectorAll("#jedn button").forEach(x => x.setAttribute("aria-pressed", x.dataset.h === "mi")); } });

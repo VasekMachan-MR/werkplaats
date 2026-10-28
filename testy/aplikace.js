@@ -126,7 +126,8 @@ const server = http.createServer((q, r) => {
   await foto("05-detail");
 
   // ---------- práce, díly → nabídka 7377-2 → faktura 7377-3 → úhrada → protokol 7377-4 ----------
-  p.on("dialog", d => d.type() === "prompt" ? d.accept("2026-11-05") : d.accept());
+  let odpovedPrompt = "2026-11-05";
+  p.on("dialog", d => d.type() === "prompt" ? d.accept(odpovedPrompt) : d.accept());
   await p.click('[data-pridat-pol="inspekce"]');
   await p.click('[data-pridat-pol="prace"]');
   await p.locator('.radek-pol[data-i="1"] [data-f="popis"]').fill("Odstranění závady ASD");
@@ -368,6 +369,29 @@ const server = http.createServer((q, r) => {
     return T.vlastnictvi.filter(x => x.vozidlo_id === v.id).map(x => [T.zakaznici.find(c => c.id === x.zakaznik_id).jmeno, !!x.vlastni_do]); });
   kontrola(vl.length === 2 && vl.some(([j, konec]) => j === "Karel Samostatný" && konec) && vl.some(([j, konec]) => j === "Jan Novák" && !konec) , "změna majitele: Karel ukončen, Jan Novák současný; SPZ uložena");
   await foto("17-vozidlo");
+
+  // ---------- mazání ----------
+  await p.click("#smazat");
+  await p.waitForSelector("#seznam");
+  kontrola(await p.evaluate(() => !window.__ULOZENO__.tabulky.vozidla.some(v => v.vin === "WDB1070481A000003")), "vozidlo bez zakázek smazáno (i s TP)");
+  await p.click(".lista-vpravo >> text=Zákazníci"); await p.waitForSelector("#seznam >> text=Karel Samostatný");
+  await p.click("#seznam >> text=Karel Samostatný"); await p.waitForSelector("#smazat");
+  await p.click("#smazat"); await p.waitForSelector("#seznam");
+  kontrola(await p.evaluate(() => !window.__ULOZENO__.tabulky.zakaznici.some(z => z.jmeno === "Karel Samostatný")), "zákazník bez zakázek smazán");
+  await p.click("#seznam >> text=Jan Novák"); await p.waitForSelector("#smazat"); await p.click("#smazat");
+  await p.waitForSelector("#hlaska >> text=nejdřív je smažte");
+  kontrola(true, "zákazníka se zakázkami smazat nejde (upozornění)");
+  const id7378 = await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky.find(z => z.cislo === 7378).id);
+  await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, id7378); await p.waitForSelector("#smazat-zakazku");
+  odpovedPrompt = "7378"; await p.click("#smazat-zakazku"); await p.waitForSelector(".zakazka-radek");
+  const po = await p.evaluate(() => ({ n: window.__ULOZENO__.tabulky.zakazky.length, c: window.__ULOZENO__.citac }));
+  kontrola(po.n === 1 && po.c === 7377, "zakázka #7378 smazána (potvrzení číslem) a číslo 7378 je zase volné");
+  const id7377 = await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky[0].id);
+  await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, id7377); await p.waitForSelector("#zrusit-zakazku");
+  kontrola(await p.locator("#smazat-zakazku").count() === 0, "zakázka s fakturou nejde smazat, jen zrušit");
+  await p.click("#zrusit-zakazku"); await p.waitForSelector(".stitek >> text=Zrušeno");
+  kontrola(true, "zakázka s fakturou označena jako zrušená");
+  odpovedPrompt = "2026-11-05";
 
   // ---------- iPhone ----------
   const ph = await b.newContext({ ...devices["iPhone 14"], locale: "cs-CZ" });

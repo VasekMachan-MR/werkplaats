@@ -337,3 +337,5 @@ select.vstup { -webkit-appearance: none; appearance: none; background: #fff url(
 @media (min-width: 700px) { .s1 { grid-column: span 1 !important; } }
 .fotka.dokument .stav-fotky { background: rgba(9,42,79,.82); }
 @media (max-width: 1100px) { .lista-vpravo .uzivatel-tl span { display: none; } }
+.tl-smazat { color: var(--cervena); border-color: #f1b5ae; background: #fff; }
+.tl-smazat:hover, .tl-smazat:active { background: var(--cervena); border-color: var(--cervena); color: #fff; }
