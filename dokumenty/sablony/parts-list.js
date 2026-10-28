@@ -127,10 +127,7 @@ window.render = async function (d) {
     st.html += T(76.5, yl + 1.6, "Original – genuine Mercedes-Benz part", { size: 7.8 })
              + T(76.5, yl + 14.6, "Aftermarket – quality replacement part", { size: 7.8 });
   }
-  const konec = yS + potreba;
 
-  // obrázek vozu dole jako na zadních stranách dokladů – jen když zbývá místo
-  if (konec < 590) st.html += IMG("assets/auto-nabidka.png", 51.4, 594.0, 542.8, 755.6);
 
   document.getElementById("doc").innerHTML = stranky.map((s, i) =>
     `<section class="page">${SVG(s.rect)}${s.html}${paticka(i + 1, stranky.length)}</section>`).join("");
