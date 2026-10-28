@@ -6,6 +6,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.117.3";
 const POVOLENE_ADRESY = [
   /^https:\/\/werk\.mercedesrestorations\.cz$/,
   /^https:\/\/([a-z0-9-]+\.)?werkplaats\.pages\.dev$/,
+  /^https:\/\/([a-z0-9-]+-)?werkplaats\.[a-z0-9-]+\.workers\.dev$/,
   /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,
 ];
 
