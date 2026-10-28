@@ -80,5 +80,17 @@ ok(r.format === "Granex – faktura (PDF)" && r.polozky.length === 4, "Granex fa
 ok(r.polozky[2].nazev === "Montážní sada, řídicí mechanismus MEYLE" && r.polozky[2].cislo === "014 033 0001" && r.polozky[2].cena === 286, "Granex faktura: název přes 2 řádky, MEYLE 014 033 0001, 286 Kč/ks", r.polozky[2]);
 ok(r.polozky[3].cislo === "PHB136" && r.polozky[3].nazev === "Brzdová hadice TRW" && r.polozky[3].cena === 257, "Granex faktura: řádek po zalomení stránky (TRW PHB136, 257 Kč)", r.polozky[3]);
 
+// 8) skutečný text objednávky Granex zkopírovaný z Mailu (36 položek, součet 27 346 Kč + doprava 139 = 27 485 Kč dle faktury)
+const gxSkut = require("fs").readFileSync(__dirname + "/data-granex-objednavka.txt", "utf8");
+for (const [nazev, uprava] of [["tak jak je", x => x], ["s pevnými a neviditelnými mezerami", x => x.replace(/ Kč/g, " Kč").replace(/(\d) (\d)/g, "$1 $2").replace(/\n/g, "​\n")], ["s prázdnými řádky", x => x.replace(/\n/g, "\n\n")], ["„12ד v samostatné buňce", x => x.replace(/×\t/g, "×\n")]]) {
+  r = rozeberDily(uprava(gxSkut));
+  ok(r.format === "Granex – objednávka" && r.dodavatel === "Granex" && r.polozky.length === 36 && r.polozky.reduce((s, p) => s + p.cena * p.mnozstvi, 0) === 27346, `Granex z Mailu (${nazev}): 36 dílů, součet 27 346 Kč`, r.polozky.slice(0, 3));
+}
+r = rozeberDily(gxSkut);
+const kody = r.polozky.map(p => p.cislo);
+ok(["08224", "VA872785", "W 719/13", "H 85", "C 41 173", "10731 01", "014 033 0001", "24.0128-0102.1", "13.0460-0197.2", "PHB136"].every(k => kody.includes(k)), "Granex z Mailu: čísla dílů (FEBI, Valvoline, MANN, LEMFÖRDER, MEYLE, ATE, TRW)", kody);
+ok(r.polozky.find(p => p.cislo === "24.0128-0102.1").nazev === "Brzdový kotouč ATE" && r.polozky.every(p => !/Kč/.test(p.nazev)), "Granex z Mailu: v názvech není cena, ATE zůstává v názvu");
+ok(rozeberDily("336 Kč (12× 28 Kč)\n5 008 Kč (2× 2 504 Kč)").polozky.length === 0, "samotné řádky s cenou nejsou díly");
+
 console.log(chyb ? `\n${chyb} chyb` : "\nVše v pořádku");
 process.exit(chyb ? 1 : 0);

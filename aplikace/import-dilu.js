@@ -124,6 +124,9 @@
     if (run.some(t => /\d/.test(t)) && i > 0 && /^[A-ZÄÖÜ][A-ZÄÖÜ0-9&-]{1,}$/.test(w[i - 1])) {
       return { nazev: w.slice(0, i).join(" "), cislo: run.join(" ") };
     }
+    // krátká značka (ATE, TRW, SKF…) se mohla vzít jako předpona čísla: „ATE 24.0128-0102.1“
+    if (run.length > 1 && /^[A-Z]{2,3}$/.test(run[0]) && run.slice(1).some(t => /\d/.test(t)))
+      return { nazev: w.slice(0, i + 1).join(" "), cislo: run.slice(1).join(" ") };
     // značka na začátku: „ATE 03.9901-8110.2 Čistič brzd“
     if (w.length > 2 && /^[A-ZÄÖÜ][A-ZÄÖÜ-]{1,}$/.test(w[0]) && /\d/.test(w[1]) && /[.\-]/.test(w[1]) && !jeJednotka(w[1]))
       return { nazev: [w[0], ...w.slice(2)].join(" "), cislo: w[1] };
@@ -132,26 +135,28 @@
 
   /* 5a) Granex – e-mail s objednávkou: „12× Pouzdro, řadicí tyč FEBI BILSTEIN 08224 <odkaz>“ / „Skladem…“ / „• 336 Kč (12× 28 Kč)“ */
   function granexObjednavka(t) {
-    const radky = t.split(/\r?\n/).map(r => r.replace(/<https?:[^>]*>/g, " ").replace(/\[https?:[^\]]*\]/g, " ").replace(/\u00a0/g, " ").trim());
+    const radky = t.split(/\r?\n/).map(r => r.replace(/<https?:[^>]*>/g, " ").replace(/\[https?:[^\]]*\]/g, " ").trim()).filter(Boolean);
+    // „12ד a název v samostatných buňkách/řádcích → spojit
+    for (let i = radky.length - 2; i >= 0; i--) if (/^\d+\s?[×x]$/.test(radky[i]) && !/Kč/.test(radky[i + 1])) radky.splice(i, 2, radky[i] + " " + radky[i + 1]);
     const RE_HLAV = /(?:^|\s)(\d+)\s?[×x]\s+(\S.*)$/;
-    const RE_CENA = /^•?\s*(\d[\d ]*(?:,\d+)?)\s*Kč(?:\s*\((\d+)\s?[×x]\s*(\d[\d ]*(?:,\d+)?)\s*Kč\))?\s*$/;
+    const RE_CENA = /^[•·*\-–]?\s*(\d[\d ]*(?:,\d+)?)\s*Kč(?:\s*\((\d+)\s?[×x]\s*(\d[\d ]*(?:,\d+)?)\s*Kč\))?/;
     const out = [];
     for (let i = 0; i < radky.length; i++) {
-      if (radky[i].startsWith("•")) continue;
+      if (radky[i].startsWith("•") || RE_CENA.test(radky[i])) continue;      // řádek s cenou není nová položka
       const h = radky[i].match(RE_HLAV); if (!h) continue;
       if (/\b(DPD|PPL|Zásilkov|Balíkovna|doprav|Apple Pay|Google Pay|GoPay|dobírk|platb)/i.test(h[2])) continue;
       let kat = "", cena = null;
-      for (let j = i + 1; j < Math.min(i + 5, radky.length); j++) {
+      for (let j = i + 1; j < Math.min(i + 8, radky.length); j++) {
         const r = radky[j];
         const k = r.match(/^Katalogové číslo\s+(\S+)/i); if (k) { kat = k[1]; continue; }
         const c = r.match(RE_CENA); if (c) { cena = c[3] ? cislo(c[3]) : cislo(c[1]) / (Number(h[1]) || 1); break; }
-        if (RE_HLAV.test(r) && !r.startsWith("•")) break;
+        if (RE_HLAV.test(r)) break;
       }
       if (cena == null) continue;
       const rk = rozdelKod(h[2]);
       out.push({ nazev: rk.nazev, cislo: kat || rk.cislo, mnozstvi: Number(h[1]) || 1, cena: zaokr(cena), mena: "CZK" });
     }
-    return out.length ? { format: "Granex – objednávka", polozky: out } : null;
+    return out.length ? { format: "Granex – objednávka", dodavatel: "Granex", polozky: out } : null;
   }
 
   /* 5b) Granex – text PDF faktury: „Název … 12 ks 23,14 Kč 21 % 277,69 Kč 58,31 Kč 336 Kč“ (název může být na víc řádcích) */
@@ -168,7 +173,7 @@
       const mn = cislo(m[2]) || 1, rk = rozdelKod(nazev);
       out.push({ nazev: rk.nazev, cislo: rk.cislo, mnozstvi: mn, cena: zaokr(cislo(m[4]) / mn), mena: "CZK" });
     }
-    return out.length ? { format: "Granex – faktura (PDF)", polozky: out } : null;
+    return out.length ? { format: "Granex – faktura (PDF)", dodavatel: "Granex", polozky: out } : null;
   }
 
   /* 6) obecně po řádcích – odhad */
@@ -211,17 +216,20 @@
       if (kod) zbytek = zbytek.replace(kod, " ");
       const nazev = zbytek.replace(/^[\s\/|,;:–-]+|[\s\/|,;:–-]+$/g, "").replace(/\s+/g, " ");
       if (!nazev && !kod) continue;
+      if (!kod && !/[a-zá-žA-ZÁ-Ž]{2,}/.test(nazev.replace(/Kč|CZK|EUR|ks|x|×/gi, ""))) continue;   // jen částky, žádný název
       out.push({ nazev, cislo: kod.replace(/\s+/g, " ").trim(), mnozstvi: mn || 1, cena: zaokr(cenaKs), mena, odhad: true });
     }
     return out.length ? { format: "obecný text – zkontrolujte", polozky: out } : null;
   }
 
   function rozeberDily(text) {
-    const t = String(text || "").replace(/\r\n/g, "\n");
+    // text zkopírovaný z Mailu/Safari nese neviditelné znaky a „pevné“ mezery – sjednotit, jinak nesedí žádný vzor
+    const t = String(text || "").replace(/\r\n?/g, "\n").replace(/[\u200b-\u200d\u2060\ufeff\u00ad]/g, "")
+      .replace(/[\u00a0\u2002-\u200a\u202f\u205f\u3000]/g, " ");
     const dodavatel = poznejDodavatele(t);
     for (const f of [lkqCsv, lkqFaktura, lkqPdf, granexFaktura, granexObjednavka, akObjednavka, landsmann, obecne]) {
       const r = f(t);
-      if (r) return { dodavatel, ...r };
+      if (r) return { ...r, dodavatel: dodavatel || r.dodavatel || null };
     }
     return { dodavatel, format: null, polozky: [] };
   }
