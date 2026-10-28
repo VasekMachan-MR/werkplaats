@@ -326,6 +326,10 @@ const server = http.createServer((q, r) => {
   kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.zakaznici.some(z => z.jmeno === "Karel Samostatný")), "tlačítko Uložit zákazníka uloží zákazníka bez zakázky");
   await p.fill('[data-pole="vozidlo.vin"]', "WDB1070481A000003");
   await p.fill('[data-pole="vozidlo.model"]', "560 SL");
+  await p.click('[data-segment="zakazka.tp_prilozen"] >> text=Ne');
+  kontrola(await p.locator(".tp-strany").count() === 0, "TP přiložen: Ne → pole pro TP se skryjí");
+  await p.click('[data-segment="zakazka.tp_prilozen"] >> text=Ano');
+  await p.waitForSelector('[data-tp-vstup="predni"]', { state: "attached" });
   await p.setInputFiles('[data-tp-vstup="predni"]', "testy/auto-1.jpg");
   await p.setInputFiles('[data-tp-vstup="zadni"]', path.join(OUT, "7377-1.pdf"));
   await p.waitForFunction(() => document.querySelectorAll(".tp-strana.nahrano").length === 2);

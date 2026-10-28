@@ -422,6 +422,7 @@
           <label class="tl">Vybrat z galerie<input id="foto-galerie" type="file" accept="image/*,video/*" multiple hidden></label>
           <span class="napoveda" id="pocet-fotek"></span>
         </div>
+        ${matchMedia("(pointer: coarse)").matches ? "" : `<div class="info" style="margin:12px 0 0">Na počítači prohlížeč umí jen vybrat soubor. Na iPadu a iPhonu „Vyfotit“ a „Natočit video“ rovnou otevřou fotoaparát a „Vybrat z galerie“ nabídne Fotky nebo Soubory.</div>`}
         <p class="napoveda limity">
           <b>Fotky:</b> libovolný počet, samy se zmenší.<br>
           <b>Video:</b> nejvýš ${MAX_VIDEO_MB} MB na jedno video – to je asi <b>30 s ve Full HD (1080p)</b> nebo <b>15 s ve 4K</b>.
@@ -516,7 +517,7 @@
         nastavHodnotu(cesta, h);
         if (cesta === "zakaznik.jazyk") P.zakazka.jazyk = h;
         if (cesta === "vozidlo.verze") P.vozidlo.jednotka_tachometru = h === "US" ? "mi" : "km";   // US auta mají tachometr v mílích
-        if (["zakaznik.je_firma", "zakaznik.jazyk", "vozidlo.jednotka_tachometru", "vozidlo.verze"].includes(cesta)) { ulozKoncept(); return vykresliFormularZachovatPozici(); }
+        if (["zakaznik.je_firma", "zakaznik.jazyk", "vozidlo.jednotka_tachometru", "vozidlo.verze", "zakazka.tp_prilozen"].includes(cesta)) { ulozKoncept(); return vykresliFormularZachovatPozici(); }
         seg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
       });
     });
