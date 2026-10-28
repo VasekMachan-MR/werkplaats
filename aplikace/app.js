@@ -108,6 +108,12 @@
           .eq("vin", vin.toUpperCase().replace(/\s/g, "")).maybeSingle());
       },
       async zalozitZakazku(p) { return ok(await sb.rpc("zalozit_zakazku", { p })); },
+      async polozky(zid) { return ok(await sb.from("polozky").select("typ,popis,mnozstvi,jednotka,sazba,castka,poradi").eq("zakazka_id", zid).is("nabidka_id", null).order("poradi")); },
+      async ulozitPolozky(zid, polozky) { return ok(await sb.rpc("ulozit_polozky", { p_zakazka: zid, p_polozky: polozky })); },
+      async dily(zid) { return ok(await sb.from("dily").select("*").eq("zakazka_id", zid).order("poradi")); },
+      async ulozitDily(zid, dily) { return ok(await sb.rpc("ulozit_dily", { p_zakazka: zid, p_dily: dily })); },
+      async dodavatele() { return ok(await sb.from("dodavatele").select("id,nazev,web,mena").order("nazev")); },
+      async sazby() { return ok(await sb.from("sazby").select("nazev,kc_za_hodinu,poradi").order("poradi")); },
       async nahrat(klic, blob, typ, prubeh) {
         if (!prubeh) return ok(await kos().upload(klic, blob, { contentType: typ, upsert: false, cacheControl: "31536000" }));
         // s ukazatelem průběhu (hodí se u videí) – přímo na úložiště, se stejným přihlášením
@@ -138,7 +144,7 @@
       async upravit(tabulka, id, zmeny) { return ok(await sb.from(tabulka).update(zmeny).eq("id", id).select()); },
       async detail(id) {
         return ok(await sb.from("zakazky")
-          .select("*,vozidla(*),zakaznici(*),doklady(id,druh,cislo,verze,vystaveno,zamceno,pdf_soubor_id,soubory!doklady_pdf_soubor_id_fkey(klic)),soubory!soubory_zakazka_id_fkey(id,druh,faze,klic,nazev,vytvoreno,smazano,doklad_id)")
+          .select("*,vozidla(*),zakaznici(*),doklady(id,druh,cislo,verze,vystaveno,splatnost,zamceno,celkem,zaplaceno,pdf_soubor_id,soubory!doklady_pdf_soubor_id_fkey(klic)),soubory!soubory_zakazka_id_fkey(id,druh,faze,klic,nazev,vytvoreno,smazano,doklad_id)")
           .eq("id", id).maybeSingle());
       }
     };
@@ -151,6 +157,7 @@
     [/^#?\/?$/, prehled],
     [/^#\/novy$/, prijem],
     [/^#\/zakazka\/([\w-]+)$/, detail],
+    [/^#\/zakazka\/([\w-]+)\/(nabidka|faktura|protokol)$/, vystavit],
     [/^#\/hotovo\/([\w-]+)$/, hotovo],
     [/^#\/ucet$/, ucet],
     [/^#\/lide$/, lide]
@@ -158,6 +165,7 @@
   let uklid = null;
   async function navigace() {
     if (uklid) { try { uklid(); } catch (e) { /* nic */ } uklid = null; }
+    await dokoncitUkladani();
     if (!uzivatel) return;
     const h = location.hash || "#/";
     for (const [re, fn] of trasy) { const m = h.match(re); if (m) { window.scrollTo(0, 0); return fn(...m.slice(1)); } }
@@ -700,7 +708,14 @@
   }
 
   /* Šablonu načte do rámečku, vykreslí a vrátí okno rámečku (pro náhled i pro PDF) */
-  async function vykresliSablonu(iframe, sablona, data, jazyk) {
+  /* Vykreslování do jednoho rámečku jde vždy po jednom (náhled se nesmí přepsat uprostřed tvorby PDF) */
+  function vFronte(iframe, fn) {
+    const p = (iframe._fronta || Promise.resolve()).then(fn, fn);
+    iframe._fronta = p.catch(() => {});
+    return p;
+  }
+  function vykresliSablonu(iframe, sablona, data, jazyk) { return vFronte(iframe, () => vykresliSablonuHned(iframe, sablona, data, jazyk)); }
+  async function vykresliSablonuHned(iframe, sablona, data, jazyk) {
     if (!iframe.dataset.nacteno) {
       await new Promise((ok, chyba) => { iframe.onload = ok; iframe.onerror = chyba; iframe.src = `sablony/${sablona}`; });
       const w = iframe.contentWindow, d = iframe.contentDocument;
@@ -710,7 +725,7 @@
       iframe.dataset.nacteno = "1";
       if (!w.render) throw new Error("Šablona se nenačetla");
     }
-    await iframe.contentWindow.render(data, jazyk);
+    iframe.contentWindow.__posledniVysledek = await iframe.contentWindow.render(data, jazyk);
     await Promise.all([...iframe.contentDocument.images].map(i => (i.complete ? null : i.decode().catch(() => null))));
     return iframe.contentWindow;
   }
@@ -793,6 +808,56 @@
     uklid = () => { window.removeEventListener("resize", meritko); pad.zrus(); mujPad?.zrus(); };
   }
 
+  /* ================= vystavení dokladu (společné pro všechny druhy) ================= */
+  const PRIPONY = { zakazkovy_list: 1, nabidka: 2, faktura: 3, predavaci_protokol: 4, zalohova: 5, opravny: 6 };
+  const SOUBOR_DOKLADU = { zakazkovy_list: ["zakazkovy-list", "work-order"], nabidka: ["cenova-nabidka", "quotation"], faktura: ["faktura", "invoice"],
+    predavaci_protokol: ["predavaci-protokol", "handover-protocol"], zalohova: ["zalohova-faktura", "advance-invoice"], opravny: ["opravny-doklad", "credit-note"] };
+  const NAZEV_DOKLADU = {
+    cs: { zakazkovy_list: "Zakázkový list", nabidka: "Cenová nabídka", faktura: "Faktura", predavaci_protokol: "Předávací protokol" },
+    en: { zakazkovy_list: "Work order", nabidka: "Quotation", faktura: "Invoice", predavaci_protokol: "Handover protocol" }
+  };
+  /* 7377 + faktura (verze 1) → 7377-3; druhá faktura → 7377-3-2. VS jen číslice: 73773 / 737732 */
+  const cisloDokladu = (c, druh, verze = 1) => `${c}-${PRIPONY[druh]}${verze > 1 ? `-${verze}` : ""}`;
+  const vsDokladu = (c, druh, verze = 1) => `${c}${PRIPONY[druh]}${verze > 1 ? verze : ""}`;
+  const ignorujDuplicitu = async fn => { try { await fn(); } catch (e) { if (!/exists|Duplicate/i.test(chybaText(e))) throw e; } };
+
+  /* Vykreslí doklad do rámečku → PDF → uloží PDF, podpis zákazníka, doklad (zamčený) a podpisy. Vrací {doklad, bytes, cislo}. */
+  async function ulozitDoklad({ iframe, sablona, data, jazyk, zakazka_id, vozidlo_id, cisloZakazky, druh, verze = 1, vystaveno, splatnost,
+                               podpisZak, jmenoZakaznika, vyhPodepsalNaIpadu = false, nabidka_id = null, prubeh = () => {} }) {
+    const cislo = cisloDokladu(cisloZakazky, druh, verze);
+    prubeh(`Vytvářím ${NAZEV_DOKLADU.cs[druh].toLowerCase()}…`);
+    const { bytes, otisk, vysledek } = await vFronte(iframe, async () => {          // vykreslit a hned převést na PDF – nic mezi to nevleze
+      const w = await vykresliSablonuHned(iframe, sablona, data, jazyk);
+      const vysledek = w.__posledniVysledek || {};
+      const bytes = await w.dokumentDoPdf(w.document, { nazev: `${NAZEV_DOKLADU[jazyk]?.[druh] || NAZEV_DOKLADU.cs[druh]} ${cislo}`,
+        predmet: [data.vozidlo?.typ, data.vozidlo?.model, data.vozidlo?.vin].filter(Boolean).join(" · ") });
+      return { bytes, otisk: await w.otiskPdf(bytes), vysledek };
+    });
+    prubeh("Ukládám PDF…");
+    const klicPdf = `zakazky/${cisloZakazky}/${cislo}-${SOUBOR_DOKLADU[druh][jazyk === "en" ? 1 : 0]}.pdf`;
+    await ignorujDuplicitu(() => db.nahrat(klicPdf, new Blob([bytes], { type: "application/pdf" }), "application/pdf"));
+    const soubory = [{ zakazka_id, vozidlo_id, druh: "pdf", klic: klicPdf, nazev: `${cislo}.pdf`, velikost: bytes.length, mime: "application/pdf" }];
+    let klicPodpisu = null;
+    if (podpisZak) {
+      klicPodpisu = `zakazky/${cisloZakazky}/podpis-zakaznika-${cislo}.png`;
+      await ignorujDuplicitu(() => db.nahrat(klicPodpisu, dataUrlNaBlob(podpisZak), "image/png"));
+      soubory.push({ zakazka_id, vozidlo_id, druh: "podpis", klic: klicPodpisu, nazev: "podpis zákazníka", mime: "image/png" });
+    }
+    const [pdfSoubor, podpisSoubor] = await db.vlozit("soubory", soubory);
+    const ulozenaData = { ...data }; delete ulozenaData.podpisVyhotovil; delete ulozenaData.podpisZakaznik;
+    const [doklad] = await db.vlozit("doklady", [{
+      zakazka_id, nabidka_id, druh, verze, cislo, variabilni_symbol: vsDokladu(cisloZakazky, druh, verze), jazyk,
+      vystaveno: vystaveno || dnes(), splatnost: splatnost || null, data: ulozenaData, pdf_soubor_id: pdfSoubor.id, zamceno: true,
+      celkem: vysledek.celkem ?? null
+    }]);
+    await db.upravit("soubory", pdfSoubor.id, { doklad_id: doklad.id });
+    const podpisy = [{ doklad_id: doklad.id, role: "vyhotovil", jmeno: uzivatel.jmeno, uzivatel_id: uzivatel.id, zpusob: vyhPodepsalNaIpadu ? "ipad" : "ulozeny", otisk_dokumentu: otisk }];
+    if (podpisZak) podpisy.unshift({ doklad_id: doklad.id, role: "zakaznik", jmeno: jmenoZakaznika, zpusob: "ipad", otisk_dokumentu: otisk, obrazek_soubor_id: podpisSoubor.id });
+    await db.vlozit("podpisy", podpisy);
+    posledniPdf = { zakazka_id, cislo, bytes, nazev: `${cislo}.pdf`, druh, jazyk };
+    return { doklad, bytes, cislo };
+  }
+
   async function ulozitPrijem(iframe, podpisVyh, podpisZak, vyhPodepsalNaIpadu = false) {
     if (!podpisZak) return hlaska("Chybí podpis zákazníka.", true);
     const p = prekryv("Ukládám zakázku…");
@@ -816,37 +881,12 @@
         ulozKoncept();
       }
       const { zakazka_id, vozidlo_id, cislo } = P.vysledek;
-      // 3) zakázkový list s číslem a podpisy → PDF
-      p.text("Vytvářím zakázkový list…");
-      const data = dataZakazkovehoListu(cislo, podpisVyh, podpisZak);
-      const w = await vykresliSablonu(iframe, "zakazkovy-list.html", data, P.zakazka.jazyk);
-      const bytes = await w.dokumentDoPdf(w.document, { nazev: `${P.zakazka.jazyk === "en" ? "Work order" : "Zakázkový list"} ${cislo}-1`, predmet: `${data.vozidlo.typ} ${data.vozidlo.model} · ${data.vozidlo.vin}` });
-      const otisk = await w.otiskPdf(bytes);
-      // 4) uložit PDF a podpis zákazníka
-      p.text("Ukládám PDF…");
-      const klicPdf = `zakazky/${cislo}/${cislo}-1-${P.zakazka.jazyk === "en" ? "work-order" : "zakazkovy-list"}.pdf`;
-      const klicPodpisu = `zakazky/${cislo}/podpis-zakaznika-${cislo}-1.png`;
-      const ignorujDuplicitu = async fn => { try { await fn(); } catch (e) { if (!/exists|Duplicate/i.test(chybaText(e))) throw e; } };
-      await ignorujDuplicitu(() => db.nahrat(klicPdf, new Blob([bytes], { type: "application/pdf" }), "application/pdf"));
-      await ignorujDuplicitu(() => db.nahrat(klicPodpisu, dataUrlNaBlob(podpisZak), "image/png"));
-      const [pdfSoubor, podpisSoubor] = await db.vlozit("soubory", [
-        { zakazka_id, vozidlo_id, druh: "pdf", klic: klicPdf, nazev: `${cislo}-1.pdf`, velikost: bytes.length, mime: "application/pdf" },
-        { zakazka_id, vozidlo_id, druh: "podpis", faze: "prijem", klic: klicPodpisu, nazev: "podpis zákazníka", mime: "image/png" }
-      ]);
-      // 5) doklad (zamčený) + podpisy
-      const ulozenaData = { ...data }; delete ulozenaData.podpisVyhotovil; delete ulozenaData.podpisZakaznik;
-      const [doklad] = await db.vlozit("doklady", [{
-        zakazka_id, druh: "zakazkovy_list", verze: 1, cislo: `${cislo}-1`, variabilni_symbol: `${cislo}1`, jazyk: P.zakazka.jazyk,
-        vystaveno: P.zakazka.datum_prijmu, data: ulozenaData, pdf_soubor_id: pdfSoubor.id, zamceno: true
-      }]);
-      await db.upravit("soubory", pdfSoubor.id, { doklad_id: doklad.id });
-      await db.vlozit("podpisy", [
-        { doklad_id: doklad.id, role: "zakaznik", jmeno: P.zakaznik.jmeno.trim(), zpusob: "ipad", otisk_dokumentu: otisk, obrazek_soubor_id: podpisSoubor.id },
-        { doklad_id: doklad.id, role: "vyhotovil", jmeno: uzivatel.jmeno, uzivatel_id: uzivatel.id, zpusob: vyhPodepsalNaIpadu ? "ipad" : "ulozeny", otisk_dokumentu: otisk }
-      ]);
-      // 6) fotky k zakázce
+      // 3) zakázkový list s číslem a podpisy → PDF → uložený, uzamčený doklad
+      await ulozitDoklad({ iframe, sablona: "zakazkovy-list.html", data: dataZakazkovehoListu(cislo, podpisVyh, podpisZak), jazyk: P.zakazka.jazyk,
+        zakazka_id, vozidlo_id, cisloZakazky: cislo, druh: "zakazkovy_list", vystaveno: P.zakazka.datum_prijmu,
+        podpisZak, jmenoZakaznika: P.zakaznik.jmeno.trim(), vyhPodepsalNaIpadu, prubeh: p.text });
+      // 4) fotky k zakázce
       if (P.fotky.length) await db.vlozit("soubory", P.fotky.map(f => ({ zakazka_id, vozidlo_id, druh: f.video ? "video" : "foto", faze: "prijem", klic: f.klic, nazev: f.nazev || null, mime: f.mime || "image/jpeg" })));
-      posledniPdf = { zakazka_id, cislo, bytes, nazev: `${cislo}-1.pdf` };
       uloz(KONCEPT, null); P = null;
       p.zavri();
       location.hash = `#/hotovo/${zakazka_id}`;
@@ -865,10 +905,11 @@
   /* ================= hotovo ================= */
   async function hotovo(id) {
     const pdf = posledniPdf && posledniPdf.zakazka_id === id ? posledniPdf : null;
+    const nazev = pdf ? NAZEV_DOKLADU.cs[pdf.druh] || "Doklad" : "Doklad";
     app.innerHTML = `<div class="karta hotovo">
       <div class="fajfka">✓</div>
-      <div class="mutted">Zakázkový list uložen</div>
-      <div class="velke-cislo">${pdf ? `${pdf.cislo}-1` : ""}</div>
+      <div class="mutted">${esc(nazev)} uložen${pdf?.druh === "nabidka" || pdf?.druh === "faktura" ? "a" : ""}</div>
+      <div class="velke-cislo">${pdf ? esc(pdf.cislo) : ""}</div>
       <p class="mutted">PDF je uložené u zakázky. Zákazníkovi ho můžete hned poslat.</p>
       <div class="radek-tlacitek">
         ${pdf ? `<button class="tl tl-hlavni tl-velke" id="sdilet">Poslat / sdílet PDF</button><button class="tl tl-velke" id="otevrit">Otevřít PDF</button>` : ""}
@@ -887,33 +928,103 @@
     };
   }
 
+  /* ================= práce a díly – výpočty ================= */
+  const zaokrouhli = n => Math.round(Number(n) || 0);
+  const cenaPrace = p => (p.typ || "prace") === "pausal" ? (Number(p.castka) || 0) : (p.typ || "prace") === "prace" ? (Number(p.mnozstvi) || 0) * (Number(p.sazba) || 0) : 0;
+  const prodejDilu = d => zaokrouhli((Number(d.nakupni_cena) || 0) * (Number(d.kurz) || 1) * (1 + (Number(d.marze_pct ?? 30) || 0) / 100));
+  const cenaDilu = d => d.stav === "nepouzito" ? 0 : (Number(d.prodejni_cena) || 0) * (Number(d.mnozstvi) || 0);
+  const soucty = (polozky, dily) => {
+    const prace = polozky.reduce((s, p) => s + cenaPrace(p), 0), material = zaokrouhli(dily.reduce((s, d) => s + cenaDilu(d), 0));
+    const hodin = polozky.filter(p => (p.typ || "prace") === "prace" && p.jednotka === "h").reduce((s, p) => s + (Number(p.mnozstvi) || 0), 0);
+    return { prace, material, celkem: prace + material, hodin };
+  };
+  const STAVY_DILU = [["potreba", "Potřeba"], ["objednano", "Objednáno"], ["mam", "Mám"], ["namontovano", "Namontováno"], ["nepouzito", "Nepoužito"]];
+  const MAX_POLOZEK = 13;   // tolik řádků se vejde do tabulky na nabídce a faktuře
+
+  /* Data pro šablonu faktury / nabídky */
+  function dataFaktury({ z, polozky, dily, druh, cislo, vs, vystaveno, splatnost, platnost, podpisVyh, podpisZak }) {
+    const c = z.zakaznici || {}, v = z.vozidla || {};
+    return {
+      druh: druh === "nabidka" ? "nabidka" : undefined, cislo, vs, vystaveno, splatnost, platnost,
+      zakaznik: { jmeno: c.jmeno || "", ulice: c.ulice || "", mesto: [c.psc, c.mesto].filter(Boolean).join(" "), zeme: c.zeme || "",
+        telefon: c.telefon || "", email: c.email || "", ico: c.ico || "", dic: c.dic || "" },
+      vozidlo: { znacka: v.znacka || "Mercedes-Benz", typ: v.typ || "", model: v.model || "", rok: v.rok ? String(v.rok) : "", vin: v.vin || "" },
+      polozky: polozky.map(p => ({ typ: p.typ || "prace", popis: p.popis || "", mnozstvi: Number(p.mnozstvi) || 0, jednotka: p.jednotka || "", cena: Number(p.sazba) || 0, castka: Number(p.castka) || 0 })),
+      material: soucty(polozky, dily).material,
+      vyhotovil: uzivatel?.jmeno, podpisVyhotovil: podpisVyh || undefined, podpisZakaznik: podpisZak || undefined
+    };
+  }
+  /* Data pro předávací protokol (šablona zakázkového listu, druh „protokol“) */
+  function dataProtokolu({ z, cislo, f, podpisVyh, podpisZak }) {
+    const c = z.zakaznici || {}, v = z.vozidla || {}, en = z.jazyk === "en";
+    return {
+      druh: "protokol", cislo,
+      zakaznik: { jmeno: c.jmeno || "", ulice: c.ulice || "", mesto: [c.psc, c.mesto].filter(Boolean).join(" "), zeme: c.zeme || "", telefon: c.telefon || "", email: c.email || "" },
+      zavady: z.zavady || [],
+      vozidlo: { znacka: v.znacka || "Mercedes-Benz", typ: v.typ || "", model: v.model || "", rok: v.rok ? String(v.rok) : "", vin: v.vin || "" },
+      nadrz: en ? (NADRZ_EN[f.nadrz] || f.nadrz) : f.nadrz, tp: !!f.tp, foto: !!f.foto,
+      stav: f.stav.map(s => s.trim()).filter(Boolean), datum: f.vystaveno, prevzeti: f.prevzeti,
+      kolaDotazena: !!f.kola, zkusebniJizda: !!f.jizda,
+      vyhotovil: uzivatel?.jmeno, podpisVyhotovil: podpisVyh || undefined, podpisZakaznik: podpisZak || undefined
+    };
+  }
+
   /* ================= detail zakázky ================= */
+  let E = null;   // rozpracované práce a díly otevřené zakázky {id, polozky, dily, dodavatele}
   async function detail(id) {
     app.innerHTML = `<div class="nacitani">Načítám zakázku…</div>`;
-    let z;
-    try { z = await db.detail(id); } catch (e) { app.innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+    let z, polozky = [], dily = [], dodavatele = [];
+    try {
+      [z, polozky, dily, dodavatele] = await Promise.all([db.detail(id), db.polozky(id), db.dily(id), db.dodavatele().catch(() => [])]);
+    } catch (e) { app.innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
     if (!z) { app.innerHTML = `<div class="info chyba">Zakázka nenalezena.</div>`; return; }
+    E = { id, z, polozky: polozky.map(p => ({ ...p, typ: p.typ || "prace" })), dily: dily.map(d => ({ ...d })), dodavatele };
     const v = z.vozidla || {}, c = z.zakaznici || {};
     const fotky = (z.soubory || []).filter(s => (s.druh === "foto" || s.druh === "video") && !s.smazano).map(s => ({ ...s, video: s.druh === "video" }));
     const jedn = v.jednotka_tachometru === "mi" ? "mi" : "km";
+    const doklady = (z.doklady || []).sort((a, b) => a.cislo.localeCompare(b.cislo, "cs", { numeric: true }));
     app.innerHTML = `
       <div class="hlavicka-prehledu">
-        <div><div class="mutted">Zakázka</div><h1 style="margin:0">#${z.cislo} · ${esc([v.typ, v.model].filter(Boolean).join(" ") || "Mercedes-Benz")}</h1></div>
-        <span class="stitek">${STAVY[z.stav] || z.stav}</span>
+        <div><div class="mutted">Zakázka · ${esc(c.jmeno || "")}</div><h1 style="margin:0">#${z.cislo} · ${esc([v.typ, v.model].filter(Boolean).join(" ") || "Mercedes-Benz")}</h1></div>
+        <span class="stitek ${["predano", "zaplaceno", "hotovo"].includes(z.stav) ? "hotovo" : ""}">${STAVY[z.stav] || z.stav}</span>
       </div>
+
       <section class="karta"><h2>Doklady</h2>
-        <div class="doklady">${(z.doklady || []).sort((a, b) => a.cislo.localeCompare(b.cislo)).map(d => `
-          <div class="doklad"><span><b>${esc(d.cislo)}</b> · ${DRUHY[d.druh] || d.druh}<br><small class="mutted">vystaveno ${datumCz(d.vystaveno)}${d.zamceno ? " · podepsáno, uzamčeno" : ""}</small></span>
-            ${d.soubory?.klic ? `<button class="tl tl-male" data-pdf="${esc(d.soubory.klic)}">Otevřít PDF</button>` : ""}</div>`).join("")
+        <div class="doklady">${doklady.map(d => `
+          <div class="doklad"><span><b>${esc(d.cislo)}</b> · ${DRUHY[d.druh] || d.druh}${d.celkem != null ? ` · <b>${kc(d.celkem)}</b>` : ""}<br>
+            <small class="mutted">vystaveno ${datumCz(d.vystaveno)}${d.splatnost ? ` · ${d.druh === "nabidka" ? "platnost" : "splatnost"} ${datumCz(d.splatnost)}` : ""}${d.druh === "faktura" ? (d.zaplaceno ? ` · <b style="color:var(--zelena)">zaplaceno ${datumCz(d.zaplaceno)}</b>` : " · nezaplaceno") : ""}</small></span>
+            <span class="radek-tlacitek">
+              ${d.druh === "faktura" && !d.zaplaceno ? `<button class="tl tl-male" data-zaplaceno="${d.id}">✓ Zaplaceno</button>` : ""}
+              ${d.soubory?.klic ? `<button class="tl tl-male" data-pdf="${esc(d.soubory.klic)}">Otevřít PDF</button>` : ""}</span></div>`).join("")
           || `<div class="info pozor">Zakázkový list zatím nebyl uložen.</div>`}</div>
-        <p class="napoveda" style="margin:12px 0 0">Cenová nabídka, faktura a předávací protokol přibudou v dalším kroku.</p>
+        <div class="radek-tlacitek" style="margin-top:14px">
+          <a class="tl tl-hlavni" href="#/zakazka/${id}/nabidka">📝 Cenová nabídka</a>
+          <a class="tl tl-hlavni" href="#/zakazka/${id}/faktura">💳 Faktura</a>
+          <a class="tl tl-hlavni" href="#/zakazka/${id}/protokol">🔑 Předávací protokol</a>
+        </div>
+        <p class="napoveda" style="margin:10px 0 0">Nabídka i faktura se vytvoří z prací a dílů níže. Každý vystavený doklad se uzamkne; nová verze dostane další číslo (např. 7377-2-2).</p>
       </section>
+
+      <section class="karta" id="sekce-prace">
+        <h2>Práce <span class="napoveda" id="stav-prace" style="margin-left:auto;font-weight:400"></span></h2>
+        <div id="prace"></div>
+      </section>
+
+      <section class="karta" id="sekce-dily">
+        <h2>Díly <span class="napoveda" id="stav-dilu" style="margin-left:auto;font-weight:400"></span></h2>
+        <div id="dily"></div>
+      </section>
+
+      <section class="karta souhrn-zakazky" id="souhrn"></section>
+
       <section class="karta"><h2>Vozidlo</h2><dl class="udaje">
         ${[["VIN", v.vin], ["Typ", v.typ], ["Model", v.model], ["Rok", v.rok], ["SPZ", v.spz], ["Barva", v.barva], ["Verze", v.verze],
-           ["Tachometr při příjmu", z.km_prijem != null ? `${Number(z.km_prijem).toLocaleString("cs-CZ")} ${jedn}` : ""], ["Nádrž", z.nadrz_prijem], ["TP přiložen", z.tp_prilozen == null ? "" : z.tp_prilozen ? "Ano" : "Ne"]]
+           ["Tachometr při příjmu", z.km_prijem != null ? `${Number(z.km_prijem).toLocaleString("cs-CZ")} ${jedn}` : ""],
+           ["Tachometr při předání", z.km_predani != null ? `${Number(z.km_predani).toLocaleString("cs-CZ")} ${jedn}` : ""],
+           ["Nádrž", z.nadrz_prijem], ["TP přiložen", z.tp_prilozen == null ? "" : z.tp_prilozen ? "Ano" : "Ne"]]
           .filter(([, x]) => x != null && x !== "").map(([a, b]) => `<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join("")}</dl></section>
       <section class="karta"><h2>Zákazník</h2><dl class="udaje">
-        ${[["Jméno", c.jmeno], ["Kontaktní osoba", c.kontaktni_osoba], ["Telefon", c.telefon], ["E-mail", c.email], ["Adresa", [c.ulice, [c.psc, c.mesto].filter(Boolean).join(" "), c.zeme].filter(Boolean).join(", ")], ["IČO", c.ico]]
+        ${[["Jméno", c.jmeno], ["Kontaktní osoba", c.kontaktni_osoba], ["Telefon", c.telefon], ["E-mail", c.email], ["Adresa", [c.ulice, [c.psc, c.mesto].filter(Boolean).join(" "), c.zeme].filter(Boolean).join(", ")], ["IČO", c.ico], ["DIČ", c.dic]]
           .filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join("")}</dl></section>
       <section class="karta"><h2>Příjem ${datumCz(z.datum_prijmu)}</h2>
         <dl class="udaje">${z.predpoklad_dokonceni ? `<div><dt>Předpoklad dokončení</dt><dd>${datumCz(z.predpoklad_dokonceni)}</dd></div>` : ""}
@@ -922,10 +1033,21 @@
         ${z.stav_prijem?.length ? `<p style="margin:14px 0 0"><b>Stav při převzetí do opravy</b></p><ul class="odrazky">${z.stav_prijem.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
       </section>
       <section class="karta"><h2>Fotky a videa${fotky.length ? ` (${popisPoctu(fotky)})` : ""}</h2><div class="fotky" id="fotky-detail"></div></section>`;
+
+    vykresliPrace(); vykresliDily(); vykresliSouhrnZakazky();
     app.querySelectorAll("[data-pdf]").forEach(b => b.onclick = async () => {
       const okno = window.open("", "_blank");
       try { const u = await db.odkaz(b.dataset.pdf, 600); if (okno) okno.location = u; else location.href = u; }
       catch (e) { okno?.close(); hlaska(chybaText(e), true); }
+    });
+    app.querySelectorAll("[data-zaplaceno]").forEach(b => b.onclick = async () => {
+      const d = prompt("Datum úhrady (RRRR-MM-DD):", dnes()); if (!d) return;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return hlaska("Datum zadejte jako 2026-11-05.", true);
+      try {
+        await db.upravit("doklady", b.dataset.zaplaceno, { zaplaceno: d });
+        if (!["predano"].includes(z.stav)) await db.upravit("zakazky", id, { stav: "zaplaceno" });
+        hlaska("Úhrada zapsána."); detail(id);
+      } catch (e) { hlaska(chybaText(e), true); }
     });
     if (fotky.length) {
       try {
@@ -935,6 +1057,302 @@
           : `<a class="fotka" href="${esc(o.signedUrl)}" target="_blank" rel="noopener"><img src="${esc(o.signedUrl)}" alt="" loading="lazy"></a>`).join("");
       } catch (e) { app.querySelector("#fotky-detail").innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; }
     }
+  }
+
+  /* ---------- automatické ukládání prací a dílů ---------- */
+  const cekajiciUlozeni = {};
+  async function dokoncitUkladani() {
+    const fns = Object.values(cekajiciUlozeni); for (const k in cekajiciUlozeni) { clearTimeout(cekajiciUlozeni[k].t); delete cekajiciUlozeni[k]; }
+    await Promise.all(fns.map(x => x.fn()));
+  }
+  function ulozitPozdeji(co) {
+    const el = document.getElementById(co === "prace" ? "stav-prace" : "stav-dilu");
+    if (el) el.textContent = "Ukládám…";
+    const zakazka = E;                                   // uložit vždy k té zakázce, kde se psalo
+    if (cekajiciUlozeni[co]) clearTimeout(cekajiciUlozeni[co].t);
+    const fn = async () => {
+      delete cekajiciUlozeni[co];
+      const E = zakazka, zid = E.id;
+      try {
+        if (co === "prace") await db.ulozitPolozky(zid, E.polozky.map(p => ({ typ: p.typ, popis: p.popis || "", mnozstvi: p.mnozstvi ?? null, jednotka: p.jednotka || null, sazba: p.sazba ?? null, castka: p.castka ?? null })));
+        else await db.ulozitDily(zid, E.dily.map(d => ({ id: d.id, nazev: d.nazev, cislo_mb: d.cislo_mb, vyrobce: d.vyrobce, dodavatel_id: d.dodavatel_id || null,
+          mnozstvi: d.mnozstvi, jednotka: d.jednotka || "ks", nakupni_cena: d.nakupni_cena ?? null, mena: d.mena || "CZK", kurz: d.kurz ?? 1,
+          marze_pct: d.marze_pct ?? 30, prodejni_cena: d.prodejni_cena ?? null, stav: d.stav || "potreba", poznamka: d.poznamka || null })));
+        if (el && el.isConnected) el.textContent = "✓ Uloženo";
+      } catch (e) {
+        if (el && el.isConnected) el.innerHTML = `<span style="color:var(--cervena)">Neuloženo – ${esc(chybaText(e))}</span>`;
+        else hlaska("Změny v zakázce se neuložily: " + chybaText(e), true, 8000);
+      }
+    };
+    cekajiciUlozeni[co] = { fn, t: setTimeout(fn, 700) };
+  }
+  window.addEventListener("beforeunload", e => { if (Object.keys(cekajiciUlozeni).length) { e.preventDefault(); e.returnValue = ""; } });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") dokoncitUkladani(); });   // iPad: přepnutí aplikace
+
+  function vykresliSouhrnZakazky() {
+    const el = document.getElementById("souhrn"); if (!el || !E) return;
+    const s = soucty(E.polozky, E.dily);
+    el.innerHTML = `<div class="souhrn-radky">
+      <div><span>Práce${s.hodin ? ` (${mnozstviCz(s.hodin)} h)` : ""}</span><b>${kc(s.prace)}</b></div>
+      <div><span>Materiál (díly)</span><b>${kc(s.material)}</b></div>
+      <div class="celkem"><span>Celkem</span><b>${kc(s.celkem)}</b></div></div>
+      ${E.z.odhad_ceny != null ? `<p class="napoveda" style="margin:8px 0 0">Odhad při příjmu: ${kc(E.z.odhad_ceny)}${E.z.odhad_ceny && s.celkem > E.z.odhad_ceny * 1.15 ? ` – <b style="color:var(--oranzova)">o víc než 15 % vyšší, podle podmínek je potřeba to se zákazníkem probrat</b>` : ""}</p>` : ""}`;
+  }
+  const mnozstviCz = n => Number(n).toLocaleString("cs-CZ", { maximumFractionDigits: 2 });
+
+  /* ---------- práce ---------- */
+  function vykresliPrace() {
+    const el = document.getElementById("prace"); if (!el) return;
+    const P2 = E.polozky;
+    el.innerHTML = `
+      <div class="tabulka-polozek">
+        ${P2.length ? `<div class="radek-pol hlavicka-pol"><span>Popis</span><span>Mn.</span><span>Mj</span><span>Kč/Mj</span><span>Celkem</span><span></span></div>` : ""}
+        ${P2.map((p, i) => `
+        <div class="radek-pol typ-${p.typ}" data-i="${i}">
+          ${p.typ === "prazdny" ? `<span class="mutted prazdny-radek">— prázdný řádek —</span>` :
+            `<input class="vstup" data-f="popis" value="${esc(p.popis)}" placeholder="${p.typ === "nadpis" ? "Nadpis, např. Dodatečné práce dle další domluvy" : p.typ === "pausal" ? "Paušál, např. Likvidace kapalin" : "Popis práce"}">`}
+          ${p.typ === "prace" ? `
+            <input class="vstup cislo" data-f="mnozstvi" value="${p.mnozstvi ?? ""}" inputmode="decimal" placeholder="0">
+            <select class="vstup" data-f="jednotka"><option value="h" ${p.jednotka === "h" ? "selected" : ""}>h</option><option value="ks" ${p.jednotka === "ks" ? "selected" : ""}>ks</option></select>
+            <input class="vstup cislo" data-f="sazba" value="${p.sazba ?? ""}" inputmode="numeric" placeholder="1500">
+            <span class="celkem-pol">${kc(cenaPrace(p))}</span>`
+          : p.typ === "pausal" ? `<span></span><span></span><span class="mutted" style="font-size:13px">paušál</span>
+            <input class="vstup cislo" data-f="castka" value="${p.castka ?? ""}" inputmode="numeric" placeholder="Kč">` : `<span></span><span></span><span></span><span></span>`}
+          <span class="akce-pol">
+            <button type="button" class="tl tl-male" data-nahoru="${i}" aria-label="Posunout nahoru" ${i === 0 ? "disabled" : ""}>↑</button>
+            <button type="button" class="tl tl-male" data-smaz="${i}" aria-label="Smazat">×</button></span>
+        </div>`).join("")}
+      </div>
+      ${P2.length > MAX_POLOZEK ? `<div class="info pozor">Na nabídku a fakturu se vejde ${MAX_POLOZEK} řádků – máte ${P2.length}. Sloučte prosím některé práce.</div>` : ""}
+      <div class="cipy" style="margin-top:12px">
+        <button type="button" class="cip" data-pridat-pol="inspekce">＋ Inspekce (1 200 Kč/h)</button>
+        <button type="button" class="cip" data-pridat-pol="prace">＋ Práce (1 500 Kč/h)</button>
+        <button type="button" class="cip" data-pridat-pol="kus">＋ Položka v ks</button>
+        <button type="button" class="cip" data-pridat-pol="pausal">＋ Paušál</button>
+        <button type="button" class="cip" data-pridat-pol="nadpis">＋ Nadpis</button>
+        <button type="button" class="cip" data-pridat-pol="prazdny">＋ Prázdný řádek</button>
+      </div>
+      ${E.z.zavady?.length ? `<div class="cipy"><span class="napoveda" style="align-self:center">Ze zakázkového listu:</span>${E.z.zavady.map((t, i) => `<button type="button" class="cip" data-ze-zavady="${i}">＋ ${esc(t)}</button>`).join("")}</div>` : ""}`;
+    el.querySelectorAll(".radek-pol[data-i]").forEach(r => {
+      const p = E.polozky[+r.dataset.i];
+      r.querySelectorAll("[data-f]").forEach(inp => inp.addEventListener("input", () => {
+        const f = inp.dataset.f;
+        p[f] = ["mnozstvi", "sazba", "castka"].includes(f) ? cisloZ(inp.value) : inp.value;
+        const c = r.querySelector(".celkem-pol"); if (c) c.textContent = kc(cenaPrace(p));
+        vykresliSouhrnZakazky(); ulozitPozdeji("prace");
+      }));
+    });
+    el.querySelectorAll("[data-smaz]").forEach(b => b.onclick = () => { E.polozky.splice(+b.dataset.smaz, 1); vykresliPrace(); vykresliSouhrnZakazky(); ulozitPozdeji("prace"); });
+    el.querySelectorAll("[data-nahoru]").forEach(b => b.onclick = () => { const i = +b.dataset.nahoru; [E.polozky[i - 1], E.polozky[i]] = [E.polozky[i], E.polozky[i - 1]]; vykresliPrace(); ulozitPozdeji("prace"); });
+    const nova = { inspekce: { typ: "prace", popis: "Inspekce", mnozstvi: 1, jednotka: "h", sazba: 1200 }, prace: { typ: "prace", popis: "", mnozstvi: 1, jednotka: "h", sazba: 1500 },
+      kus: { typ: "prace", popis: "", mnozstvi: 1, jednotka: "ks", sazba: null }, pausal: { typ: "pausal", popis: "", castka: null }, nadpis: { typ: "nadpis", popis: "" }, prazdny: { typ: "prazdny" } };
+    el.querySelectorAll("[data-pridat-pol]").forEach(b => b.onclick = () => {
+      E.polozky.push({ ...nova[b.dataset.pridatPol] }); vykresliPrace(); vykresliSouhrnZakazky(); ulozitPozdeji("prace");
+      const rows = el.querySelectorAll(".radek-pol[data-i] input[data-f=popis]"); const last = rows[rows.length - 1]; if (last && !last.value) last.focus();
+    });
+    el.querySelectorAll("[data-ze-zavady]").forEach(b => b.onclick = () => {
+      E.polozky.push({ typ: "prace", popis: E.z.zavady[+b.dataset.zeZavady], mnozstvi: 1, jednotka: "h", sazba: 1500 }); vykresliPrace(); vykresliSouhrnZakazky(); ulozitPozdeji("prace");
+    });
+  }
+
+  /* ---------- díly ---------- */
+  function vykresliDily() {
+    const el = document.getElementById("dily"); if (!el) return;
+    const dod = E.dodavatele;
+    el.innerHTML = `
+      ${E.dily.map((d, i) => `
+      <div class="dil" data-i="${i}">
+        <div class="dil-r1">
+          <input class="vstup" data-f="nazev" value="${esc(d.nazev || "")}" placeholder="Název dílu">
+          <input class="vstup" data-f="cislo_mb" value="${esc(d.cislo_mb || "")}" placeholder="Číslo dílu (A 126 …)" autocapitalize="characters" spellcheck="false">
+          <select class="vstup" data-f="dodavatel_id"><option value="">Dodavatel…</option>${dod.map(x => `<option value="${x.id}" ${x.id === d.dodavatel_id ? "selected" : ""}>${esc(x.nazev)}</option>`).join("")}</select>
+          <select class="vstup" data-f="stav">${STAVY_DILU.map(([k, t]) => `<option value="${k}" ${k === (d.stav || "potreba") ? "selected" : ""}>${t}</option>`).join("")}</select>
+          <button type="button" class="tl tl-male" data-smaz-dil="${i}" aria-label="Smazat díl">×</button>
+        </div>
+        <div class="dil-r2">
+          <label>Ks<input class="vstup cislo" data-f="mnozstvi" value="${d.mnozstvi ?? 1}" inputmode="decimal"></label>
+          <label>Nákup / ks<input class="vstup cislo" data-f="nakupni_cena" value="${d.nakupni_cena ?? ""}" inputmode="decimal" placeholder="0"></label>
+          <label>Měna<select class="vstup" data-f="mena"><option ${d.mena !== "EUR" ? "selected" : ""}>CZK</option><option ${d.mena === "EUR" ? "selected" : ""}>EUR</option></select></label>
+          ${d.mena === "EUR" ? `<label>Kurz<input class="vstup cislo" data-f="kurz" value="${d.kurz ?? 25}" inputmode="decimal"></label>` : ""}
+          <label>Marže %<input class="vstup cislo" data-f="marze_pct" value="${d.marze_pct ?? 30}" inputmode="decimal"></label>
+          <label>Prodej / ks (Kč)<input class="vstup cislo" data-f="prodejni_cena" value="${d.prodejni_cena ?? ""}" inputmode="numeric"></label>
+          <span class="celkem-dil ${d.stav === "nepouzito" ? "mutted" : ""}">${d.stav === "nepouzito" ? "nepoužito" : kc(cenaDilu(d))}</span>
+        </div>
+      </div>`).join("")}
+      <div class="radek-tlacitek" style="margin-top:12px">
+        <button type="button" class="tl" id="pridat-dil">＋ Přidat díl</button>
+        <span class="napoveda">Prodejní cena = nákup × kurz + marže (výchozí 30 %). Jde přepsat ručně.</span>
+      </div>`;
+    el.querySelectorAll(".dil[data-i]").forEach(r => {
+      const d = E.dily[+r.dataset.i];
+      r.querySelectorAll("[data-f]").forEach(inp => inp.addEventListener(inp.tagName === "SELECT" ? "change" : "input", () => {
+        const f = inp.dataset.f;
+        d[f] = ["mnozstvi", "nakupni_cena", "kurz", "marze_pct", "prodejni_cena"].includes(f) ? cisloZ(inp.value) : inp.value;
+        if (f === "mena") { d.kurz = d.mena === "EUR" ? (d.kurz && d.kurz !== 1 ? d.kurz : 25) : 1; }
+        if (["nakupni_cena", "kurz", "marze_pct", "mena"].includes(f)) {          // přepočítat prodejní cenu
+          d.prodejni_cena = d.nakupni_cena == null ? null : prodejDilu(d);
+          const pc = r.querySelector('[data-f="prodejni_cena"]'); if (pc) pc.value = d.prodejni_cena ?? "";
+        }
+        if (f === "mena" || f === "stav") { vykresliDily(); }
+        else { const c = r.querySelector(".celkem-dil"); if (c) c.textContent = d.stav === "nepouzito" ? "nepoužito" : kc(cenaDilu(d)); }
+        vykresliSouhrnZakazky(); ulozitPozdeji("dily");
+      }));
+    });
+    el.querySelectorAll("[data-smaz-dil]").forEach(b => b.onclick = () => {
+      const d = E.dily[+b.dataset.smazDil];
+      if ((d.nazev || d.nakupni_cena) && !confirm(`Smazat díl „${d.nazev || "bez názvu"}“?`)) return;
+      E.dily.splice(+b.dataset.smazDil, 1); vykresliDily(); vykresliSouhrnZakazky(); ulozitPozdeji("dily");
+    });
+    el.querySelector("#pridat-dil").onclick = () => {
+      E.dily.push({ id: uuid(), nazev: "", mnozstvi: 1, jednotka: "ks", mena: "CZK", kurz: 1, marze_pct: 30, stav: "potreba" });
+      vykresliDily(); ulozitPozdeji("dily");
+      const n = el.querySelectorAll('.dil [data-f="nazev"]'); n[n.length - 1]?.focus();
+    };
+  }
+
+  /* ================= vystavení nabídky / faktury / protokolu ================= */
+  async function vystavit(id, co) {
+    const druh = { nabidka: "nabidka", faktura: "faktura", protokol: "predavaci_protokol" }[co];
+    app.innerHTML = `<div class="nacitani">Připravuji…</div>`;
+    let z, polozky, dily;
+    try { [z, polozky, dily] = await Promise.all([db.detail(id), db.polozky(id), db.dily(id)]); }
+    catch (e) { app.innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+    if (!z) { app.innerHTML = `<div class="info chyba">Zakázka nenalezena.</div>`; return; }
+    const jazyk = z.jazyk || "cs", en = jazyk === "en";
+    const verze = (z.doklady || []).filter(d => d.druh === druh).length + 1;
+    const cislo = cisloDokladu(z.cislo, druh, verze), vs = vsDokladu(z.cislo, druh, verze);
+    const s = soucty(polozky, dily);
+    const jeFaktura = druh !== "predavaci_protokol";
+    if (jeFaktura && !polozky.some(p => (p.typ || "prace") !== "prazdny") && !s.material) {
+      app.innerHTML = `<div class="karta"><h1>${NAZEV_DOKLADU.cs[druh]}</h1><div class="info pozor">Zakázka zatím nemá žádné práce ani díly. Doplňte je v detailu zakázky.</div>
+        <div class="radek-tlacitek" style="margin-top:14px"><a class="tl tl-hlavni" href="#/zakazka/${id}">← Zpět na zakázku</a></div></div>`;
+      return;
+    }
+    // výchozí hodnoty formuláře
+    const f = druh === "nabidka" ? { vystaveno: dnes(), platnost: plusDni(dnes(), 7) }
+      : druh === "faktura" ? { vystaveno: dnes(), splatnost: plusDni(dnes(), 14) }
+      : { vystaveno: dnes(), prevzeti: dnes(), km: z.km_predani ?? "", nadrz: z.nadrz_predani || z.nadrz_prijem || "1/2", tp: z.tp_prilozen ?? true,
+          foto: false, jizda: true, kola: false, stav: z.stav_predani?.length ? [...z.stav_predani] : [""] };
+    const podpisZakPovinny = druh === "predavaci_protokol";
+    const titulek = `${NAZEV_DOKLADU.cs[druh]} ${cislo}`;
+
+    app.innerHTML = `
+      <div class="hlavicka-prehledu"><div><div class="mutted"><a href="#/zakazka/${id}">← Zakázka #${z.cislo}</a></div><h1 style="margin:0">${esc(titulek)}</h1></div></div>
+      ${verze > 1 ? `<div class="info" style="margin:0 0 14px">K zakázce už ${druh === "nabidka" ? "nabídka existuje" : druh === "faktura" ? "faktura existuje" : "protokol existuje"} – tahle bude verze ${verze} (${esc(cislo)}). Předchozí zůstává beze změny.</div>` : ""}
+      <section class="karta"><h2>Údaje dokladu</h2><div class="mrizka" id="pole-dokladu">
+        ${druh === "nabidka" ? `
+          <label class="pole s2">Datum vystavení<input type="date" data-d="vystaveno" value="${f.vystaveno}"></label>
+          <label class="pole s2">Platnost do<input type="date" data-d="platnost" value="${f.platnost}"></label>
+          <div class="pole s2"><span>Celkem</span><div class="velka-castka">${kc(s.celkem)}</div></div>` : ""}
+        ${druh === "faktura" ? `
+          <label class="pole s2">Datum vystavení<input type="date" data-d="vystaveno" value="${f.vystaveno}"></label>
+          <label class="pole s2">Datum splatnosti<input type="date" data-d="splatnost" value="${f.splatnost}"></label>
+          <div class="pole s2"><span>Celkem k úhradě · VS ${vs}</span><div class="velka-castka">${kc(s.celkem)}</div></div>` : ""}
+        ${druh === "predavaci_protokol" ? `
+          <label class="pole s2">Datum předání<input type="date" data-d="prevzeti" value="${f.prevzeti}"></label>
+          <label class="pole s2"><span class="povinne">Stav tachometru (${(z.vozidla?.jednotka_tachometru) === "mi" ? "míle" : "km"})</span><input data-d="km" inputmode="numeric" value="${esc(f.km)}" placeholder="${z.km_prijem ?? ""}"></label>
+          <div class="s2"><label class="pole">TP předán</label><div class="segment" data-seg="tp"><button type="button" data-h="true" aria-pressed="${!!f.tp}">Ano</button><button type="button" data-h="false" aria-pressed="${!f.tp}">Ne</button></div></div>
+          <div class="s4"><label class="pole">Stav nádrže</label><div class="segment" data-seg="nadrz">${NADRZ.map(n => `<button type="button" data-h='"${n}"' aria-pressed="${f.nadrz === n}">${n}</button>`).join("")}</div></div>
+          <div class="s2"><label class="pole">Fotodokumentace při předání</label><div class="segment" data-seg="foto"><button type="button" data-h="true" aria-pressed="${!!f.foto}">Ano</button><button type="button" data-h="false" aria-pressed="${!f.foto}">Ne</button></div></div>
+          <div class="s3"><label class="pole">Zákazník absolvoval zkušební jízdu</label><div class="segment" data-seg="jizda"><button type="button" data-h="true" aria-pressed="${!!f.jizda}">Ano</button><button type="button" data-h="false" aria-pressed="${!f.jizda}">Ne</button></div></div>
+          <div class="s3"><label class="pole">Kola byla demontována (dotažení kol)</label><div class="segment" data-seg="kola"><button type="button" data-h="true" aria-pressed="${!!f.kola}">Ano</button><button type="button" data-h="false" aria-pressed="${!f.kola}">Ne</button></div></div>
+          <div class="s6"><label class="pole"><span class="povinne">Stav při předání zákazníkovi</span></label>
+            <div class="seznam-radku" id="stav-predani"></div>
+            <div class="cipy">${(en ? ["Car drivable, starts and drives", "Repairs carried out according to the work order", "Car cleaned"] : ["Auto pojízdné, startuje, jede", "Opravy provedeny dle zakázkového listu", "Vůz předán umytý"]).map(t => `<button type="button" class="cip" data-cip-stav>${esc(t)}</button>`).join("")}</div></div>` : ""}
+      </div></section>
+      <div class="nahled-obal"><div class="nahled-ram" id="ram"><iframe id="nahled" title="Náhled dokladu"></iframe></div></div>
+      <section class="karta" style="margin-top:16px">
+        <h2>Podpis zákazníka – ${esc(z.zakaznici?.jmeno || "")}${podpisZakPovinny ? "" : ` <span class="napoveda" style="font-weight:400">(nepovinný – jen když je zákazník u vás)</span>`}</h2>
+        <div class="podpis-pole"><canvas id="podpis"></canvas><div class="linka-podpisu"></div><div class="text-podpisu">${en ? "Customer signature" : "Podpis zákazníka (prstem nebo pero)"}</div></div>
+        <div class="radek-tlacitek" style="margin-top:10px"><button type="button" class="tl tl-male" id="smazat-podpis">Smazat podpis</button></div>
+      </section>
+      <section class="karta" id="muj-podpis-sekce" hidden>
+        <h2>Váš podpis – ${esc(uzivatel.jmeno)}</h2>
+        <p class="popis">Zatím nemáte uložený podpis. Podepište se jednou – uloží se do profilu.</p>
+        <div class="podpis-pole"><canvas id="muj-podpis"></canvas><div class="linka-podpisu"></div><div class="text-podpisu">${esc(uzivatel.jmeno)}</div></div>
+      </section>
+      <div class="akce-dole"><div class="vnitrek">
+        <a class="tl" href="#/zakazka/${id}">← Zpět</a>
+        <span class="co-chybi" id="co-chybi" hidden></span>
+        <button type="button" class="tl tl-hlavni tl-velke" id="vystavit" disabled>Vystavit ${esc(cislo)}</button>
+      </div></div>`;
+
+    // náhled
+    const iframe = app.querySelector("#nahled"), ram = app.querySelector("#ram"), W = 794, H = 1123;
+    const meritko = () => { const k = Math.min(1, (ram.parentElement.clientWidth - 28) / W);
+      iframe.style.width = W + "px"; iframe.style.height = H * 2 + "px"; iframe.style.transform = `scale(${k})`; ram.style.width = W * k + "px"; ram.style.height = H * 2 * k + "px"; };
+    meritko(); window.addEventListener("resize", meritko);
+    const sablona = jeFaktura ? "faktura.html" : "zakazkovy-list.html";
+    let vyh = await podpisVyhotovil(), mujPad = null, pad = null;
+    const podpisVyh = () => vyh || mujPad?.png() || null;
+    const data = () => jeFaktura
+      ? dataFaktury({ z, polozky, dily, druh, cislo, vs, vystaveno: f.vystaveno, splatnost: druh === "faktura" ? f.splatnost : f.platnost, platnost: f.platnost, podpisVyh: podpisVyh(), podpisZak: pad?.png() })
+      : dataProtokolu({ z, cislo, f, podpisVyh: podpisVyh(), podpisZak: pad?.png() });
+    const chybi = () => {
+      const ch = [];
+      if (!vyh && (!mujPad || mujPad.prazdny())) ch.push("váš podpis");
+      if (podpisZakPovinny && (!pad || pad.prazdny())) ch.push("podpis zákazníka");
+      if (druh === "predavaci_protokol") {
+        if (cisloZ(f.km) == null || isNaN(cisloZ(f.km))) ch.push("stav tachometru");
+        if (!f.stav.some(t => t.trim())) ch.push("stav při předání");
+      }
+      return ch;
+    };
+    const kontrola = () => { const ch = chybi(), b = app.querySelector("#vystavit"), i = app.querySelector("#co-chybi");
+      b.disabled = ch.length > 0; i.hidden = !ch.length; i.textContent = ch.length ? "Chybí: " + ch.join(", ") : ""; };
+    let cekani = null;
+    const obnov = () => { clearTimeout(cekani); cekani = setTimeout(async () => { try { await vykresliSablonu(iframe, sablona, data(), jazyk); } catch (e) { hlaska("Náhled se nepodařil: " + chybaText(e), true); } kontrola(); }, 250); };
+
+    // pole dokladu
+    app.querySelectorAll("[data-d]").forEach(inp => inp.addEventListener("input", () => { f[inp.dataset.d] = inp.value; obnov(); }));
+    app.querySelectorAll("[data-seg]").forEach(seg => seg.addEventListener("click", e => {
+      const b = e.target.closest("button"); if (!b) return;
+      f[seg.dataset.seg] = JSON.parse(b.dataset.h); seg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); obnov();
+    }));
+    const stavEl = app.querySelector("#stav-predani");
+    const vykresliStav = () => {
+      if (!stavEl) return;
+      stavEl.innerHTML = f.stav.map((t, i) => `<div class="radek-polozky"><span class="tecka">●</span>
+        <textarea class="vstup" rows="1" data-st="${i}" placeholder="Např. Auto pojízdné, startuje, jede">${esc(t)}</textarea>
+        <button type="button" class="tl smazat" data-st-smaz="${i}">×</button></div>`).join("") +
+        `<div class="radek-tlacitek"><button type="button" class="tl tl-male" id="st-pridat">＋ Přidat řádek</button></div>`;
+      stavEl.querySelectorAll("[data-st]").forEach(t => t.addEventListener("input", () => { f.stav[+t.dataset.st] = t.value.replace(/\n/g, " "); obnov(); }));
+      stavEl.querySelectorAll("[data-st-smaz]").forEach(b => b.onclick = () => { f.stav.splice(+b.dataset.stSmaz, 1); if (!f.stav.length) f.stav.push(""); vykresliStav(); obnov(); });
+      stavEl.querySelector("#st-pridat").onclick = () => { f.stav.push(""); vykresliStav(); stavEl.querySelectorAll("textarea")[f.stav.length - 1]?.focus(); };
+    };
+    vykresliStav();
+    app.querySelectorAll("[data-cip-stav]").forEach(b => b.onclick = () => {
+      if (f.stav.includes(b.textContent)) return; const i = f.stav.findIndex(t => !t.trim()); if (i >= 0) f.stav[i] = b.textContent; else f.stav.push(b.textContent); vykresliStav(); obnov();
+    });
+
+    pad = new PodpisPad(app.querySelector("#podpis"), { onZmena: obnov });
+    app.querySelector("#smazat-podpis").onclick = () => pad.smazat();
+    if (!vyh) { app.querySelector("#muj-podpis-sekce").hidden = false; mujPad = new PodpisPad(app.querySelector("#muj-podpis"), { onZmena: obnov }); }
+    uklid = () => { window.removeEventListener("resize", meritko); pad?.zrus(); mujPad?.zrus(); };
+    await vykresliSablonu(iframe, sablona, data(), jazyk); kontrola();
+
+    app.querySelector("#vystavit").onclick = async () => {
+      if (chybi().length) return;
+      if (druh === "faktura" && !confirm(`Vystavit fakturu ${cislo} na ${kc(s.celkem)}? Vydaná faktura se už nedá změnit (oprava jen opravným dokladem).`)) return;
+      const p = prekryv("Ukládám…");
+      try {
+        if (!vyh && mujPad && !mujPad.prazdny()) { const png = mujPad.png(); await db.ulozitMujPodpis(uzivatel.id, png); uzivatel.podpis_obrazek = png; }
+        let nabidka_id = null;
+        if (druh === "nabidka") { const [n] = await db.vlozit("nabidky", [{ zakazka_id: id, verze, stav: "odeslano", platnost: f.platnost }]); nabidka_id = n.id; }
+        await ulozitDoklad({ iframe, sablona, data: data(), jazyk, zakazka_id: id, vozidlo_id: z.vozidlo_id || z.vozidla?.id, cisloZakazky: z.cislo, druh, verze,
+          vystaveno: druh === "predavaci_protokol" ? f.prevzeti : f.vystaveno, splatnost: druh === "faktura" ? f.splatnost : druh === "nabidka" ? f.platnost : null,
+          podpisZak: pad.png(), jmenoZakaznika: z.zakaznici?.jmeno || "", vyhPodepsalNaIpadu: !vyh, nabidka_id, prubeh: p.text });
+        // stav zakázky
+        if (druh === "nabidka" && ["prijato", "poptavka"].includes(z.stav)) await db.upravit("zakazky", id, { stav: "nabidka" });
+        if (druh === "faktura" && !["zaplaceno", "predano"].includes(z.stav)) await db.upravit("zakazky", id, { stav: "fakturovano" });
+        if (druh === "predavaci_protokol") {
+          await db.upravit("zakazky", id, { stav: "predano", datum_predani: f.prevzeti, km_predani: cisloZ(f.km), nadrz_predani: f.nadrz,
+            stav_predani: f.stav.map(t => t.trim()).filter(Boolean), foto_predani: !!f.foto, zkusebni_jizda: !!f.jizda, kola_dotazena: !!f.kola });
+          const vid = z.vozidlo_id || z.vozidla?.id; if (vid && cisloZ(f.km) != null) await db.upravit("vozidla", vid, { km_posledni: cisloZ(f.km) });
+        }
+        p.zavri(); location.hash = `#/hotovo/${id}`;
+      } catch (e) { p.zavri(); hlaska("Vystavení se nepovedlo: " + chybaText(e), true, 8000); }
+    };
   }
 
   /* ================= můj účet ================= */

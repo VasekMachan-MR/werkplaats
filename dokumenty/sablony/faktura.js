@@ -152,7 +152,7 @@ function strana1(d, tx) {
   h += T(63.7, 273.5, `${tx.ucet} ${FIRMA.ucet}`) + T(63.7, 286.3, `${tx.swift}  ${FIRMA.swift}`);
   h += T(63.7, 299.0, `${tx.banka} ${FIRMA.banka}`) + T(63.7, 311.8, `${tx.iban}    ${FIRMA.iban}`);
   h += T(182.1, 337.2, tx.forma, { r: true }) + T(196.0, 337.2, tx.prevod);
-  h += T(182.1, 350.0, tx.vs, { r: true }) + T(196.0, 350.0, String(d.cislo));
+  h += T(182.1, 350.0, tx.vs, { r: true }) + T(196.0, 350.0, String(d.vs ?? d.cislo));       // VS jen z číslic (7377-3 → 73773)
 
   // odběratel
   const z = d.zakaznik;

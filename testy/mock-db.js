@@ -1,6 +1,6 @@
 /* Zkušební databáze v paměti prohlížeče – stejné funkce jako skutečné napojení na Supabase (app.js → vytvorDb).
    Používá se jen v testech, do aplikace se nedostane. */
-window.__ULOZENO__ = { soubory: {}, tabulky: { zakaznici: [], vozidla: [], vlastnictvi: [], zakazky: [], soubory: [], doklady: [], podpisy: [] }, citac: 7376 };
+window.__ULOZENO__ = { soubory: {}, tabulky: { zakaznici: [], vozidla: [], vlastnictvi: [], zakazky: [], soubory: [], doklady: [], podpisy: [], polozky: [], dily: [], nabidky: [] }, citac: 7376 };
 window.__WERK_DB__ = (() => {
   const T = window.__ULOZENO__.tabulky, S = window.__ULOZENO__.soubory;
   const id = () => crypto.randomUUID();
@@ -59,6 +59,12 @@ window.__WERK_DB__ = (() => {
       T.zakazky.push(zk);
       return { zakazka_id: zk.id, cislo, zakaznik_id: zid, vozidlo_id: a.id };
     },
+    async polozky(zid) { return kopie(T.polozky.filter(p => p.zakazka_id === zid).sort((a, b) => a.poradi - b.poradi)); },
+    async ulozitPolozky(zid, pol) { await cekej(); T.polozky = T.polozky.filter(p => p.zakazka_id !== zid).concat(pol.map((p, i) => ({ ...p, zakazka_id: zid, poradi: i + 1 }))); return pol.length; },
+    async dily(zid) { return kopie(T.dily.filter(d => d.zakazka_id === zid).sort((a, b) => a.poradi - b.poradi)); },
+    async ulozitDily(zid, dily) { await cekej(); T.dily = T.dily.filter(d => d.zakazka_id !== zid).concat(dily.map((d, i) => ({ ...d, zakazka_id: zid, poradi: i + 1 }))); return dily.length; },
+    async dodavatele() { return [{ id: "d1", nazev: "Auto Kelly" }, { id: "d2", nazev: "Granex" }, { id: "d3", nazev: "Mercedes-Benz (originál)" }]; },
+    async sazby() { return [{ nazev: "Inspekce", kc_za_hodinu: 1200 }, { nazev: "Ostatní práce", kc_za_hodinu: 1500 }]; },
     async nahrat(klic, blob, typ, prubeh) {
       if (S[klic]) throw new Error("The resource already exists");
       if (prubeh) { prubeh(0.4); await new Promise(r => setTimeout(r, 60)); prubeh(0.8); }
@@ -72,7 +78,11 @@ window.__WERK_DB__ = (() => {
       if (tab === "doklady") for (const d of out) if (T.doklady.some(x => x.cislo === d.cislo)) throw new Error("duplicate key value violates unique constraint");
       T[tab].push(...out); return kopie(out);
     },
-    async upravit(tab, rid, zmeny) { const r = T[tab].find(x => x.id === rid); Object.assign(r, zmeny); return [kopie(r)]; },
+    async upravit(tab, rid, zmeny) {
+      const r = T[tab].find(x => x.id === rid); if (!r) throw new Error("nenalezeno " + tab);
+      if (tab === "doklady" && r.zamceno && Object.keys(zmeny).some(k => !["pdf_soubor_id", "odeslano_uol", "zaplaceno"].includes(k))) throw new Error("Doklad je vydaný a nelze ho měnit");
+      Object.assign(r, zmeny); return [kopie(r)];
+    },
     async detail(zid) {
       await cekej();
       const z = T.zakazky.find(x => x.id === zid); if (!z) return null;

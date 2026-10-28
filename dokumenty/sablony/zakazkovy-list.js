@@ -116,8 +116,8 @@ const PROTOKOL = {
         "neodporuje zákonným povinnostem."]],
       ...(d.kolaDotazena ? [["Kontrola dotažení kol:", "", [
         "Kola byla dotažena momentovým klíčem dle předpisu výrobce. Zákazník je povinen po ujetí",
-        "50–100 km nechat dotažení zkontrolovat, kontrolu provedeme zdarma. Za škody způsobené nedodržením",
-        "této povinnosti servis neodpovídá. Kontrolu rádi provedeme zdarma na vyžádání."]]] : []),
+        "50–100 km nechat dotažení zkontrolovat, kontrolu provedeme zdarma. Za škody způsobené",   // v originále přetékalo přes rámeček
+        "nedodržením této povinnosti servis neodpovídá. Kontrolu rádi provedeme zdarma na vyžádání."]]] : []),
       ["Děkujeme za důvěru! ", "", [
         "Děkujeme za Vaši důvěru a těšíme se, až Vám bude Vaše auto opět dělat radost."]]
     ]
