@@ -215,7 +215,9 @@ function strana1(d, tx) {
   // podpisová tabulka
   h += T(104.9, 689.1, tx.vyhotovil, { b: true }) + T(242.1, 689.1, tx.prevzal, { b: true });
   h += T(392.0, 689.1, tx.odhad, { b: true });
-  h += T(90.2, 701.8, FIRMA.vyhotovil) + T(259.7, 701.8, z.jmeno || "", { c: true });
+  // „Vyhotovil“: přihlášený člověk z dílny; jméno Václav Macháň sedí přesně jako v originále, jiné jméno se vystředí do stejného místa
+  const vyh = d.vyhotovil || FIRMA.vyhotovil;
+  h += T(90.2 + (sirka(FIRMA.vyhotovil, 9.8) - sirka(vyh, 9.8)) / 2, 701.8, vyh, { maxW: 138 }) + T(259.7, 701.8, z.jmeno || "", { c: true });
   h += T(81.3, 729.2, "…............................") + T(210.7, 729.2, "…..............................");
   if (d.druh !== "protokol" && d.odhad != null && d.odhad !== "") h += T(435.6, 712.8, `${cislo2(d.odhad)} ${tx.mena}`, { b: true, size: 15.7, c: true });
   if (d.podpisVyhotovil) h += IMG(podpisSrc(d.podpisVyhotovil), 63.0, 706.9, 220.4, 752.7);

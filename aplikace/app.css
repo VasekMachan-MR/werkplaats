@@ -46,6 +46,7 @@ a { color: var(--navy); }
 .znacka-text b { font-size: 18px; letter-spacing: .2px; }
 .znacka-text small { font-size: 12px; opacity: .75; }
 .lista-vpravo { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.lista-vpravo .uzivatel-tl span { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
 .lista-vpravo .tl { color: #fff; border-color: rgba(255,255,255,.35); background: transparent; min-height: 38px; padding: 6px 12px; }
 
 main { max-width: 1080px; margin: 0 auto; padding: 20px max(16px, env(safe-area-inset-left)) 120px; }
@@ -79,6 +80,13 @@ label.pole { display: flex; flex-direction: column; gap: 5px; font-size: 13px; f
 .pole input:focus, .pole select:focus, .pole textarea:focus, .vstup:focus { border-color: var(--navy-2); box-shadow: 0 0 0 3px var(--modra-svetla); }
 .pole input.vin { font-family: ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 1px; text-transform: uppercase; }
 .napoveda { font-size: 13px; font-weight: 400; color: var(--sedy); }
+.chybi, .pole input.chybi, textarea.chybi { border-color: var(--cervena) !important; box-shadow: 0 0 0 3px var(--cervena-svetla) !important; }
+section.chybi { outline: 2px solid var(--cervena); }
+.co-chybi {
+  flex: 1 1 200px; border: 0; background: none; text-align: right; color: var(--oranzova); font-size: 14px; font-weight: 600;
+  cursor: pointer; padding: 4px 6px; line-height: 1.3;
+}
+.tl-hlavni[disabled] { background: #8a9bb0; border-color: #8a9bb0; opacity: 1; }
 .povinne::after { content: " *"; color: var(--cervena); }
 
 /* přepínače (segmenty) */
@@ -255,7 +263,9 @@ ul.odrazky { margin: 6px 0 0; padding-left: 20px; }
   .zakazka-radek .stitek { grid-column: 2; justify-self: start; }
   .znacka-text small { display: none; }
   .lista-vpravo .mutted { display: none; }
+  .lista-vpravo .uzivatel-tl span { display: none; }
   .akce-dole .stav-ulozeni { display: none; }
+  .akce-dole .co-chybi { font-size: 12px; flex-basis: 100px; }
   .akce-dole .vnitrek { flex-wrap: nowrap; }
   .akce-dole .tl-velke { min-height: 50px; font-size: 16px; padding: 10px 16px; }
   .akce-dole .tl-text { padding: 10px 6px; }

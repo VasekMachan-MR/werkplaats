@@ -135,6 +135,7 @@ const server = http.createServer((q, r) => {
   await p.waitForSelector("text=Auto známe");
   kontrola(await p.isVisible("text=naposledy zakázka #7377"), "auto poznáno podle VIN (naposledy #7377)");
   kontrola(await p.inputValue('[data-pole="vozidlo.model"]') === "300 SE", "údaje auta se doplnily");
+  await p.fill('[data-pole="zakazka.km_prijem"]', "123700");
   await p.click('[data-segment="zakaznik.jazyk"] >> text=English');
   await p.click('.cip[data-cip="zavady"] >> nth=0');
   await p.click('.cip[data-cip="stav_prijem"] >> nth=0');
@@ -156,6 +157,55 @@ const server = http.createServer((q, r) => {
   await p.waitForSelector(".zakazka-radek");
   kontrola(await p.locator(".zakazka-radek").count() === 2, "přehled ukazuje 2 zakázky");
   await foto("07-prehled");
+
+  // ---------- Lidé v dílně (majitel) ----------
+  await p.evaluate(() => { location.hash = "#/lide"; });
+  await p.waitForSelector("#seznam-lidi >> text=Petr Mechanik");
+  await p.fill('#pridat [name="jmeno"]', "Jan Učeň"); await p.fill('#pridat [name="email"]', "ucen@example.cz"); await p.fill('#pridat [name="heslo"]', "docasne-heslo-123");
+  await p.click('#pridat button[type="submit"]');
+  await p.waitForSelector("#seznam-lidi >> text=Jan Učeň");
+  kontrola(true, "majitel přidal nového člověka");
+  await foto("09-lide");
+
+  // ---------- mechanik bez uloženého podpisu ----------
+  const mc = await b.newContext({ ...devices["iPad Pro 11"], locale: "cs-CZ", timezoneId: "Europe/Prague" });
+  await mc.addInitScript({ content: `window.__TEST_UZIVATEL__ = "u2";` + fs.readFileSync("testy/mock-db.js", "utf8") });
+  const m = await mc.newPage();
+  m.on("pageerror", e => chyby.push("pageerror (mechanik): " + e.message));
+  await m.goto(URL0 + "#/novy");
+  await m.waitForSelector('[data-pole="zakaznik.jmeno"]');
+  kontrola(await m.isDisabled("#k-podpisu"), "prázdný formulář: Náhled a podpis nejde stisknout");
+  kontrola(/jméno zákazníka.*telefon nebo e-mail.*VIN.*model.*stav tachometru.*závada/.test(await m.textContent("#co-chybi")), "ukazuje, co chybí (jméno, kontakt, VIN, model, km, závada)");
+  await m.fill('[data-pole="zakaznik.jmeno"]', "Eva Zkušební");
+  await m.fill('[data-pole="zakaznik.email"]', "eva@example.cz");
+  await m.fill('[data-pole="vozidlo.vin"]', "WDB1230931A000002");
+  await m.fill('[data-pole="vozidlo.model"]', "300 TD");
+  await m.fill('[data-pole="zakazka.km_prijem"]', "250000");
+  await m.click('.cip[data-cip="zavady"] >> nth=0');
+  kontrola(!(await m.isDisabled("#k-podpisu")), "po vyplnění povinných polí jde dál");
+  await m.click("#k-podpisu");
+  await m.waitForSelector("#muj-podpis-sekce:not([hidden])");
+  kontrola(true, "mechanik bez podpisu: zobrazí se pole pro jeho podpis");
+  for (const sel of ["#podpis", "#muj-podpis"]) {
+    await m.locator(sel).scrollIntoViewIfNeeded(); const bb = await m.locator(sel).boundingBox();
+    await m.mouse.move(bb.x + 50, bb.y + 120); await m.mouse.down();
+    for (let i = 0; i <= 40; i++) await m.mouse.move(bb.x + 50 + i * 7, bb.y + 110 - Math.sin(i / 3) * 30);
+    await m.mouse.up(); await m.waitForTimeout(250);
+    if (sel === "#podpis") kontrola(await m.isDisabled("#ulozit"), "jen s podpisem zákazníka ještě nejde uložit");
+  }
+  kontrola(!(await m.isDisabled("#ulozit")), "s oběma podpisy jde uložit");
+  await m.click("#ulozit");
+  await m.waitForSelector("text=Zakázkový list uložen");
+  const um = await m.evaluate(() => ({ lide: window.__ULOZENO__.lide, podpisy: window.__ULOZENO__.tabulky.podpisy, pdf: Object.entries(window.__ULOZENO__.soubory).filter(([k]) => k.endsWith(".pdf")).map(([, v]) => Array.from(v)) }));
+  kontrola(/^data:image\/png/.test(um.lide.find(u => u.id === "u2").podpis_obrazek), "podpis mechanika uložen do jeho profilu");
+  kontrola(um.podpisy.some(x => x.role === "vyhotovil" && x.jmeno === "Petr Mechanik" && x.uzivatel_id === "u2" && x.zpusob === "ipad"), "podpis Vyhotovil = Petr Mechanik");
+  fs.writeFileSync(path.join(OUT, "mechanik.pdf"), Buffer.from(um.pdf[0]));
+  const txt = require("child_process").execFileSync("pdftotext", ["-l", "1", path.join(OUT, "mechanik.pdf"), "-"]).toString();
+  kontrola(/Petr Mechanik/.test(txt) && !/Václav Macháň\s*\n.*Eva/.test(txt), "na zakázkovém listu je Vyhotovil: Petr Mechanik");
+  await m.evaluate(() => { location.hash = "#/ucet"; });
+  await m.waitForSelector('#podpis-nahled img');
+  kontrola(true, "Můj účet ukazuje uložený podpis");
+  await m.screenshot({ path: path.join(OUT, "10-muj-ucet.png"), fullPage: true });
 
   // ---------- iPhone ----------
   const ph = await b.newContext({ ...devices["iPhone 14"], locale: "cs-CZ" });

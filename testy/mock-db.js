@@ -7,11 +7,23 @@ window.__WERK_DB__ = (() => {
   const kopie = o => JSON.parse(JSON.stringify(o));
   const cekej = () => new Promise(r => setTimeout(r, 30));
   const PODPIS = window.__TEST_PODPIS__ || null;
+  const LIDE = window.__ULOZENO__.lide = [
+    { id: "u1", jmeno: "Václav Macháň", email: "info@example.cz", role: "majitel", aktivni: true, podpis_obrazek: null },
+    { id: "u2", jmeno: "Petr Mechanik", email: "petr@example.cz", role: "mechanik", aktivni: true, podpis_obrazek: null }
+  ];
   return {
-    async relace() { return { user: { id: "u1" } }; },
+    async relace() { return { user: { id: window.__TEST_UZIVATEL__ || "u1" } }; },
     naZmenuPrihlaseni() {},
     async prihlasit() { return {}; }, async odhlasit() {}, async obnovitHeslo() {}, async noveHeslo() {},
-    async clen() { return { id: "u1", jmeno: "Václav Macháň", role: "majitel" }; },
+    async clen(uid) { return kopie(LIDE.find(u => u.id === uid) || null); },
+    async uzivatele() { return kopie(LIDE); },
+    async ulozitMujPodpis(uid, obrazek) { LIDE.find(u => u.id === uid).podpis_obrazek = obrazek; return [{ id: uid }]; },
+    async ulozitMojeJmeno(uid, jmeno) { LIDE.find(u => u.id === uid).jmeno = jmeno; return [{ id: uid }]; },
+    async sprava(b) {
+      if (b.akce === "pridat") { if (LIDE.some(u => u.email === b.email)) throw new Error("Účet s tímto e-mailem už existuje"); LIDE.push({ id: id(), jmeno: b.jmeno, email: b.email, role: b.role, aktivni: true, podpis_obrazek: null }); return { ok: true }; }
+      if (b.akce === "aktivni") { LIDE.find(u => u.id === b.id).aktivni = b.aktivni; return { ok: true }; }
+      return { ok: true };
+    },
     async podpisVyhotovil() { return PODPIS ? { jmeno: "Václav Macháň", obrazek: PODPIS } : null; },
     async dalsiCisloOdhad() { return window.__ULOZENO__.citac + 1; },
     async zakazky() {

@@ -76,7 +76,16 @@
       async odhlasit() { await sb.auth.signOut(); },
       async obnovitHeslo(email) { return ok(await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })); },
       async noveHeslo(heslo) { return ok(await sb.auth.updateUser({ password: heslo })); },
-      async clen(id) { return ok(await sb.from("uzivatele").select("id,jmeno,role").eq("id", id).maybeSingle()); },
+      async clen(id) { return ok(await sb.from("uzivatele").select("id,jmeno,role,email,aktivni,podpis_obrazek").eq("id", id).maybeSingle()); },
+      async uzivatele() { return ok(await sb.from("uzivatele").select("id,jmeno,role,email,aktivni,vytvoreno").order("vytvoreno")); },
+      async ulozitMujPodpis(id, obrazek) { return ok(await sb.from("uzivatele").update({ podpis_obrazek: obrazek }).eq("id", id).select("id")); },
+      async ulozitMojeJmeno(id, jmeno) { return ok(await sb.from("uzivatele").update({ jmeno }).eq("id", id).select("id")); },
+      async sprava(telo) {                              // serverová funkce: přidat mechanika, heslo, zablokovat, role (jen majitel)
+        const { data, error } = await sb.functions.invoke("sprava-uzivatelu", { body: telo });
+        if (error) { let m = error.message; try { const j = await error.context.json(); m = j.chyba || m; } catch (e) { /* bez těla */ } throw new Error(m); }
+        if (data?.chyba) throw new Error(data.chyba);
+        return data;
+      },
       async podpisVyhotovil() { const r = ok(await sb.from("nastaveni").select("hodnota").eq("klic", "podpis_vyhotovil").maybeSingle()); return r?.hodnota || null; },
       async dalsiCisloOdhad() { const r = ok(await sb.from("ciselne_rady").select("posledni").eq("rada", "zakazky").maybeSingle()); return r ? r.posledni + 1 : null; },
       async zakazky() {
@@ -135,14 +144,16 @@
     };
   }
   const db = window.__WERK_DB__ || vytvorDb();
-  let uzivatel = null;      // {id, jmeno, role}
+  let uzivatel = null;      // {id, jmeno, role, email, aktivni, podpis_obrazek}
 
   /* ================= směrování ================= */
   const trasy = [
     [/^#?\/?$/, prehled],
     [/^#\/novy$/, prijem],
     [/^#\/zakazka\/([\w-]+)$/, detail],
-    [/^#\/hotovo\/([\w-]+)$/, hotovo]
+    [/^#\/hotovo\/([\w-]+)$/, hotovo],
+    [/^#\/ucet$/, ucet],
+    [/^#\/lide$/, lide]
   ];
   let uklid = null;
   async function navigace() {
@@ -157,7 +168,9 @@
   function lista() {
     const el = document.getElementById("lista-vpravo");
     if (!uzivatel) { el.innerHTML = ""; return; }
-    el.innerHTML = `<span class="mutted" style="color:#cfe0f7">${esc(uzivatel.jmeno)}</span><button class="tl tl-male" id="odhlasit">Odhlásit</button>`;
+    el.innerHTML = `${uzivatel.role === "majitel" ? `<a class="tl tl-male" href="#/lide">Lidé</a>` : ""}
+      <a class="tl tl-male uzivatel-tl" href="#/ucet" title="Můj účet">👤 <span>${esc(uzivatel.jmeno)}</span></a>
+      <button class="tl tl-male" id="odhlasit">Odhlásit</button>`;
     el.querySelector("#odhlasit").onclick = async () => { await db.odhlasit(); uzivatel = null; prihlaseni(); };
   }
 
@@ -244,6 +257,7 @@
     if (!P) return;
     uloz(KONCEPT, { ...P, fotky: P.fotky.filter(f => f.klic && f.stav === "nahrano") });
     const s = document.getElementById("stav-ulozeni"); if (s) s.textContent = "Rozpracováno – uloženo v iPadu";
+    kontrolaPripravenosti();
   }
 
   function prijem() {
@@ -302,8 +316,8 @@
           ${pole("zakaznik.psc", "PSČ", { sirka: "s2", attrs: 'inputmode="numeric"' })}
           ${pole("zakaznik.mesto", "Město", { sirka: "s4" })}
           ${pole("zakaznik.zeme", "Země", { sirka: "s2" })}
-          ${pole("zakaznik.telefon", "Telefon", { typ: "tel", sirka: "s3", attrs: 'autocomplete="off"' })}
-          ${pole("zakaznik.email", "E-mail", { typ: "email", sirka: "s3", attrs: 'autocomplete="off" inputmode="email"' })}
+          ${pole("zakaznik.telefon", "Telefon", { typ: "tel", sirka: "s3", povinne: !z.email.trim(), attrs: 'autocomplete="off"', napoveda: "Telefon nebo e-mail – stačí jedno." })}
+          ${pole("zakaznik.email", "E-mail", { typ: "email", sirka: "s3", povinne: !z.telefon.trim(), attrs: 'autocomplete="off" inputmode="email"' })}
           <div class="s3"><label class="pole">Jazyk dokladů</label>${segment("zakaznik.jazyk", [["cs", "Čeština"], ["en", "English"]])}</div>
         </div>
       </section>
@@ -316,7 +330,7 @@
             napoveda: vin ? `Typ ${vin.typ}, kód modelu ${vin.kod}` : "" })}
           ${pole("vozidlo.spz", "SPZ", { sirka: "s2", attrs: 'autocapitalize="characters"' })}
           ${pole("vozidlo.typ", "Typ", { sirka: "s2", attrs: 'placeholder="126"' })}
-          ${pole("vozidlo.model", "Model", { sirka: "s2", attrs: 'placeholder="300 SE"' })}
+          ${pole("vozidlo.model", "Model", { sirka: "s2", povinne: true, attrs: 'placeholder="300 SE"' })}
           ${pole("vozidlo.rok", "Rok výroby", { sirka: "s2", attrs: 'inputmode="numeric" placeholder="1989"' })}
           ${pole("vozidlo.barva", "Barva", { sirka: "s2" })}
           <div class="s2"><label class="pole">Verze</label>${segment("vozidlo.verze", [["EU", "EU"], ["US", "US"], ["JP", "JP"]])}</div>
@@ -329,7 +343,7 @@
         <h2><span class="cislo-kroku">3</span>Příjem</h2>
         <div class="mrizka">
           ${pole("zakazka.datum_prijmu", "Datum převzetí", { typ: "date", sirka: "s2" })}
-          ${pole("zakazka.km_prijem", `Stav tachometru (${v.jednotka_tachometru === "mi" ? "míle" : "km"})`, { sirka: "s2", attrs: 'inputmode="numeric"' })}
+          ${pole("zakazka.km_prijem", `Stav tachometru (${v.jednotka_tachometru === "mi" ? "míle" : "km"})`, { sirka: "s2", povinne: true, attrs: 'inputmode="numeric"' })}
           ${pole("zakazka.predpoklad_dokonceni", "Předpoklad dokončení", { typ: "date", sirka: "s2", napoveda: P.rucne.dokonceni ? "" : `Převzetí + ${DNI_DOKONCENI} dní` })}
           <div class="s4"><label class="pole">Stav nádrže</label>${segment("zakazka.nadrz_prijem", NADRZ.map(n => [n, n]))}</div>
           <div class="s2"><label class="pole">TP přiložen</label>${segment("zakazka.tp_prilozen", [[true, "Ano"], [false, "Ne"]])}</div>
@@ -337,7 +351,7 @@
       </section>
 
       <section class="karta" id="sekce-zavady">
-        <h2><span class="cislo-kroku">4</span>Popis závad a objednaných oprav</h2>
+        <h2><span class="cislo-kroku">4</span><span class="povinne">Popis závad a objednaných oprav</span></h2>
         ${seznamRadku("zavady", 8)}
       </section>
 
@@ -373,12 +387,40 @@
       <div class="akce-dole"><div class="vnitrek">
         <button type="button" class="tl tl-text tl-nebezpecne" id="zahodit">Zahodit příjem</button>
         <span class="stav-ulozeni" id="stav-ulozeni"></span>
-        <button type="button" class="tl tl-hlavni tl-velke" id="k-podpisu">Náhled a podpis →</button>
+        <button type="button" class="co-chybi" id="co-chybi" hidden></button>
+        <button type="button" class="tl tl-hlavni tl-velke" id="k-podpisu" disabled>Náhled a podpis →</button>
       </div></div>`;
 
     vazbyFormulare();
     vykresliFotky();
+    kontrolaPripravenosti();
     if (v.vin) zkontrolujVin(false);
+  }
+
+  /* Co ještě chybí, než jde k náhledu a podpisu: povinná pole + nedokončené nahrávání fotek a videí */
+  function coChybi() {
+    const z = P.zakaznik, v = P.vozidlo, k = P.zakazka, ch = [];
+    if (!z.jmeno.trim()) ch.push(["jméno zákazníka", '[data-pole="zakaznik.jmeno"]']);
+    if (!z.telefon.trim() && !z.email.trim()) ch.push(["telefon nebo e-mail", '[data-pole="zakaznik.telefon"]']);
+    if (v.vin.replace(/\s/g, "").length < 8) ch.push(["VIN", '[data-pole="vozidlo.vin"]']);
+    if (!v.model.trim()) ch.push(["model", '[data-pole="vozidlo.model"]']);
+    if (cisloZ(k.km_prijem) == null || isNaN(cisloZ(k.km_prijem))) ch.push(["stav tachometru", '[data-pole="zakazka.km_prijem"]']);
+    if (!k.zavady.some(t => t.trim())) ch.push(["aspoň jedna závada", '#sekce-zavady textarea']);
+    const nahrava = P.fotky.filter(f => f.stav === "nahravam").length, chyba = P.fotky.filter(f => f.stav === "chyba").length;
+    if (nahrava) ch.push([`nahrávají se fotky/videa (${nahrava})`, "#sekce-fotky"]);
+    if (chyba) ch.push([`nenahrané fotky/videa (${chyba}) – nahrajte znovu nebo odeberte`, "#sekce-fotky"]);
+    return ch;
+  }
+  function kontrolaPripravenosti() {
+    const b = document.getElementById("k-podpisu"), info = document.getElementById("co-chybi");
+    if (!b || !P) return;
+    const ch = coChybi();
+    b.disabled = ch.length > 0;
+    info.hidden = !ch.length;
+    const su = document.getElementById("stav-ulozeni"); if (su) su.hidden = ch.length > 0;
+    info.textContent = ch.length ? "Chybí: " + ch.map(c => c[0]).join(", ") : "";
+    app.querySelectorAll(".chybi").forEach(e => e.classList.remove("chybi"));
+    if (kontrolaPripravenosti.ukazat) ch.forEach(([, sel]) => app.querySelector(sel)?.classList.add("chybi"));
   }
 
   function nastavHodnotu(cesta, hodnota) { const [o, k] = cesta.split("."); P[o][k] = hodnota; ulozKoncept(); }
@@ -389,6 +431,11 @@
         let h = inp.value;
         if (inp.dataset.pole === "vozidlo.vin") { h = h.toUpperCase(); }
         nastavHodnotu(inp.dataset.pole, h);
+        if (inp.dataset.pole === "zakaznik.telefon" || inp.dataset.pole === "zakaznik.email") {
+          const z = P.zakaznik;
+          app.querySelector('[data-pole="zakaznik.telefon"]').previousElementSibling.className = z.email.trim() ? "" : "povinne";
+          app.querySelector('[data-pole="zakaznik.email"]').previousElementSibling.className = z.telefon.trim() ? "" : "povinne";
+        }
         if (inp.dataset.pole === "zakazka.datum_prijmu" && h) {
           P.rucne.datum = h !== dnes();
           if (!P.rucne.dokonceni) {                      // dokončení se posouvá s datem převzetí
@@ -459,12 +506,13 @@
       uloz(KONCEPT, null); P = null; location.hash = "#/";
     };
     app.querySelector("#k-podpisu").onclick = () => {
-      const chyby = [];
-      if (!P.zakaznik.jmeno.trim()) chyby.push("jméno zákazníka");
-      if (P.vozidlo.vin.replace(/\s/g, "").length < 8) chyby.push("VIN");
-      if (chyby.length) return hlaska("Chybí: " + chyby.join(", "), true);
-      if (P.fotky.some(f => f.stav === "nahravam")) hlaska("Fotky se ještě nahrávají – dokončí se při uložení.");
+      if (coChybi().length) return;
       P.krok = "podpis"; ulozKoncept(); prijemPodpis();
+    };
+    app.querySelector("#co-chybi").onclick = () => {           // klepnutí na „Chybí: …“ ukáže první chybějící pole
+      kontrolaPripravenosti.ukazat = true; kontrolaPripravenosti();
+      const prvni = coChybi()[0]; const el = prvni && app.querySelector(prvni[1]);
+      if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); if (el.matches("input, textarea")) setTimeout(() => el.focus({ preventScroll: true }), 350); }
     };
   }
   function vykresliFormularZachovatPozici() { const y = window.scrollY; vykresliFormular(); window.scrollTo(0, y); }
@@ -616,6 +664,7 @@
       ${f.stav === "nahravam" ? `<span class="pruh"><i style="width:${Math.round((f.pokrok || 0) * 100)}%"></i></span>` : ""}
       <button type="button" class="odebrat" data-i="${i}" aria-label="Odebrat">×</button></div>`).join("");
     vykresliSouhrn();
+    kontrolaPripravenosti();
     el.querySelectorAll(".odebrat").forEach(b => b.onclick = () => { const f = P.fotky.splice(+b.dataset.i, 1)[0]; delete blobyFotek[f.id]; vykresliFotky(); ulozKoncept(); });
     el.querySelectorAll(".fotka.chyba").forEach(t => t.onclick = e => {
       if (e.target.closest(".odebrat")) return;
@@ -645,6 +694,7 @@
       stav: k.stav_prijem.map(s => s.trim()).filter(Boolean),
       datum: k.datum_prijmu, dokonceni: k.predpoklad_dokonceni || null,
       odhad: odhad == null || isNaN(odhad) ? null : odhad,
+      vyhotovil: uzivatel?.jmeno || undefined,
       podpisVyhotovil: podpisVyh || undefined, podpisZakaznik: podpisZak || undefined
     };
   }
@@ -665,10 +715,12 @@
     return iframe.contentWindow;
   }
 
-  let podpisVyhotovilCache = null;
+  /* Podpis „Vyhotovil“ = podpis přihlášeného (uložený v jeho profilu).
+     Vašek: dokud nemá podpis v profilu, použije se jeho dřívější podpis z nastavení firmy. */
   async function podpisVyhotovil() {
-    if (!podpisVyhotovilCache) podpisVyhotovilCache = await db.podpisVyhotovil();
-    return podpisVyhotovilCache;
+    if (uzivatel.podpis_obrazek) return uzivatel.podpis_obrazek;
+    try { const f = await db.podpisVyhotovil(); if (f?.obrazek && f.jmeno === uzivatel.jmeno) return f.obrazek; } catch (e) { /* bez podpisu */ }
+    return null;
   }
 
   /* ---------- náhled a podpis ---------- */
@@ -683,6 +735,12 @@
         <div class="podpis-pole"><canvas id="podpis"></canvas><div class="linka-podpisu"></div><div class="text-podpisu">${en ? "Customer signature" : "Podpis zákazníka (prstem nebo pero)"}</div></div>
         <div class="radek-tlacitek" style="margin-top:10px"><button type="button" class="tl tl-male" id="smazat-podpis">Smazat podpis</button>
           <span class="napoveda">Podpis se propíše do políčka „${en ? "Received by" : "Převzal"}“.</span></div>
+      </section>
+      <section class="karta" id="muj-podpis-sekce" hidden>
+        <h2>Váš podpis – ${esc(uzivatel.jmeno)}</h2>
+        <p class="popis">Zatím nemáte uložený podpis. Podepište se jednou – uloží se do vašeho profilu a příště se doplní sám do políčka „${en ? "Issued by" : "Vyhotovil"}“.</p>
+        <div class="podpis-pole"><canvas id="muj-podpis"></canvas><div class="linka-podpisu"></div><div class="text-podpisu">${esc(uzivatel.jmeno)}</div></div>
+        <div class="radek-tlacitek" style="margin-top:10px"><button type="button" class="tl tl-male" id="smazat-muj-podpis">Smazat</button></div>
       </section>
       <div class="akce-dole"><div class="vnitrek">
         <button type="button" class="tl" id="zpet">← Upravit údaje</button>
@@ -699,16 +757,24 @@
     };
     meritko(); window.addEventListener("resize", meritko);
 
-    let vyh = null;
-    try { vyh = (await podpisVyhotovil())?.obrazek || null; } catch (e) { hlaska("Váš podpis se nenačetl: " + chybaText(e), true); }
+    let vyh = await podpisVyhotovil();
+    let mujPad = null;
+    const pripraveno = () => !!(pad && !pad.prazdny() && (vyh || (mujPad && !mujPad.prazdny())));
     let odhadCisla = P.vysledek?.cislo || null;
     if (!odhadCisla) try { odhadCisla = await db.dalsiCisloOdhad(); } catch (e) { /* bez čísla */ }
 
-    const pad = new PodpisPad(app.querySelector("#podpis"), {
-      onZmena: ma => { app.querySelector("#ulozit").disabled = !ma; obnovNahled(); }
+    let pad = null;
+    pad = new PodpisPad(app.querySelector("#podpis"), {
+      onZmena: () => { app.querySelector("#ulozit").disabled = !pripraveno(); obnovNahled(); }
     });
+    if (!vyh) {
+      app.querySelector("#muj-podpis-sekce").hidden = false;
+      mujPad = new PodpisPad(app.querySelector("#muj-podpis"), { onZmena: () => { app.querySelector("#ulozit").disabled = !pripraveno(); obnovNahled(); } });
+      app.querySelector("#smazat-muj-podpis").onclick = () => mujPad.smazat();
+    }
+    const podpisVyh = () => vyh || mujPad?.png() || null;
     const obnovNahled = async () => {
-      try { await vykresliSablonu(iframe, "zakazkovy-list.html", dataZakazkovehoListu(odhadCisla, vyh, pad.png()), P.zakazka.jazyk); }
+      try { await vykresliSablonu(iframe, "zakazkovy-list.html", dataZakazkovehoListu(odhadCisla, podpisVyh(), pad.png()), P.zakazka.jazyk); }
       catch (e) { hlaska("Náhled se nepodařil: " + chybaText(e), true); }
     };
     await obnovNahled();
@@ -717,11 +783,17 @@
       if (P.vysledek) return hlaska("Zakázka už je založená – údaje upravíte v detailu zakázky.", true);
       P.krok = "formular"; ulozKoncept(); vykresliFormular();
     };
-    app.querySelector("#ulozit").onclick = () => ulozitPrijem(iframe, vyh, pad.png());
-    uklid = () => { window.removeEventListener("resize", meritko); pad.zrus(); };
+    app.querySelector("#ulozit").onclick = async () => {
+      if (!vyh && mujPad && !mujPad.prazdny()) {           // nový podpis přihlášeného → uložit do profilu
+        try { const png = mujPad.png(); await db.ulozitMujPodpis(uzivatel.id, png); uzivatel.podpis_obrazek = png; }
+        catch (e) { return hlaska("Váš podpis se nepodařilo uložit: " + chybaText(e), true); }
+      }
+      ulozitPrijem(iframe, podpisVyh(), pad.png(), !vyh);
+    };
+    uklid = () => { window.removeEventListener("resize", meritko); pad.zrus(); mujPad?.zrus(); };
   }
 
-  async function ulozitPrijem(iframe, podpisVyh, podpisZak) {
+  async function ulozitPrijem(iframe, podpisVyh, podpisZak, vyhPodepsalNaIpadu = false) {
     if (!podpisZak) return hlaska("Chybí podpis zákazníka.", true);
     const p = prekryv("Ukládám zakázku…");
     try {
@@ -770,7 +842,7 @@
       await db.upravit("soubory", pdfSoubor.id, { doklad_id: doklad.id });
       await db.vlozit("podpisy", [
         { doklad_id: doklad.id, role: "zakaznik", jmeno: P.zakaznik.jmeno.trim(), zpusob: "ipad", otisk_dokumentu: otisk, obrazek_soubor_id: podpisSoubor.id },
-        { doklad_id: doklad.id, role: "vyhotovil", jmeno: uzivatel.jmeno || "Václav Macháň", zpusob: "ulozeny", otisk_dokumentu: otisk }
+        { doklad_id: doklad.id, role: "vyhotovil", jmeno: uzivatel.jmeno, uzivatel_id: uzivatel.id, zpusob: vyhPodepsalNaIpadu ? "ipad" : "ulozeny", otisk_dokumentu: otisk }
       ]);
       // 6) fotky k zakázce
       if (P.fotky.length) await db.vlozit("soubory", P.fotky.map(f => ({ zakazka_id, vozidlo_id, druh: f.video ? "video" : "foto", faze: "prijem", klic: f.klic, nazev: f.nazev || null, mime: f.mime || "image/jpeg" })));
@@ -865,6 +937,96 @@
     }
   }
 
+  /* ================= můj účet ================= */
+  async function ucet() {
+    app.innerHTML = `
+      <h1>Můj účet</h1>
+      <section class="karta"><h2>Údaje</h2>
+        <div class="mrizka">
+          <label class="pole s3">Jméno (tiskne se na doklady jako „Vyhotovil“)<input id="jmeno" value="${esc(uzivatel.jmeno)}"></label>
+          <div class="pole s3"><span>Přihlášení</span><div style="padding:12px 0;font-weight:400;color:var(--text)">${esc(uzivatel.email || "")} · ${uzivatel.role === "majitel" ? "majitel" : "mechanik"}</div></div>
+        </div>
+        <div class="radek-tlacitek" style="margin-top:12px"><button class="tl" id="ulozit-jmeno">Uložit jméno</button></div>
+      </section>
+      <section class="karta"><h2>Můj podpis</h2>
+        <p class="popis">Doplňuje se do políčka „Vyhotovil“ na zakázkových listech a dalších dokladech.</p>
+        <div id="podpis-nahled">${uzivatel.podpis_obrazek ? `<img src="${uzivatel.podpis_obrazek}" alt="Můj podpis" style="max-height:110px;max-width:100%;background:#fff;border:1px solid var(--linka);border-radius:10px;padding:8px">` : `<div class="info pozor">Zatím nemáte uložený podpis.</div>`}</div>
+        <div class="podpis-pole" style="margin-top:12px"><canvas id="novy-podpis"></canvas><div class="linka-podpisu"></div><div class="text-podpisu">${uzivatel.podpis_obrazek ? "Nový podpis (nahradí stávající)" : "Podepište se"}</div></div>
+        <div class="radek-tlacitek" style="margin-top:10px"><button class="tl tl-male" id="smazat">Smazat</button><button class="tl tl-hlavni" id="ulozit-podpis" disabled>Uložit podpis</button></div>
+      </section>
+      <section class="karta"><h2>Změna hesla</h2>
+        <form id="heslo-f" class="mrizka" autocomplete="on">
+          <input type="email" autocomplete="username" value="${esc(uzivatel.email || "")}" hidden>
+          <label class="pole s3">Nové heslo (aspoň 10 znaků)<input name="h1" type="password" autocomplete="new-password" minlength="10" required></label>
+          <label class="pole s3">Nové heslo znovu<input name="h2" type="password" autocomplete="new-password" minlength="10" required></label>
+          <div class="s6"><button class="tl" type="submit">Změnit heslo</button></div>
+        </form>
+      </section>`;
+    const pad = new PodpisPad(app.querySelector("#novy-podpis"), { onZmena: ma => (app.querySelector("#ulozit-podpis").disabled = !ma) });
+    uklid = () => pad.zrus();
+    app.querySelector("#smazat").onclick = () => pad.smazat();
+    app.querySelector("#ulozit-podpis").onclick = async () => {
+      try { const png = pad.png(); await db.ulozitMujPodpis(uzivatel.id, png); uzivatel.podpis_obrazek = png; hlaska("Podpis uložen."); ucet(); }
+      catch (e) { hlaska(chybaText(e), true); }
+    };
+    app.querySelector("#ulozit-jmeno").onclick = async () => {
+      const j = app.querySelector("#jmeno").value.trim();
+      if (j.length < 2) return hlaska("Vyplňte jméno.", true);
+      try { await db.ulozitMojeJmeno(uzivatel.id, j); uzivatel.jmeno = j; lista(); hlaska("Jméno uloženo."); } catch (e) { hlaska(chybaText(e), true); }
+    };
+    app.querySelector("#heslo-f").onsubmit = async e => {
+      e.preventDefault(); const f = e.target;
+      if (f.h1.value !== f.h2.value) return hlaska("Hesla se neshodují.", true);
+      try { await db.noveHeslo(f.h1.value); f.reset(); hlaska("Heslo změněno."); } catch (err) { hlaska(chybaText(err), true); }
+    };
+  }
+
+  /* ================= lidé v dílně (jen majitel) ================= */
+  async function lide() {
+    if (uzivatel.role !== "majitel") { location.hash = "#/"; return; }
+    app.innerHTML = `
+      <h1>Lidé v dílně</h1>
+      <section class="karta"><h2>Kdo má přístup</h2><div class="doklady" id="seznam-lidi"><div class="nacitani">Načítám…</div></div></section>
+      <section class="karta"><h2>Přidat člověka</h2>
+        <p class="popis">Zadejte jeho e-mail a dočasné heslo, které mu sdělíte. Po prvním přihlášení si ho změní v „Můj účet“.</p>
+        <form id="pridat" class="mrizka" autocomplete="off">
+          <label class="pole s3"><span class="povinne">Jméno a příjmení</span><input name="jmeno" required minlength="2"></label>
+          <label class="pole s3"><span class="povinne">E-mail</span><input name="email" type="email" required inputmode="email" autocomplete="off"></label>
+          <label class="pole s3"><span class="povinne">Dočasné heslo (aspoň 10 znaků)</span><input name="heslo" type="text" required minlength="10" autocomplete="off" spellcheck="false"></label>
+          <label class="pole s3">Role<select name="role"><option value="mechanik">Mechanik</option><option value="majitel">Majitel</option></select></label>
+          <div class="s6"><button class="tl tl-hlavni" type="submit">Přidat</button></div>
+        </form>
+      </section>`;
+    const vykresli = async () => {
+      const el = app.querySelector("#seznam-lidi");
+      try {
+        const lidi = await db.uzivatele();
+        el.innerHTML = lidi.map(u => `<div class="doklad"><span><b>${esc(u.jmeno)}</b>${u.id === uzivatel.id ? " (vy)" : ""}<br>
+            <small class="mutted">${esc(u.email || "")} · ${u.role === "majitel" ? "majitel" : "mechanik"}${u.aktivni ? "" : " · <b style='color:var(--cervena)'>zablokovaný</b>"}</small></span>
+          ${u.id === uzivatel.id ? "" : `<span class="radek-tlacitek">
+            <button class="tl tl-male" data-heslo="${u.id}">Nové heslo</button>
+            <button class="tl tl-male ${u.aktivni ? "tl-nebezpecne" : ""}" data-aktivni="${u.id}" data-hodnota="${!u.aktivni}">${u.aktivni ? "Zablokovat" : "Odblokovat"}</button></span>`}</div>`).join("");
+        el.querySelectorAll("[data-heslo]").forEach(b => b.onclick = async () => {
+          const h = prompt("Nové dočasné heslo (aspoň 10 znaků):"); if (!h) return;
+          try { await db.sprava({ akce: "heslo", id: b.dataset.heslo, heslo: h }); hlaska("Heslo nastaveno."); } catch (e) { hlaska(chybaText(e), true); }
+        });
+        el.querySelectorAll("[data-aktivni]").forEach(b => b.onclick = async () => {
+          const aktivni = b.dataset.hodnota === "true";
+          if (!aktivni && !confirm("Zablokovat přístup? Člověk se už nepřihlásí; jeho zakázky a doklady zůstanou.")) return;
+          try { await db.sprava({ akce: "aktivni", id: b.dataset.aktivni, aktivni }); vykresli(); } catch (e) { hlaska(chybaText(e), true); }
+        });
+      } catch (e) { el.innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; }
+    };
+    vykresli();
+    app.querySelector("#pridat").onsubmit = async e => {
+      e.preventDefault(); const f = e.target, b = f.querySelector("button"); b.disabled = true;
+      try {
+        await db.sprava({ akce: "pridat", jmeno: f.jmeno.value.trim(), email: f.email.value.trim(), heslo: f.heslo.value, role: f.role.value });
+        hlaska(`${f.jmeno.value.trim()} přidán. Pošlete mu adresu aplikace, e-mail a dočasné heslo.`, false, 6000); f.reset(); vykresli();
+      } catch (err) { hlaska(chybaText(err), true); } finally { b.disabled = false; }
+    };
+  }
+
   /* ================= start ================= */
   async function start() {
     if (/type=recovery/.test(location.hash)) return prihlaseni();
@@ -873,7 +1035,7 @@
     if (!s) { uzivatel = null; return prihlaseni(); }
     try {
       const c = await db.clen(s.user.id);
-      if (!c) { uzivatel = null; await db.odhlasit(); return prihlaseni("Tento účet zatím nemá přístup do dílny."); }
+      if (!c || c.aktivni === false) { uzivatel = null; await db.odhlasit(); return prihlaseni(c ? "Tento účet je zablokovaný." : "Tento účet zatím nemá přístup do dílny."); }
       uzivatel = c;
     } catch (e) { return prihlaseni("Nelze se spojit se serverem: " + chybaText(e)); }
     lista();
