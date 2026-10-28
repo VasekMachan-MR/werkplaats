@@ -826,11 +826,16 @@
     });
   }
   /* Parts list (příloha nabídky a faktury) – díly kromě nepoužitých; cena = prodejní cena × množství */
-  function dataPartsListu(z, dily, ceny = true) {
-    const mn = d => { const n = Number(d.mnozstvi); if (!d.jednotka || d.jednotka === "ks") return isNaN(n) ? d.mnozstvi : n; return `${mnozstviCz(n)}${d.jednotka}`; };
-    return { cislo: z.cislo, ceny, dily: dily.filter(d => d.stav !== "nepouzito" && (d.nazev || d.cislo_mb)).map(d => ({
-      nazev: d.nazev || "", mnozstvi: mn(d), cislo: d.cislo_mb || "", cena: ceny && d.prodejni_cena != null ? zaokrouhli(Number(d.prodejni_cena) * (Number(d.mnozstvi) || 0)) : null,
-      poznamka: d.poznamka || "", puvod: d.puvod || null })) };
+  function dataPartsListu(z, dily, ceny = true, odkaz = null) {
+    const mn = d => { const n = Number(d.mnozstvi); if (!d.jednotka || d.jednotka === "ks") return isNaN(n) ? d.mnozstvi : n; return `${mnozstviCz(n)} ${d.jednotka}`; };
+    const v = z.vozidla || {}, c = z.zakaznici || {};
+    return { cislo: z.cislo, ceny, datum: dnes(), odkaz,
+      vozidlo: { znacka: v.znacka, typ: v.typ, model: v.model, rok: v.rok, vin: v.vin, spz: v.spz }, zakaznik: { jmeno: c.jmeno || "" },
+      dily: dily.filter(d => d.stav !== "nepouzito" && (d.nazev || d.cislo_mb)).map(d => ({
+        nazev: d.nazev || "", mnozstvi: mn(d), cislo: d.cislo_mb || "",
+        cenaKs: ceny && d.prodejni_cena != null ? Number(d.prodejni_cena) : null,
+        cena: ceny && d.prodejni_cena != null ? zaokrouhli(Number(d.prodejni_cena) * (Number(d.mnozstvi) || 0)) : null,
+        poznamka: d.poznamka || "", puvod: d.puvod || null })) };
   }
 
   /* Vykreslování do jednoho rámečku jde vždy po jednom (náhled se nesmí přepsat uprostřed tvorby PDF) */
@@ -1695,7 +1700,7 @@
         if (!vyh && mujPad && !mujPad.prazdny()) { const png = mujPad.png(); await db.ulozitMujPodpis(uzivatel.id, png); uzivatel.podpis_obrazek = png; }
         let nabidka_id = null;
         if (druh === "nabidka") { const [n] = await db.vlozit("nabidky", [{ zakazka_id: id, verze, stav: "odeslano", platnost: f.platnost }]); nabidka_id = n.id; }
-        const pl = dataPartsListu(z, dily, true);
+        const pl = dataPartsListu(z, dily, true, { druh, cislo });
         const prilohy = (druh === "nabidka" || druh === "faktura") && pl.dily.length ? [{ sablona: "parts-list.html", data: pl, nazev: "parts list", slug: "parts-list" }] : [];
         await ulozitDoklad({ iframe, sablona, data: data(), jazyk, zakazka_id: id, vozidlo_id: z.vozidlo_id || z.vozidla?.id, cisloZakazky: z.cislo, druh, verze, prilohy,
           vystaveno: druh === "predavaci_protokol" ? f.prevzeti : f.vystaveno, splatnost: ["faktura", "zalohova"].includes(druh) ? f.splatnost : druh === "nabidka" ? f.platnost : null,

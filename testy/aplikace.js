@@ -195,7 +195,9 @@ const server = http.createServer((q, r) => {
   const plSoubory = await p.evaluate(() => window.__ULOZENO__.tabulky.soubory.filter(f => /parts-list/.test(f.klic)).map(f => [f.klic, f.doklad_id]));
   kontrola(plSoubory.length === 2 && plSoubory.every(([, d]) => d), "parts list přiložen k nabídce i k faktuře (ne k zálohové)");
   const txtPl = require("child_process").execFileSync("pdftotext", ["-layout", path.join(OUT, "7377-3-parts-list.pdf"), "-"]).toString();
-  kontrola(/PARTS LIST\s+#7377/.test(txtPl) && /Hydraulické čerpadlo ASD\s+1\s+A 001 466 82 01\s+13 000,00 CZK\s+Original MB/.test(txtPl) && /TOTAL\s+13 325,00 CZK/.test(txtPl) && /Original part/.test(txtPl), "PDF parts listu: díl s číslem, cenou a poznámkou, TOTAL 13 325,00 CZK, legenda barev");
+  kontrola(/PARTS LIST\s+# 7377/.test(txtPl) && /Reference: Invoice 7377-3/.test(txtPl) && /VIN: WDB1260241A000001/.test(txtPl) && /Hydraulické čerpadlo ASD\s+A 001 466 82 01\s+Original\s+1\s+13 000 CZK\s+13 000 CZK\s+Original MB/.test(txtPl)
+    && /Těsnění\s+Aftermarket\s+1\s+325 CZK/.test(txtPl) && /TOTAL\s+13 325 CZK/.test(txtPl) && /Original – genuine Mercedes-Benz part/.test(txtPl),
+    "PDF parts listu: vůz, odkaz na fakturu, díl s číslem, původem, cenou za kus i celkem a poznámkou, TOTAL 13 325 CZK, vysvětlivky");
   const txtFa = require("child_process").execFileSync("pdftotext", ["-l", "1", "-layout", path.join(OUT, "7377-3-faktura.pdf"), "-"]).toString();
   kontrola(/FAKTURA\s+#\s*7377-3/.test(txtFa) && /Variabilní symbol:\s+73773/.test(txtFa) && /9 050,00 Kč/.test(txtFa) && /Likvidace kapalin/.test(txtFa) && /Odečet zálohy 7377-5\s+-13 325/.test(txtFa) && /13 325/.test(txtFa), "PDF faktury: 7377-3, VS 73773, materiál 13 325, odečet zálohy −13 325, k úhradě 9 050,00 Kč");
   const txtZa = require("child_process").execFileSync("pdftotext", ["-layout", path.join(OUT, "7377-5-zalohova-faktura.pdf"), "-"]).toString();

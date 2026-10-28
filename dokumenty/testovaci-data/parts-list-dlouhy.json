@@ -1,0 +1,336 @@
+{
+ "cislo": 7377,
+ "datum": "2026-10-29",
+ "odkaz": {
+  "druh": "faktura",
+  "cislo": "7377-3"
+ },
+ "vozidlo": {
+  "znacka": "Mercedes-Benz",
+  "typ": "126",
+  "model": "300 SE",
+  "rok": 1989,
+  "vin": "WDB1260241A000001",
+  "spz": "1H1 2345"
+ },
+ "zakaznik": {
+  "jmeno": "Jan Novák"
+ },
+ "dily": [
+  {
+   "nazev": "Hydraulické čerpadlo ASD",
+   "mnozstvi": 1,
+   "cislo": "A 001 466 82 01",
+   "cenaKs": 13000,
+   "cena": 13000,
+   "poznamka": "Original MB, incl. o-rings",
+   "puvod": "original"
+  },
+  {
+   "nazev": "Pouzdro, řadicí tyč FEBI BILSTEIN",
+   "mnozstvi": 12,
+   "cislo": "08224",
+   "cenaKs": 36,
+   "cena": 432,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Tlumič pérování BILSTEIN",
+   "mnozstvi": 2,
+   "cislo": "24-011839",
+   "cenaKs": 3255,
+   "cena": 6510,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Olejový filtr MANN-FILTER",
+   "mnozstvi": 1,
+   "cislo": "W 719/13",
+   "cenaKs": 178,
+   "cena": 178,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Těsnění víka ventilů",
+   "mnozstvi": 1,
+   "cislo": "A 116 016 02 21",
+   "cenaKs": 1450,
+   "cena": 1450,
+   "puvod": "original"
+  },
+  {
+   "nazev": "Engine oil Valvoline 15W-40",
+   "mnozstvi": "8,5l",
+   "cislo": "VA872785",
+   "cenaKs": 357,
+   "cena": 3035
+  },
+  {
+   "nazev": "Hydraulické čerpadlo ASD",
+   "mnozstvi": 1,
+   "cislo": "A 001 466 82 01",
+   "cenaKs": 13000,
+   "cena": 13000,
+   "puvod": "original"
+  },
+  {
+   "nazev": "Pouzdro, řadicí tyč FEBI BILSTEIN",
+   "mnozstvi": 12,
+   "cislo": "08224",
+   "cenaKs": 36,
+   "cena": 432,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Tlumič pérování BILSTEIN",
+   "mnozstvi": 2,
+   "cislo": "24-011839",
+   "cenaKs": 3255,
+   "cena": 6510,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Olejový filtr MANN-FILTER",
+   "mnozstvi": 1,
+   "cislo": "W 719/13",
+   "cenaKs": 178,
+   "cena": 178,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Těsnění víka ventilů",
+   "mnozstvi": 1,
+   "cislo": "A 116 016 02 21",
+   "cenaKs": 1450,
+   "cena": 1450,
+   "puvod": "original"
+  },
+  {
+   "nazev": "Engine oil Valvoline 15W-40",
+   "mnozstvi": "8,5l",
+   "cislo": "VA872785",
+   "cenaKs": 357,
+   "cena": 3035
+  },
+  {
+   "nazev": "Hydraulické čerpadlo ASD",
+   "mnozstvi": 1,
+   "cislo": "A 001 466 82 01",
+   "cenaKs": 13000,
+   "cena": 13000,
+   "puvod": "original"
+  },
+  {
+   "nazev": "Pouzdro, řadicí tyč FEBI BILSTEIN",
+   "mnozstvi": 12,
+   "cislo": "08224",
+   "cenaKs": 36,
+   "cena": 432,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Tlumič pérování BILSTEIN",
+   "mnozstvi": 2,
+   "cislo": "24-011839",
+   "cenaKs": 3255,
+   "cena": 6510,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Olejový filtr MANN-FILTER",
+   "mnozstvi": 1,
+   "cislo": "W 719/13",
+   "cenaKs": 178,
+   "cena": 178,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Těsnění víka ventilů",
+   "mnozstvi": 1,
+   "cislo": "A 116 016 02 21",
+   "cenaKs": 1450,
+   "cena": 1450,
+   "puvod": "original"
+  },
+  {
+   "nazev": "Engine oil Valvoline 15W-40",
+   "mnozstvi": "8,5l",
+   "cislo": "VA872785",
+   "cenaKs": 357,
+   "cena": 3035
+  },
+  {
+   "nazev": "Hydraulické čerpadlo ASD",
+   "mnozstvi": 1,
+   "cislo": "A 001 466 82 01",
+   "cenaKs": 13000,
+   "cena": 13000,
+   "puvod": "original"
+  },
+  {
+   "nazev": "Pouzdro, řadicí tyč FEBI BILSTEIN",
+   "mnozstvi": 12,
+   "cislo": "08224",
+   "cenaKs": 36,
+   "cena": 432,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Tlumič pérování BILSTEIN",
+   "mnozstvi": 2,
+   "cislo": "24-011839",
+   "cenaKs": 3255,
+   "cena": 6510,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Olejový filtr MANN-FILTER",
+   "mnozstvi": 1,
+   "cislo": "W 719/13",
+   "cenaKs": 178,
+   "cena": 178,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Těsnění víka ventilů",
+   "mnozstvi": 1,
+   "cislo": "A 116 016 02 21",
+   "cenaKs": 1450,
+   "cena": 1450,
+   "puvod": "original"
+  },
+  {
+   "nazev": "Engine oil Valvoline 15W-40",
+   "mnozstvi": "8,5l",
+   "cislo": "VA872785",
+   "cenaKs": 357,
+   "cena": 3035
+  },
+  {
+   "nazev": "Hydraulické čerpadlo ASD",
+   "mnozstvi": 1,
+   "cislo": "A 001 466 82 01",
+   "cenaKs": 13000,
+   "cena": 13000,
+   "puvod": "original"
+  },
+  {
+   "nazev": "Pouzdro, řadicí tyč FEBI BILSTEIN",
+   "mnozstvi": 12,
+   "cislo": "08224",
+   "cenaKs": 36,
+   "cena": 432,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Tlumič pérování BILSTEIN",
+   "mnozstvi": 2,
+   "cislo": "24-011839",
+   "cenaKs": 3255,
+   "cena": 6510,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Olejový filtr MANN-FILTER",
+   "mnozstvi": 1,
+   "cislo": "W 719/13",
+   "cenaKs": 178,
+   "cena": 178,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Těsnění víka ventilů",
+   "mnozstvi": 1,
+   "cislo": "A 116 016 02 21",
+   "cenaKs": 1450,
+   "cena": 1450,
+   "puvod": "original"
+  },
+  {
+   "nazev": "Engine oil Valvoline 15W-40",
+   "mnozstvi": "8,5l",
+   "cislo": "VA872785",
+   "cenaKs": 357,
+   "cena": 3035
+  },
+  {
+   "nazev": "Hydraulické čerpadlo ASD",
+   "mnozstvi": 1,
+   "cislo": "A 001 466 82 01",
+   "cenaKs": 13000,
+   "cena": 13000,
+   "puvod": "original"
+  },
+  {
+   "nazev": "Pouzdro, řadicí tyč FEBI BILSTEIN",
+   "mnozstvi": 12,
+   "cislo": "08224",
+   "cenaKs": 36,
+   "cena": 432,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Tlumič pérování BILSTEIN",
+   "mnozstvi": 2,
+   "cislo": "24-011839",
+   "cenaKs": 3255,
+   "cena": 6510,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Olejový filtr MANN-FILTER",
+   "mnozstvi": 1,
+   "cislo": "W 719/13",
+   "cenaKs": 178,
+   "cena": 178,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Těsnění víka ventilů",
+   "mnozstvi": 1,
+   "cislo": "A 116 016 02 21",
+   "cenaKs": 1450,
+   "cena": 1450,
+   "puvod": "original"
+  },
+  {
+   "nazev": "Engine oil Valvoline 15W-40",
+   "mnozstvi": "8,5l",
+   "cislo": "VA872785",
+   "cenaKs": 357,
+   "cena": 3035
+  },
+  {
+   "nazev": "Hydraulické čerpadlo ASD",
+   "mnozstvi": 1,
+   "cislo": "A 001 466 82 01",
+   "cenaKs": 13000,
+   "cena": 13000,
+   "puvod": "original"
+  },
+  {
+   "nazev": "Pouzdro, řadicí tyč FEBI BILSTEIN",
+   "mnozstvi": 12,
+   "cislo": "08224",
+   "cenaKs": 36,
+   "cena": 432,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Tlumič pérování BILSTEIN",
+   "mnozstvi": 2,
+   "cislo": "24-011839",
+   "cenaKs": 3255,
+   "cena": 6510,
+   "puvod": "aftermarket"
+  },
+  {
+   "nazev": "Olejový filtr MANN-FILTER",
+   "mnozstvi": 1,
+   "cislo": "W 719/13",
+   "cenaKs": 178,
+   "cena": 178,
+   "puvod": "aftermarket"
+  }
+ ]
+}
