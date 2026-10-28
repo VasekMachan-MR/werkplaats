@@ -47,8 +47,9 @@ window.__WERK_DB__ = (() => {
       T.zakazky.push(zk);
       return { zakazka_id: zk.id, cislo, zakaznik_id: zid, vozidlo_id: a.id };
     },
-    async nahrat(klic, blob) {
+    async nahrat(klic, blob, typ, prubeh) {
       if (S[klic]) throw new Error("The resource already exists");
+      if (prubeh) { prubeh(0.4); await new Promise(r => setTimeout(r, 60)); prubeh(0.8); }
       S[klic] = new Uint8Array(await blob.arrayBuffer()); return { path: klic };
     },
     async odkaz(klic) { return URL.createObjectURL(new Blob([S[klic]], { type: klic.endsWith(".pdf") ? "application/pdf" : "image/jpeg" })); },

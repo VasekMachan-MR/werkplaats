@@ -152,7 +152,20 @@ label.pole { display: flex; flex-direction: column; gap: 5px; font-size: 13px; f
   position: absolute; left: 6px; bottom: 6px; font-size: 12px; padding: 2px 7px; border-radius: 999px;
   background: rgba(9,42,79,.82); color: #fff;
 }
-.fotka .stav-fotky.chyba { background: var(--cervena); }
+.fotka .stav-fotky.chyba { background: var(--cervena); cursor: pointer; }
+.fotka .stav-fotky.nahrano { background: var(--zelena); font-weight: 650; }
+.fotka.nahrano { outline: 3px solid var(--zelena); outline-offset: -3px; }
+.fotka.chyba { outline: 3px solid var(--cervena); outline-offset: -3px; }
+.fotka .info-videa {
+  position: absolute; left: 6px; top: 6px; max-width: calc(100% - 50px); font-size: 11px; padding: 2px 7px; border-radius: 999px;
+  background: rgba(0,0,0,.6); color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fotka.chyba { cursor: pointer; }
+.fotka .stav-fotky { white-space: nowrap; }
+.fotka .pruh { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: rgba(255,255,255,.5); }
+.fotka .pruh i { display: block; height: 100%; background: var(--navy); transition: width .2s; }
+.limity { margin: 12px 0 0; line-height: 1.5; }
+#souhrn-nahrani .info { margin-top: 12px; font-weight: 600; }
 .fotka .odebrat {
   position: absolute; right: 5px; top: 5px; width: 32px; height: 32px; border-radius: 50%; border: 0;
   background: rgba(0,0,0,.55); color: #fff; font-size: 18px; cursor: pointer;

@@ -79,12 +79,16 @@ const server = http.createServer((q, r) => {
   await p.keyboard.type("Zadní anténa nefunkční");
   await p.click('.cip[data-cip="stav_prijem"] >> nth=1');
   await p.setInputFiles("#foto-galerie", ["testy/auto-1.jpg", "testy/auto-2.jpg"]);
-  await p.waitForFunction(() => document.querySelectorAll("#fotky .fotka img").length === 2 && !document.querySelector(".stav-fotky"));
+  await p.waitForFunction(() => document.querySelectorAll("#fotky .fotka.nahrano img").length === 2);
   kontrola(true, "2 fotky zmenšeny a nahrány");
   await p.setInputFiles("#video-kamera", "testy/video-test.webm");
-  await p.waitForFunction(() => document.querySelectorAll("#fotky .fotka").length === 3 && !document.querySelector(".stav-fotky"));
+  await p.waitForFunction(() => document.querySelectorAll("#fotky .fotka.nahrano").length === 3);
   kontrola(await p.locator("#fotky .ikona-videa").count() === 1 && await p.locator("#fotky .fotka img").count() === 3, "video nahráno i s náhledem");
   kontrola((await p.textContent("#pocet-fotek")) === "2 fotky, 1 video", "počet: 2 fotky, 1 video");
+  kontrola(await p.locator("#fotky .stav-fotky.nahrano >> text=✓ Nahráno").count() === 3, "u každé fotky i videa zelená fajfka ✓ Nahráno");
+  kontrola((await p.textContent(".souhrn-ok")).trim() === "✓ Vše nahráno (2 fotky, 1 video)", "souhrn: ✓ Vše nahráno (2 fotky, 1 video)");
+  kontrola(/0:03/.test(await p.textContent("#fotky .info-videa")), "u videa je vidět délka (0:03)");
+  kontrola(await p.isVisible("text=30 s ve Full HD (1080p)"), "poznámka s limitem videa je vidět");
   // rozpracovaný příjem přežije obnovení stránky
   await p.reload(); await p.waitForSelector('[data-pole="zakaznik.jmeno"]');
   kontrola(await p.inputValue('[data-pole="zakaznik.jmeno"]') === "Jan Novák" && await p.locator("#fotky .fotka").count() === 3, "rozpracovaný příjem přežil obnovení stránky");

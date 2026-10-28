@@ -99,7 +99,29 @@
           .eq("vin", vin.toUpperCase().replace(/\s/g, "")).maybeSingle());
       },
       async zalozitZakazku(p) { return ok(await sb.rpc("zalozit_zakazku", { p })); },
-      async nahrat(klic, blob, typ) { return ok(await kos().upload(klic, blob, { contentType: typ, upsert: false, cacheControl: "31536000" })); },
+      async nahrat(klic, blob, typ, prubeh) {
+        if (!prubeh) return ok(await kos().upload(klic, blob, { contentType: typ, upsert: false, cacheControl: "31536000" }));
+        // s ukazatelem průběhu (hodí se u videí) – přímo na úložiště, se stejným přihlášením
+        const token = ok(await sb.auth.getSession()).session?.access_token;
+        if (!token) throw new Error("Nejste přihlášen");
+        return new Promise((hotovo, chyba) => {
+          const x = new XMLHttpRequest();
+          x.open("POST", `${K.supabaseUrl}/storage/v1/object/${K.kos}/${klic.split("/").map(encodeURIComponent).join("/")}`);
+          x.setRequestHeader("Authorization", `Bearer ${token}`);
+          x.setRequestHeader("apikey", K.supabaseKlic);
+          x.setRequestHeader("Content-Type", typ);
+          x.setRequestHeader("x-upsert", "false");
+          x.setRequestHeader("Cache-Control", "max-age=31536000");
+          x.upload.onprogress = e => { if (e.lengthComputable) prubeh(e.loaded / e.total); };
+          x.onload = () => {
+            if (x.status >= 200 && x.status < 300) { prubeh(1); return hotovo({ path: klic }); }
+            let m = `Nahrání selhalo (${x.status})`; try { const j = JSON.parse(x.responseText); m = j.message || j.error || m; } catch (e) { /* text */ }
+            chyba(new Error(m));
+          };
+          x.onerror = () => chyba(new Error("Spojení přerušeno – zkuste to znovu"));
+          x.send(blob);
+        });
+      },
       async odkaz(klic, s = 3600) { return ok(await kos().createSignedUrl(klic, s)).signedUrl; },
       async odkazy(klice, s = 3600) { if (!klice.length) return []; return ok(await kos().createSignedUrls(klice, s)); },
       async stahnout(klic) { return ok(await kos().download(klic)); },
@@ -339,6 +361,12 @@
           <label class="tl">Vybrat z galerie<input id="foto-galerie" type="file" accept="image/*,video/*" multiple hidden></label>
           <span class="napoveda" id="pocet-fotek"></span>
         </div>
+        <p class="napoveda limity">
+          <b>Fotky:</b> libovolný počet, samy se zmenší.<br>
+          <b>Video:</b> nejvýš ${MAX_VIDEO_MB} MB na jedno video – to je asi <b>30 s ve Full HD (1080p)</b> nebo <b>15 s ve 4K</b>.
+          Delší záběr natočte na víc kratších videí. Tip: v iPadu Nastavení → Fotoaparát → Záznam videa → 1080p.
+        </p>
+        <div id="souhrn-nahrani"></div>
         <div class="fotky" id="fotky"></div>
       </section>
 
@@ -519,18 +547,19 @@
   function nahledVidea(soubor) {
     return new Promise(ok => {
       const url = URL.createObjectURL(soubor), v = document.createElement("video");
-      const konec = n => { URL.revokeObjectURL(url); ok(n); };
+      let hotovo = false;
+      const konec = n => { if (hotovo) return; hotovo = true; URL.revokeObjectURL(url); ok(n); };
       v.muted = true; v.playsInline = true; v.preload = "auto";
       v.onloadeddata = () => { v.currentTime = Math.min(0.5, (v.duration || 1) / 2); };
       v.onseeked = () => {
         try {
           const st = 320 / Math.max(v.videoWidth, v.videoHeight), c = document.createElement("canvas");
           c.width = Math.round(v.videoWidth * st); c.height = Math.round(v.videoHeight * st);
-          c.getContext("2d").drawImage(v, 0, 0, c.width, c.height); konec(c.toDataURL("image/jpeg", 0.7));
-        } catch (e) { konec(null); }
+          c.getContext("2d").drawImage(v, 0, 0, c.width, c.height); konec({ nahled: c.toDataURL("image/jpeg", 0.7), delka: v.duration });
+        } catch (e) { konec({ nahled: null, delka: v.duration }); }
       };
-      v.onerror = () => konec(null);
-      setTimeout(() => konec(null), 8000);
+      v.onerror = () => konec({ nahled: null, delka: null });
+      setTimeout(() => konec({ nahled: null, delka: isFinite(v.duration) ? v.duration : null }), 8000);
       v.src = url;
     });
   }
@@ -538,14 +567,14 @@
     for (const s of soubory) {
       const id = uuid(), video = jeVideo(s);
       if (video && s.size > MAX_VIDEO_MB * 1024 * 1024) {
-        hlaska(`Video má ${Math.round(s.size / 1048576)} MB – nahrát jde nejvýš ${MAX_VIDEO_MB} MB (zhruba 30–40 s ve Full HD). Natočte prosím kratší.`, true, 8000);
+        hlaska(`Video má ${Math.round(s.size / 1048576)} MB – nahrát jde nejvýš ${MAX_VIDEO_MB} MB (asi 30 s ve Full HD, 15 s ve 4K). Natočte prosím kratší.`, true, 9000);
         continue;
       }
       const mime = video ? (s.type || "video/quicktime") : "image/jpeg";
-      const f = { id, klic: null, nahled: null, stav: "nahravam", nazev: s.name, video, mime };
+      const f = { id, klic: null, nahled: null, stav: "nahravam", nazev: s.name, video, mime, mb: Math.round(s.size / 104857.6) / 10, delka: null, pokrok: 0 };
       P.fotky.push(f); vykresliFotky();
       try {
-        if (video) { blobyFotek[id] = s; f.nahled = await nahledVidea(s); }
+        if (video) { blobyFotek[id] = s; const n = await nahledVidea(s); f.nahled = n.nahled; f.delka = n.delka; }
         else { const { blob, nahled } = await zmensi(s); f.nahled = nahled; blobyFotek[id] = blob; }
         vykresliFotky();
         await nahrajFotku(f);
@@ -556,19 +585,43 @@
   async function nahrajFotku(f) {
     const d = new Date(), mime = f.mime || "image/jpeg";
     const klic = `${f.video ? "videa" : "fotky"}/${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${f.id}.${PRIPONA[mime] || "bin"}`;
-    f.stav = "nahravam"; vykresliFotky();
-    try { await db.nahrat(klic, blobyFotek[f.id], mime); f.klic = klic; f.stav = "nahrano"; delete blobyFotek[f.id]; }
+    f.stav = "nahravam"; f.pokrok = 0; vykresliFotky();
+    const prubeh = x => { f.pokrok = x; aktualizujPrubeh(f); };
+    try { await db.nahrat(klic, blobyFotek[f.id], mime, prubeh); f.klic = klic; f.stav = "nahrano"; delete blobyFotek[f.id]; }
     catch (e) { if (/exists|Duplicate/i.test(chybaText(e))) { f.klic = klic; f.stav = "nahrano"; } else { f.stav = "chyba"; } }
     vykresliFotky(); ulozKoncept();
   }
+  const minuty = s => s == null || !isFinite(s) ? "" : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+  function textStavu(f) {
+    if (f.stav === "nahrano") return "✓ Nahráno";
+    if (f.stav === "chyba") return "↻ Nahrát znovu";
+    return f.pokrok > 0 && f.pokrok < 1 ? `Nahrávám ${Math.round(f.pokrok * 100)} %` : "Nahrávám…";
+  }
+  function aktualizujPrubeh(f) {
+    const s = document.querySelector(`.fotka[data-id="${f.id}"] .stav-fotky`); if (s) s.textContent = textStavu(f);
+    const b = document.querySelector(`.fotka[data-id="${f.id}"] .pruh i`); if (b) b.style.width = Math.round(f.pokrok * 100) + "%";
+  }
+  function vykresliSouhrn() {
+    const el = document.getElementById("souhrn-nahrani"); if (!el || !P) return;
+    const n = P.fotky.length, ok = P.fotky.filter(f => f.stav === "nahrano").length, chyb = P.fotky.filter(f => f.stav === "chyba").length;
+    el.innerHTML = !n ? "" : chyb ? `<div class="info chyba">✗ ${chyb} z ${n} se nepodařilo nahrát – klepněte na ně a nahraje se znovu.</div>`
+      : ok === n ? `<div class="info ok souhrn-ok">✓ Vše nahráno (${popisPoctu(P.fotky)})</div>`
+      : `<div class="info">Nahrávám… hotovo ${ok} z ${n}. Nechte aplikaci otevřenou.</div>`;
+  }
   function vykresliFotky() {
     const el = document.getElementById("fotky"); if (!el || !P) return;
-    el.innerHTML = P.fotky.map((f, i) => `<div class="fotka">${f.nahled ? `<img src="${f.nahled}" alt="">` : ""}
-      ${f.video ? `<span class="ikona-videa">▶</span>` : ""}
-      ${f.stav !== "nahrano" ? `<span class="stav-fotky ${f.stav === "chyba" ? "chyba" : ""}">${f.stav === "chyba" ? "Nenahráno – klepněte" : "Nahrávám…"}</span>` : ""}
-      <button type="button" class="odebrat" data-i="${i}" aria-label="Odebrat fotku">×</button></div>`).join("");
+    el.innerHTML = P.fotky.map((f, i) => `<div class="fotka ${f.stav}" data-id="${f.id}">${f.nahled ? `<img src="${f.nahled}" alt="">` : ""}
+      ${f.video ? `<span class="ikona-videa">▶</span><span class="info-videa" title="${f.mb ? f.mb.toLocaleString("cs-CZ") + " MB" : ""}">${minuty(f.delka) || (f.mb ? Math.round(f.mb) + " MB" : "video")}</span>` : ""}
+      <span class="stav-fotky ${f.stav}">${textStavu(f)}</span>
+      ${f.stav === "nahravam" ? `<span class="pruh"><i style="width:${Math.round((f.pokrok || 0) * 100)}%"></i></span>` : ""}
+      <button type="button" class="odebrat" data-i="${i}" aria-label="Odebrat">×</button></div>`).join("");
+    vykresliSouhrn();
     el.querySelectorAll(".odebrat").forEach(b => b.onclick = () => { const f = P.fotky.splice(+b.dataset.i, 1)[0]; delete blobyFotek[f.id]; vykresliFotky(); ulozKoncept(); });
-    el.querySelectorAll(".stav-fotky.chyba").forEach((s, i) => s.onclick = () => { const f = P.fotky.filter(x => x.stav === "chyba")[i]; if (blobyFotek[f.id]) nahrajFotku(f); });
+    el.querySelectorAll(".fotka.chyba").forEach(t => t.onclick = e => {
+      if (e.target.closest(".odebrat")) return;
+      const f = P.fotky.find(x => x.id === t.dataset.id);
+      if (f && blobyFotek[f.id]) nahrajFotku(f); else hlaska("Soubor už v iPadu není – vyfoťte nebo vyberte ho prosím znovu.", true);
+    });
     const n = document.getElementById("pocet-fotek"); if (n) n.textContent = popisPoctu(P.fotky);
   }
 
