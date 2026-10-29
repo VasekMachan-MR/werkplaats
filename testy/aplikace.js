@@ -160,7 +160,7 @@ const server = http.createServer((q, r) => {
   // změna a hned odchod na přehled – musí se uložit i tak (bez čekání)
   await p.locator('.radek-pol[data-i="0"] [data-f="mnozstvi"]').fill("1");
   const zid = await p.evaluate(() => location.hash.split("/")[2]);
-  await p.evaluate(() => { location.hash = "#/"; }); await p.waitForSelector(".zakazka-radek");
+  await p.evaluate(() => { location.hash = "#/zakazky"; }); await p.waitForSelector("#seznam .zakazka-radek");
   await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid); await p.waitForSelector('.radek-pol[data-i="3"]');
   kontrola(await p.locator(".radek-pol[data-i]").count() === 4 && await p.locator(".dil[data-i]").count() === 2, "práce a díly se uložily i při rychlém odchodu ze stránky");
 
@@ -299,7 +299,12 @@ const server = http.createServer((q, r) => {
   kontrola(u2.t.zakaznici.length === 1 && u2.t.vozidla.length === 1 && u2.t.vlastnictvi.length === 1, "zákazník i auto jen jednou (nic zdvojeného)");
   fs.writeFileSync(path.join(OUT, "7378-1.pdf"), Buffer.from(u2.pdf[0][1]));
   await p.evaluate(() => { location.hash = "#/"; });
-  await p.waitForSelector(".zakazka-radek");
+  await p.waitForSelector(".dlazdice-k");
+  kontrola(await p.isVisible("h1 >> text=Přehled") && await p.isVisible(".dlazdice-k >> text=V dílně") && await p.isVisible(".dlazdice-k >> text=Nezaplaceno"), "úvodní přehled: dlaždice V dílně, Nezaplaceno");
+  kontrola(await p.locator(".uvod-mrizka .zakazka-radek").count() >= 1, "úvodní přehled ukazuje zakázky");
+  await foto("06-uvod");
+  await p.click('.lista-vpravo a[href="#/zakazky"]');
+  await p.waitForSelector("#f-stav"); await p.waitForSelector("#seznam .zakazka-radek");
   kontrola(await p.locator(".zakazka-radek").count() === 2, "přehled ukazuje 2 zakázky");
   await p.selectOption("#f-razeni", "cislo+");
   kontrola(/7377/.test(await p.locator(".zakazka-radek").first().textContent()), "řazení: nejstarší zakázka první");

@@ -193,7 +193,8 @@
 
   /* ================= směrování ================= */
   const trasy = [
-    [/^#?\/?$/, prehled],
+    [/^#?\/?$/, uvod],
+    [/^#\/zakazky$/, prehled],
     [/^#\/novy$/, prijem],
     [/^#\/zakazka\/([\w-]+)$/, detail],
     [/^#\/zakazka\/([\w-]+)\/(nabidka|faktura|protokol|zaloha|opravny)$/, vystavit],
@@ -220,7 +221,7 @@
   function lista() {
     const el = document.getElementById("lista-vpravo");
     if (!uzivatel) { el.innerHTML = ""; return; }
-    el.innerHTML = `<a class="tl tl-male" href="#/">Zakázky</a><a class="tl tl-male" href="#/zakaznici">Zákazníci</a><a class="tl tl-male" href="#/vozidla">Vozidla</a><a class="tl tl-male" href="#/doklady">Doklady</a>
+    el.innerHTML = `<a class="tl tl-male" href="#/">Přehled</a><a class="tl tl-male" href="#/zakazky">Zakázky</a><a class="tl tl-male" href="#/zakaznici">Zákazníci</a><a class="tl tl-male" href="#/vozidla">Vozidla</a><a class="tl tl-male" href="#/doklady">Doklady</a>
       ${uzivatel.role === "majitel" ? `<a class="tl tl-male" href="#/lide">Lidé</a>` : ""}
       <a class="tl tl-male uzivatel-tl" href="#/ucet" title="Můj účet">👤 <span>${esc(uzivatel.jmeno)}</span></a>
       <button class="tl tl-male" id="odhlasit">Odhlásit</button>`;
@@ -299,6 +300,69 @@
     "typ": ["Podle typu vozu", (a, b) => String(a.vozidla?.typ || "").localeCompare(String(b.vozidla?.typ || ""), "cs", { numeric: true }) || b.cislo - a.cislo],
     "zakaznik": ["Podle zákazníka A–Z", (a, b) => String(a.zakaznici?.jmeno || "").localeCompare(String(b.zakaznici?.jmeno || ""), "cs") || b.cislo - a.cislo]
   };
+  /* ================= úvodní přehled (po přihlášení) ================= */
+  async function uvod() {
+    const d0 = new Date(), datumDnes = d0.toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+    const hodina = d0.getHours(), pozdrav = hodina < 10 ? "Dobré ráno" : hodina < 18 ? "Dobrý den" : "Dobrý večer";
+    app.innerHTML = `
+      <div class="hlavicka-prehledu">
+        <div><h1>Přehled</h1><div class="mutted">${pozdrav} · ${esc(datumDnes)}</div></div>
+        <a class="tl tl-hlavni tl-velke" href="#/novy">＋ Nový příjem vozu</a>
+      </div>
+      ${nacti("werk-koncept-prijmu") ? `<div class="info pozor" style="margin:0 0 14px">Máte rozpracovaný příjem. <a href="#/novy"><b>Pokračovat</b></a></div>` : ""}
+      <div id="uvod"><div class="nacitani">Načítám přehled…</div></div>`;
+    let zak = [], dok = [];
+    try { [zak, dok] = await Promise.all([db.zakazky(), db.vsechnyDoklady().catch(() => [])]); }
+    catch (e) { app.querySelector("#uvod").innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+    const D = dnes(), za7 = plusDni(D, 7), mesic = D.slice(0, 7);
+    const jeFa = d => ["faktura", "zalohova", "opravny"].includes(d.druh);
+    const vDilne = zak.filter(z => !HOTOVE_STAVY.includes(z.stav) && !["zruseno", "poptavka"].includes(z.stav))
+      .sort((a, b) => String(a.predpoklad_dokonceni || "9999").localeCompare(String(b.predpoklad_dokonceni || "9999")) || a.cislo - b.cislo);
+    const kPredani = zak.filter(z => ["hotovo", "fakturovano", "zaplaceno"].includes(z.stav)).sort((a, b) => a.cislo - b.cislo);
+    const poptavky = zak.filter(z => z.stav === "poptavka");
+    const nezapl = dok.filter(d => (d.druh === "faktura" || d.druh === "zalohova") && !d.zaplaceno && d.celkem != null).sort((a, b) => String(a.splatnost || "").localeCompare(String(b.splatnost || "")));
+    const poSpl = nezapl.filter(d => d.splatnost && d.splatnost < D);
+    const faMesic = dok.filter(d => (d.druh === "faktura" || d.druh === "opravny") && String(d.vystaveno).startsWith(mesic));
+    const suma = a => a.reduce((x, d) => x + (Number(d.celkem) || 0), 0);
+    const auto = z => esc([z.vozidla?.typ, z.vozidla?.model].filter(Boolean).join(" · ") || "Mercedes-Benz");
+    const termin = z => {
+      if (!z.predpoklad_dokonceni) return "";
+      const t = z.predpoklad_dokonceni < D ? ` style="color:var(--cervena)"` : z.predpoklad_dokonceni <= za7 ? ` style="color:var(--oranzova)"` : "";
+      return ` · <span${t}>${z.predpoklad_dokonceni < D ? "termín byl " : "termín "}${datumCz(z.predpoklad_dokonceni)}</span>`;
+    };
+    const radek = (z, extra = "") => `
+      <a class="zakazka-radek" href="#/zakazka/${z.id}">
+        <span class="c">${z.cislo}</span>
+        <span class="auto"><b>${auto(z)}</b><small>${esc(z.zakaznici?.jmeno || "")}${extra}</small></span>
+        <span class="stitek ${["zaplaceno", "hotovo"].includes(z.stav) ? "hotovo" : ""}">${STAVY[z.stav] || z.stav}</span>
+      </a>`;
+    const MAX = 6, vice = (n, href, text) => n > MAX ? `<p style="margin:10px 0 0"><a href="${href}">${text} (${n}) →</a></p>` : "";
+    const prazdno = !zak.length;
+    app.querySelector("#uvod").innerHTML = prazdno ? `<div class="prazdne">Zatím žádné zakázky. První dostane číslo 7377.</div>` : `
+      <div class="dlazdice uvod-dlazdice">
+        <div class="dlazdice-k"><small>V dílně</small><b>${vDilne.length}</b><span>${vDilne.filter(z => z.predpoklad_dokonceni && z.predpoklad_dokonceni < D).length ? `<span style="color:var(--cervena)">${vDilne.filter(z => z.predpoklad_dokonceni && z.predpoklad_dokonceni < D).length} po termínu</span>` : "rozpracované zakázky"}</span></div>
+        <div class="dlazdice-k"><small>K předání</small><b>${kPredani.length}</b><span>hotové, čekají na zákazníka</span></div>
+        <div class="dlazdice-k ${poSpl.length ? "cervena" : ""}"><small>Nezaplaceno</small><b>${kc(suma(nezapl))}</b><span>${nezapl.length} ks${poSpl.length ? ` · ${poSpl.length} po splatnosti` : ""}</span></div>
+        <div class="dlazdice-k"><small>Fakturováno – ${esc(nazevMesice(mesic))}</small><b>${kc(suma(faMesic))}</b><span>${faMesic.length} ks</span></div>
+      </div>
+      <div class="uvod-mrizka">
+        <section class="karta"><h2>V dílně</h2>
+          ${vDilne.length ? `<div class="zakazky">${vDilne.slice(0, MAX).map(z => radek(z, termin(z))).join("")}</div>${vice(vDilne.length, "#/zakazky", "Všechny rozpracované")}` : `<p class="mutted" style="margin:0">Teď v dílně nic není.</p>`}
+        </section>
+        <div>
+          ${kPredani.length ? `<section class="karta"><h2>Čeká na předání</h2><div class="zakazky">${kPredani.slice(0, MAX).map(z => radek(z)).join("")}</div>${vice(kPredani.length, "#/zakazky", "Všechny")}</section>` : ""}
+          ${nezapl.length ? `<section class="karta"><h2>Nezaplacené faktury</h2><div class="doklady">${nezapl.slice(0, MAX).map(d => `
+            <a class="doklad odkaz-radek" href="${d.zakazky?.id ? `#/zakazka/${d.zakazky.id}` : "#/doklady"}"><span><b>${esc(d.cislo)}</b> · ${esc(d.zakazky?.zakaznici?.jmeno || "")}
+              <br><small class="mutted">${d.splatnost ? (d.splatnost < D ? `<b style="color:var(--cervena)">po splatnosti od ${datumCz(d.splatnost)}</b>` : `splatnost ${datumCz(d.splatnost)}`) : `vystaveno ${datumCz(d.vystaveno)}`}</small></span>
+              <b>${kc(d.celkem)}</b></a>`).join("")}</div>${vice(nezapl.length, "#/doklady", "Všechny doklady")}</section>` : ""}
+          ${poptavky.length ? `<section class="karta"><h2>Poptávky</h2><div class="zakazky">${poptavky.slice(0, MAX).map(z => radek(z, ` · ${datumCz(z.datum_prijmu)}`)).join("")}</div></section>` : ""}
+          ${dok.length ? `<section class="karta"><h2>Poslední doklady</h2><div class="doklady">${dok.slice(0, 4).map(d => `
+            <a class="doklad odkaz-radek" href="${d.zakazky?.id ? `#/zakazka/${d.zakazky.id}` : "#/doklady"}"><span><b>${esc(d.cislo)}</b> · ${DRUHY[d.druh] || d.druh}<br><small class="mutted">${esc(d.zakazky?.zakaznici?.jmeno || "")} · ${datumCz(d.vystaveno)}</small></span>
+              ${d.celkem != null && jeFa(d) ? `<b>${kc(d.celkem)}</b>` : ""}</a>`).join("")}</div></section>` : ""}
+        </div>
+      </div>`;
+  }
+
   async function prehled() {
     app.innerHTML = `
       <div class="hlavicka-prehledu">
@@ -1281,7 +1345,7 @@
       const odp = prompt(`Smazat zakázku #${z.cislo} včetně zakázkového listu, nabídek, protokolu, prací, dílů a fotek? Nejde to vrátit.\n\nPro potvrzení napište číslo zakázky:`);
       if (odp == null) return;
       if (odp.trim() !== String(z.cislo)) return hlaska("Číslo nesouhlasí – nic se nesmazalo.", true);
-      try { await dokoncitUkladani(); await db.smazatZakazku(id); E = null; hlaska(`Zakázka #${z.cislo} smazána.`); location.hash = "#/"; }
+      try { await dokoncitUkladani(); await db.smazatZakazku(id); E = null; hlaska(`Zakázka #${z.cislo} smazána.`); location.hash = "#/zakazky"; }
       catch (e) { hlaska("Smazat nejde: " + chybaText(e), true, 8000); }
     };
     const zr = app.querySelector("#zrusit-zakazku");

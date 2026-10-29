@@ -219,6 +219,9 @@ section.chybi { outline: 2px solid var(--cervena); }
 .stitek { display: inline-block; font-size: 13px; font-weight: 650; padding: 4px 10px; border-radius: 999px; background: var(--modra-svetla); color: var(--navy); white-space: nowrap; }
 .stitek.hotovo { background: var(--zelena-svetla); color: var(--zelena); }
 .stitek.zruseno { background: #eee; color: #777; }
+.dlazdice.uvod-dlazdice { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.uvod-mrizka { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 0 16px; align-items: start; }
+.uvod-mrizka .zakazka-radek { box-shadow: none; border: 1px solid var(--linka); grid-template-columns: 64px 1fr auto; padding: 12px 14px; }
 .prazdne { text-align: center; padding: 48px 20px; color: var(--sedy); }
 
 /* detail */
