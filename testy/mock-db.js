@@ -67,9 +67,9 @@ window.__WERK_DB__ = (() => {
       return { zakazka_id: zk.id, cislo, zakaznik_id: zid, vozidlo_id: a.id };
     },
     async polozky(zid) { return kopie(T.polozky.filter(p => p.zakazka_id === zid).sort((a, b) => a.poradi - b.poradi)); },
-    async ulozitPolozky(zid, pol) { await cekej(); T.polozky = T.polozky.filter(p => p.zakazka_id !== zid).concat(pol.map((p, i) => ({ ...p, zakazka_id: zid, poradi: i + 1 }))); return pol.length; },
+    async ulozitPolozky(zid, pol) { await cekej(); if (window.__OFFLINE__) throw new Error("Failed to fetch"); T.polozky = T.polozky.filter(p => p.zakazka_id !== zid).concat(pol.map((p, i) => ({ ...p, zakazka_id: zid, poradi: i + 1 }))); return pol.length; },
     async dily(zid) { return kopie(T.dily.filter(d => d.zakazka_id === zid).sort((a, b) => a.poradi - b.poradi)); },
-    async ulozitDily(zid, dily) { await cekej(); T.dily = T.dily.filter(d => d.zakazka_id !== zid).concat(dily.map((d, i) => ({ ...d, zakazka_id: zid, poradi: i + 1 }))); return dily.length; },
+    async ulozitDily(zid, dily) { await cekej(); if (window.__OFFLINE__) throw new Error("Failed to fetch"); T.dily = T.dily.filter(d => d.zakazka_id !== zid).concat(dily.map((d, i) => ({ ...d, zakazka_id: zid, poradi: i + 1 }))); return dily.length; },
     async dodavatele() { return [{ id: "d1", nazev: "Auto Kelly" }, { id: "d2", nazev: "Granex" }, { id: "d3", nazev: "MB (original)" }, { id: "d4", nazev: "Jiný" }]; },
     async smazatZakazku(zid) {
       const z = T.zakazky.find(x => x.id === zid);

@@ -229,11 +229,18 @@
     [/^#\/lide$/, lide]
   ];
   let uklid = null;
+  let aktualniHash = location.hash, navratBezVykresleni = false;
   async function navigace() {
+    if (navratBezVykresleni) { navratBezVykresleni = false; return; }
+    // nejdřív doukládat; když to nejde (bez signálu), zůstat na stránce – jinak by se změny ztratily
+    if (!(await dokoncitUkladani()) && !(await dokoncitUkladani())
+        && !confirm("Změny v zakázce se nepodařilo uložit (zkontrolujte připojení).\n\nOK = odejít a změny zahodit\nZrušit = zůstat a zkusit to znovu")) {
+      if (location.hash !== aktualniHash) { navratBezVykresleni = true; location.hash = aktualniHash; } hlaska("Změny nejsou uložené – zkuste to znovu, až bude signál.", true, 8000); return;
+    }
+    for (const k in neulozene) delete neulozene[k];
     if (uklid) { try { uklid(); } catch (e) { /* nic */ } uklid = null; }
-    await dokoncitUkladani();
     if (!uzivatel || obnovaHesla) return;
-    const h = location.hash || "#/";
+    const h = location.hash || "#/"; aktualniHash = h;
     zavriMenu(); oznacMenu();
     if (novaVerze) obnovitKdyzLzeTo();
     for (const [re, fn] of trasy) { const m = h.match(re); if (m) { window.scrollTo(0, 0); return fn(...m.slice(1)); } }
@@ -1324,6 +1331,7 @@
   /* ================= detail zakázky ================= */
   let E = null;   // rozpracované práce a díly otevřené zakázky {id, polozky, dily, dodavatele}
   async function detail(id) {
+    await dokoncitUkladani();                            // překreslení zakázky nesmí předběhnout rozdělané uložení
     app.innerHTML = `<div class="nacitani">Načítám zakázku…</div>`;
     let z, polozky = [], dily = [], dodavatele = [];
     try {
@@ -1630,18 +1638,22 @@
   }
 
   /* ---------- automatické ukládání prací a dílů ---------- */
-  const cekajiciUlozeni = {};
+  // naplánované (čekají 0,7 s), právě běžící a neúspěšné uložení – nic z toho se nesmí ztratit bez varování
+  const cekajiciUlozeni = {}, beziciUlozeni = {}, neulozene = {};
   async function dokoncitUkladani() {
-    const fns = Object.values(cekajiciUlozeni); for (const k in cekajiciUlozeni) { clearTimeout(cekajiciUlozeni[k].t); delete cekajiciUlozeni[k]; }
-    await Promise.all(fns.map(x => x.fn()));
+    const fns = Object.values(cekajiciUlozeni).map(x => x.fn).concat(Object.values(neulozene));
+    for (const k in cekajiciUlozeni) { clearTimeout(cekajiciUlozeni[k].t); delete cekajiciUlozeni[k]; }
+    for (const k in neulozene) delete neulozene[k];
+    const v = await Promise.all([...fns.map(fn => fn()), ...Object.values(beziciUlozeni)]);
+    return v.every(x => x !== false);
   }
-  function ulozitPozdeji(co) {
+  function ulozitPozdeji(co, ihned) {
     const el = document.getElementById(co === "prace" ? "stav-prace" : "stav-dilu");
     if (el) el.textContent = "Ukládám…";
     const zakazka = E;                                   // uložit vždy k té zakázce, kde se psalo
     if (cekajiciUlozeni[co]) clearTimeout(cekajiciUlozeni[co].t);
-    const fn = async () => {
-      delete cekajiciUlozeni[co];
+    delete neulozene[co];
+    const uloz = async () => {
       const E = zakazka, zid = E.id;
       try {
         if (co === "prace") await db.ulozitPolozky(zid, E.polozky.map(p => ({ typ: p.typ, popis: p.popis || "", mnozstvi: p.mnozstvi ?? null, jednotka: p.jednotka || null, sazba: p.sazba ?? null, castka: p.castka ?? null })));
@@ -1649,14 +1661,25 @@
           mnozstvi: d.mnozstvi, jednotka: d.jednotka || "ks", nakupni_cena: d.nakupni_cena ?? null, mena: d.mena || "CZK", kurz: d.kurz ?? 1,
           marze_pct: d.marze_pct ?? 30, prodejni_cena: d.prodejni_cena ?? null, stav: d.stav || "potreba", puvod: d.puvod || null, poznamka: d.poznamka || null })));
         if (el && el.isConnected) el.textContent = "✓ Uloženo";
+        return true;
       } catch (e) {
-        if (el && el.isConnected) el.innerHTML = `<span style="color:var(--cervena)">Neuloženo – ${esc(chybaText(e))}</span>`;
-        else hlaska("Změny v zakázce se neuložily: " + chybaText(e), true, 8000);
+        neulozene[co] = fn;                              // zkusí se znovu při dalším pokusu o odchod
+        if (el && el.isConnected) { el.innerHTML = `<span style="color:var(--cervena)">Neuloženo – ${esc(chybaText(e))}</span> <button type="button" class="tl tl-male">Zkusit znovu</button>`;
+          el.querySelector("button").onclick = () => { delete neulozene[co]; fn(); }; }
+        return false;
       }
     };
+    // ukládání téže věci jde vždy jedno po druhém (starší nesmí přepsat novější)
+    const fn = () => {
+      delete cekajiciUlozeni[co];
+      const p = (beziciUlozeni[co] || Promise.resolve()).then(uloz);
+      beziciUlozeni[co] = p; p.finally(() => { if (beziciUlozeni[co] === p) delete beziciUlozeni[co]; });
+      return p;
+    };
+    if (ihned) return fn();
     cekajiciUlozeni[co] = { fn, t: setTimeout(fn, 700) };
   }
-  window.addEventListener("beforeunload", e => { if (Object.keys(cekajiciUlozeni).length) { e.preventDefault(); e.returnValue = ""; } });
+  window.addEventListener("beforeunload", e => { if (Object.keys(cekajiciUlozeni).length + Object.keys(beziciUlozeni).length + Object.keys(neulozene).length) { e.preventDefault(); e.returnValue = ""; } });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") dokoncitUkladani(); });   // iPad: přepnutí aplikace
 
   function vykresliSouhrnZakazky() {

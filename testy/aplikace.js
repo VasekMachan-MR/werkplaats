@@ -127,7 +127,8 @@ const server = http.createServer((q, r) => {
 
   // ---------- práce, díly → nabídka 7377-2 → faktura 7377-3 → úhrada → protokol 7377-4 ----------
   let odpovedPrompt = "2026-11-05";
-  p.on("dialog", d => d.type() === "prompt" ? d.accept(odpovedPrompt) : d.accept());
+  let odmitnoutDialog = false;
+  p.on("dialog", d => d.type() === "prompt" ? d.accept(odpovedPrompt) : odmitnoutDialog ? d.dismiss() : d.accept());
   await p.click('[data-pridat-pol="inspekce"]');
   await p.click('[data-pridat-pol="prace"]');
   await p.locator('.radek-pol[data-i="1"] [data-f="popis"]').fill("Odstranění závady ASD");
@@ -163,6 +164,20 @@ const server = http.createServer((q, r) => {
   await p.evaluate(() => { location.hash = "#/zakazky"; }); await p.waitForSelector("#seznam .zakazka-radek");
   await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid); await p.waitForSelector('.radek-pol[data-i="3"]');
   kontrola(await p.locator(".radek-pol[data-i]").count() === 4 && await p.locator(".dil[data-i]").count() === 2, "práce a díly se uložily i při rychlém odchodu ze stránky");
+  // bez signálu: změna se neuloží → odchod ze zakázky aplikace nepustí (Zrušit = zůstat), po návratu signálu se uloží
+  {
+    await p.evaluate(() => { window.__OFFLINE__ = true; });
+    odmitnoutDialog = true;
+    await p.locator('.radek-pol[data-i="0"] [data-f="sazba"]').fill("1250");
+    await p.waitForSelector("#stav-prace >> text=Neuloženo");
+    await p.evaluate(() => { location.hash = "#/zakaznici"; }); await p.waitForTimeout(600);
+    kontrola(/#\/zakazka\//.test(await p.evaluate(() => location.hash)) && await p.inputValue('.radek-pol[data-i="0"] [data-f="sazba"]') === "1250", "bez signálu: odchod ze zakázky se zastaví a rozepsaná cena zůstane");
+    odmitnoutDialog = false;
+    await p.evaluate(() => { window.__OFFLINE__ = false; });
+    await p.click("#stav-prace >> text=Zkusit znovu"); await p.waitForSelector("#stav-prace >> text=✓ Uloženo");
+    kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.polozky.some(x => Number(x.sazba) === 1250)), "po návratu signálu se změna uloží");
+    await p.locator('.radek-pol[data-i="0"] [data-f="sazba"]').fill("1200"); await p.waitForSelector("#stav-prace >> text=✓ Uloženo");
+  }
 
   await p.click("text=📝 Cenová nabídka");
   await p.waitForSelector("#vystavit:not([disabled])");

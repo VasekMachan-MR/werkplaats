@@ -1,4 +1,3 @@
--- POZOR: připraveno, ale zatím NEAPLIKOVÁNO na živou databázi (čeká na Vaškův souhlas, 29.10.2026).
 -- Faktura / zálohová faktura nejde smazat, když k zakázce existuje opravný doklad
 -- (jinak by se číslo uvolnilo a opravný doklad by odkazoval na jiný doklad se stejným číslem). Vašek schválil 29.10.2026.
 create or replace function public.smazat_doklad(p_id uuid)
