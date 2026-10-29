@@ -242,6 +242,7 @@
   }
   const db = window.__WERK_DB__ || vytvorDb();
   let uzivatel = null;
+  const jeMajitel = () => uzivatel?.role === "majitel";   // faktury, úhrady, marže a mazání jen majitel
   let novaVerze = false;    // na serveru je novější verze aplikace (service worker ji už převzal)      // {id, jmeno, role, email, aktivni, podpis_obrazek}
 
   /* ================= směrování ================= */
@@ -1437,7 +1438,7 @@
           <div class="doklad"><span><b>${esc(d.cislo)}</b> · ${DRUHY[d.druh] || d.druh}${d.celkem != null ? ` · <b>${kc(d.celkem)}</b>` : ""}<br>
             <small class="mutted">vystaveno ${datumCz(d.vystaveno)}${d.splatnost ? ` · ${d.druh === "nabidka" ? "platnost" : "splatnost"} ${datumCz(d.splatnost)}` : ""}${["faktura", "zalohova", "opravny"].includes(d.druh) ? (d.zaplaceno ? ` · <b style="color:var(--zelena)">${d.druh === "opravny" && Number(d.celkem) < 0 ? "vráceno" : "zaplaceno"} ${datumCz(d.zaplaceno)}</b>` : Number(d.celkem) < 0 ? " · nevráceno" : " · nezaplaceno") : ""}</small></span>
             <span class="radek-tlacitek">
-              ${["faktura", "zalohova", "opravny"].includes(d.druh) ? (d.zaplaceno ? `<button class="tl tl-male" data-nezaplaceno="${d.id}" title="Omylem označeno jako zaplacené? Vrátit zpět">↺ Zrušit úhradu</button>`
+              ${["faktura", "zalohova", "opravny"].includes(d.druh) && jeMajitel() ? (d.zaplaceno ? `<button class="tl tl-male" data-nezaplaceno="${d.id}" title="Omylem označeno jako zaplacené? Vrátit zpět">↺ Zrušit úhradu</button>`
                 : `<button class="tl tl-male" data-zaplaceno="${d.id}">✓ Zaplaceno</button>`) : ""}
               ${d.soubory?.klic ? `<button class="tl tl-male" data-pdf="${esc(d.soubory.klic)}">Otevřít PDF</button>` : ""}
               ${(z.soubory || []).filter(f => f.doklad_id === d.id && f.klic !== d.soubory?.klic && f.druh === "pdf").map(f => `<button class="tl tl-male" data-pdf="${esc(f.klic)}">${/parts list/.test(f.nazev || "") ? "Parts list" : "Příloha"}</button>`).join("")}
@@ -1445,11 +1446,11 @@
           || `<div class="info pozor">Zakázkový list zatím nebyl uložen.</div>`}</div>
         <div class="radek-tlacitek" style="margin-top:14px">
           <a class="tl tl-hlavni" href="#/zakazka/${id}/nabidka">📝 Cenová nabídka</a>
-          <a class="tl" href="#/zakazka/${id}/zaloha">💰 Zálohová faktura</a>
-          <a class="tl tl-hlavni" href="#/zakazka/${id}/faktura">💳 Faktura</a>
+          ${jeMajitel() ? `<a class="tl" href="#/zakazka/${id}/zaloha">💰 Zálohová faktura</a>
+          <a class="tl tl-hlavni" href="#/zakazka/${id}/faktura">💳 Faktura</a>` : ""}
           <a class="tl tl-hlavni" href="#/zakazka/${id}/protokol">🔑 Předávací protokol</a>
           ${v.vin ? `<a class="tl" href="${esc(odkazEservisky(v.vin))}" target="_blank" rel="noopener" id="odkaz-eservisky">📖 E-serviska ↗</a>` : ""}
-          ${doklady.some(d => ["faktura", "zalohova"].includes(d.druh)) ? `<a class="tl" href="#/zakazka/${id}/opravny">↩︎ Opravný doklad</a>` : ""}
+          ${jeMajitel() && doklady.some(d => ["faktura", "zalohova"].includes(d.druh)) ? `<a class="tl" href="#/zakazka/${id}/opravny">↩︎ Opravný doklad</a>` : ""}
         </div>
         <p class="napoveda" style="margin:10px 0 0">Nabídka i faktura se vytvoří z prací a dílů níže. Každý vystavený doklad se uzamkne; nová verze dostane další číslo (např. 7377-2-2).</p>
       </section>
@@ -1833,7 +1834,7 @@
       E.marze = Number(Object.entries(pocty).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 30);
     }
     el.innerHTML = `
-      ${E.dily.length ? `<details class="marze-sbal" id="marze-sbal" ${E.marzeOtevrena ? "open" : ""}>
+      ${E.dily.length && jeMajitel() ? `<details class="marze-sbal" id="marze-sbal" ${E.marzeOtevrena ? "open" : ""}>
         <summary><span class="sipka" aria-hidden="true">▸</span> Marže <span class="mutted">(${mnozstviCz(E.marze)} %)</span></summary>
         <div class="marze-vse">
         <label>Marže pro všechny díly<span class="marze-pole"><input class="vstup cislo" id="marze-vse" value="${E.marze}" inputmode="decimal" aria-label="Marže v procentech"> %</span></label>
@@ -1854,7 +1855,7 @@
           <label>Nákup / ks<input class="vstup cislo" data-f="nakupni_cena" value="${d.nakupni_cena ?? ""}" inputmode="decimal" placeholder="0"></label>
           <label>Měna<select class="vstup" data-f="mena"><option ${d.mena !== "EUR" ? "selected" : ""}>CZK</option><option ${d.mena === "EUR" ? "selected" : ""}>EUR</option></select></label>
           ${d.mena === "EUR" ? `<label title="${kurzCnb ? `ČNB ${esc(kurzCnb.datum)}: ${String(kurzEur()).replace(".", ",")} Kč/€` : "Kurz Kč za 1 €"}">Kurz Kč/€<input class="vstup cislo" data-f="kurz" value="${String(d.kurz ?? kurzEur()).replace(".", ",")}" inputmode="decimal"></label>` : ""}
-          <label>Marže %<input class="vstup cislo" data-f="marze_pct" value="${d.marze_pct ?? 30}" inputmode="decimal"></label>
+          ${jeMajitel() ? `<label>Marže %<input class="vstup cislo" data-f="marze_pct" value="${d.marze_pct ?? 30}" inputmode="decimal"></label>` : ""}
           <label>Prodej / ks (Kč)<input class="vstup cislo" data-f="prodejni_cena" value="${d.prodejni_cena ?? ""}" inputmode="numeric"></label>
           <label>Původ<select class="vstup" data-f="puvod"><option value="" ${!d.puvod ? "selected" : ""}>—</option><option value="original" ${d.puvod === "original" ? "selected" : ""}>MB (original)</option><option value="aftermarket" ${d.puvod === "aftermarket" ? "selected" : ""}>Aftermarket</option></select></label>
           <label class="siroke">Poznámka (Remarks v parts listu)<input class="vstup" data-f="poznamka" value="${esc(d.poznamka || "")}" placeholder="např. Original MB, + o-rings"></label>
@@ -2029,6 +2030,7 @@
   async function vystavit(id, co) {
     const n0 = navId;
     const druh = { nabidka: "nabidka", faktura: "faktura", protokol: "predavaci_protokol", zaloha: "zalohova", opravny: "opravny" }[co];
+    if (["faktura", "zalohova", "opravny"].includes(druh) && !jeMajitel()) { app.innerHTML = `<div class="info pozor">Fakturu, zálohovou fakturu a opravný doklad vystavuje majitel.</div><p><a href="#/zakazka/${id}">← Zpět na zakázku</a></p>`; return; }
     app.innerHTML = `<div class="nacitani">Připravuji…</div>`;
     let z, polozky, dily;
     try { [z, polozky, dily] = await Promise.all([db.detail(id), db.polozky(id), db.dily(id)]); }

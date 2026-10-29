@@ -513,6 +513,14 @@ const server = http.createServer((q, r) => {
   await m.waitForSelector('#podpis-nahled img');
   kontrola(true, "Můj účet ukazuje uložený podpis");
   kontrola(await m.isVisible("#odhlasit") && await m.locator('[data-zal="#/lide"]').count() === 0, "mechanik: Odhlásit v Můj účet, bez záložky Lidé");
+  {
+    const mz = await m.evaluate(() => window.__ULOZENO__.tabulky.zakazky[0].id);
+    await m.evaluate(id => { location.hash = "#/zakazka/" + id; }, mz); await m.waitForSelector("#sekce-fotky-detail");
+    kontrola(await m.locator('a[href$="/faktura"]').count() === 0 && await m.locator('a[href$="/zaloha"]').count() === 0 && await m.locator("#marze-sbal").count() === 0 && await m.locator('[data-f="marze_pct"]').count() === 0 && await m.isVisible('a[href$="/nabidka"]'),
+      "mechanik: nevidí Fakturu, Zálohovou fakturu ani marže; nabídku vystavit může");
+    await m.evaluate(id => { location.hash = `#/zakazka/${id}/faktura`; }, mz); await m.waitForSelector("text=vystavuje majitel");
+    kontrola(true, "mechanik: fakturu přímým odkazem nevystaví");
+  }
   await m.screenshot({ path: path.join(OUT, "10-muj-ucet.png"), fullPage: true });
 
   // ---------- uložit zákazníka a vozidlo samostatně (bez příjmu), TP ----------
