@@ -98,6 +98,10 @@
         return data;
       },
       async podpisVyhotovil() { const r = ok(await sb.from("nastaveni").select("hodnota").eq("klic", "podpis_vyhotovil").maybeSingle()); return r?.hodnota || null; },
+      async servisniKatalog() {
+        const [m, t, u] = await Promise.all([sb.from("motory").select("kod,palivo,serizovani_ventilu,popis").order("kod"), sb.from("typy_motoru").select("klic,motor"), sb.from("servisni_ukony").select("*").order("poradi")]);
+        return { motory: ok(m), typy: ok(t), ukony: ok(u) };
+      },
       async dalsiCisloOdhad() { const r = ok(await sb.from("ciselne_rady").select("posledni").eq("rada", "zakazky").maybeSingle()); return r ? r.posledni + 1 : null; },
       async zakazky() {
         return ok(await sb.from("zakazky")
@@ -259,9 +263,26 @@
     };
   }
 
-  const SERVISNI_UKONY = [["olej", "Motorový olej + filtr"], ["servis", "Velký servis (prohlídka)"], ["atf", "Olej + filtr automatu"], ["vzduch", "Vzduchový filtr"],
-    ["svicky", "Zapalovací svíčky"], ["palivo", "Palivový filtr"], ["brzdy", "Brzdová kapalina"], ["chladici", "Chladicí kapalina"],
-    ["diferencial", "Olej diferenciálu"], ["servo", "Olej servořízení"], ["ventily", "Seřízení ventilů"]];
+  // katalog motorů a servisních úkonů (tabulky motory, typy_motoru, servisni_ukony) – stejná pravidla jako E-serviska
+  let katalogServisu = null;
+  const nactiKatalogServisu = async () => katalogServisu ||= await db.servisniKatalog();
+  const normModel = t => String(t || "").toUpperCase().replace(/\s+/g, " ").trim();
+  function urciMotor(v, K) {
+    const kody = new Set(K.motory.map(m => m.kod));
+    if (v?.motor && kody.has(v.motor)) return v.motor;
+    const cm = String(v?.cislo_motoru || "").toUpperCase().replace(/\s/g, "").match(/^(OM|M)?(\d{3})/);
+    if (cm) { const k = (cm[1] || (cm[2][0] === "6" ? "OM" : "M")) + cm[2]; if (kody.has(k)) return k; }
+    const typy = Object.fromEntries(K.typy.map(t => [normModel(t.klic), t.motor]));
+    const vk = String(v?.vin || "").toUpperCase().replace(/\s/g, "").match(/^(?:WDB)?(\d{3})(\d{3})/);
+    if (vk && typy[vk[1] + "." + vk[2]]) return typy[vk[1] + "." + vk[2]];
+    return typy[normModel(v?.model)] || null;
+  }
+  function servisVozu(v, K) {
+    const motor = urciMotor(v, K), m = K.motory.find(x => x.kod === motor);
+    const palivo = m ? m.palivo : /\b\d{3}\s*(D|TD|SD|CD|SDL)\b/i.test(v?.model || "") ? "diesel" : "benzin";
+    const ukony = K.ukony.filter(u => (!u.jen_palivo || u.jen_palivo === palivo) && (!u.jen_serizovani_ventilu || m?.serizovani_ventilu));
+    return { motor, palivo, ukony };
+  }
   // skupina intervalů MB podle modelového roku (A 1986+, B 1981–85, C do 1980); jde přepsat u vozidla
   const skupinaServisu = v => v?.servisni_skupina || (!v?.rok ? "A" : v.rok >= 1986 ? "A" : v.rok >= 1981 ? "B" : "C");
   const odkazEservisky = vin => "https://www.mercedesrestorations.cz/e-serviska?vin=" + encodeURIComponent(String(vin).toUpperCase().replace(/[^A-Z0-9]/g, ""));
@@ -1392,13 +1413,16 @@
     } catch (e) { el.insertAdjacentHTML("beforeend", `<div class="info chyba">${esc(chybaText(e))}</div>`); }
   }
   /* ---------- servisní úkony: zaškrtnuté úkony → E-serviska spočítá „Co je příště na řadě“ ---------- */
-  function vykresliServisniUkony() {
+  async function vykresliServisniUkony() {
     const el = document.getElementById("sekce-servis"); if (!el || !E) return;
-    const v = E.z.vozidla || {}, sk = skupinaServisu(v), zvol = new Set(E.z.servisni_ukony || []);
-    el.innerHTML = `<h2>Servisní úkony <span class="napoveda" style="margin-left:auto;font-weight:400">pro E-servisku · intervaly skupina ${sk}</span></h2>
-      <p class="napoveda" style="margin:0 0 6px">Zaškrtněte, co se při této návštěvě provedlo. E-serviska podle toho spočítá, co je příště na řadě.</p>
-      <div class="cipy">${SERVISNI_UKONY.filter(([k]) => k !== "ventily" || sk === "B" || zvol.has(k)).map(([k, t]) =>
-        `<label class="cip zaskrt"><input type="checkbox" data-servis="${k}" ${zvol.has(k) ? "checked" : ""}> ${esc(t)}</label>`).join("")}</div>
+    let K; try { K = await nactiKatalogServisu(); } catch (e) { el.innerHTML = `<h2>Servisní úkony</h2><div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+    if (!document.getElementById("sekce-servis")) return;
+    const v = E.z.vozidla || {}, sk = skupinaServisu(v), zvol = new Set(E.z.servisni_ukony || []), S2 = servisVozu(v, K);
+    const ukony = S2.ukony.concat(K.ukony.filter(u => zvol.has(u.ukon) && !S2.ukony.includes(u)));   // už zaškrtnuté nikdy nezmizí
+    el.innerHTML = `<h2>Servisní úkony <span class="napoveda" style="margin-left:auto;font-weight:400">pro E-servisku · ${S2.motor ? `motor ${esc(S2.motor)}` : "motor neurčen"} (${S2.palivo === "diesel" ? "diesel" : "benzín"}) · intervaly ${sk}</span></h2>
+      <p class="napoveda" style="margin:0 0 6px">Zaškrtněte, co se při této návštěvě provedlo. E-serviska podle toho spočítá, co je příště na řadě.${S2.motor ? "" : ` Motor jde určit v <a href="#/vozidlo/${E.z.vozidlo_id || v.id}">údajích vozidla</a>.`}</p>
+      <div class="cipy">${ukony.map(u =>
+        `<label class="cip zaskrt"><input type="checkbox" data-servis="${u.ukon}" ${zvol.has(u.ukon) ? "checked" : ""}> ${esc(u.nazev)}</label>`).join("")}</div>
       <div class="napoveda" id="stav-servisu" style="margin-top:8px"></div>`;
     el.querySelectorAll("[data-servis]").forEach(i => i.onchange = async () => {
       const nove = [...el.querySelectorAll("[data-servis]:checked")].map(x => x.dataset.servis), stav = el.querySelector("#stav-servisu");
@@ -2148,6 +2172,8 @@
     try { v = await db.vozidlo(id); } catch (e) { app.innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
     if (!v) { app.innerHTML = `<div class="info chyba">Vozidlo nenalezeno.</div>`; return; }
     const vin = rozlustitVin(v.vin);
+    let K = null; try { K = await nactiKatalogServisu(); } catch (e) { /* bez katalogu jen bez výběru motoru */ }
+    const motorAuto = K ? urciMotor({ ...v, motor: null }, K) : null;
     const majitele = (v.vlastnictvi || []).filter(x => x.zakaznici).sort((a, b) => (a.vlastni_do ? 1 : 0) - (b.vlastni_do ? 1 : 0));
     const VP = [["vin", "VIN / číslo podvozku", "s4"], ["spz", "SPZ", "s2"], ["typ", "Typ", "s2"], ["model", "Model", "s2"], ["rok", "Rok výroby", "s2"], ["barva", "Barva", "s2"],
       ["cislo_motoru", "Číslo motoru", "s2"], ["prevodovka", "Převodovka", "s2"], ["km_posledni", "Poslední stav tachometru", "s2"], ["baterie", "Baterie", "s2"], ["pneu_letni", "Pneu letní", "s2"], ["pneu_zimni", "Pneu zimní", "s2"]];
@@ -2157,6 +2183,8 @@
       <section class="karta"><h2>Údaje</h2>
         <form id="f" class="mrizka" autocomplete="off">
           ${VP.map(([k, t, w]) => `<label class="pole ${w}">${t}<input name="${k}" value="${esc(v[k] ?? "")}" ${["rok", "km_posledni"].includes(k) ? 'inputmode="numeric"' : ""} ${k === "vin" ? 'class="vin" autocapitalize="characters" spellcheck="false"' : ""}>${k === "vin" && vin ? `<span class="napoveda">Typ ${vin.typ}, kód modelu ${vin.kod}</span>` : ""}</label>`).join("")}
+          <label class="pole s2">Motor (pro servisní intervaly)<select name="motor"><option value="">${esc(motorAuto ? `automaticky (${motorAuto})` : "automaticky – neurčen")}</option>
+            ${(K?.motory || []).map(m => `<option value="${m.kod}" ${v.motor === m.kod ? "selected" : ""}>${m.kod} · ${m.palivo === "diesel" ? "diesel" : "benzín"}${m.popis ? " · " + esc(m.popis) : ""}</option>`).join("")}</select></label>
           <div class="s2"><label class="pole">Verze</label><div class="segment" id="verze">${["EU", "US", "JP"].map(x => `<button type="button" data-h="${x}" aria-pressed="${(v.verze || "EU") === x}">${x}</button>`).join("")}</div></div>
           <div class="s2"><label class="pole">Tachometr</label><div class="segment" id="jedn">${[["km", "km"], ["mi", "míle"]].map(([x, t]) => `<button type="button" data-h="${x}" aria-pressed="${(v.jednotka_tachometru || "km") === x}">${t}</button>`).join("")}</div></div>
           <label class="pole s6">Poznámka<textarea name="poznamka" rows="2">${esc(v.poznamka || "")}</textarea></label>

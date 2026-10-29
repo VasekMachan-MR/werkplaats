@@ -9,6 +9,18 @@ const DOKLADY = ["zakazkovy_list", "nabidka", "zalohova", "faktura", "opravny", 
 const PLATNOST = 3600;
 const HOTOVO = ["hotovo", "fakturovano", "zaplaceno", "predano"];
 const skupina = (v: any) => v.servisni_skupina || (!v.rok ? "A" : v.rok >= 1986 ? "A" : v.rok >= 1981 ? "B" : "C");
+const normModel = (t: unknown) => String(t || "").toUpperCase().replace(/\s+/g, " ").trim();
+// motor vozu: ruční určení → číslo motoru → typ z VIN → název modelu (tabulky motory, typy_motoru)
+function urciMotor(v: any, motory: any[], typy: any[]) {
+  const kody = new Set(motory.map(m => m.kod));
+  if (v.motor && kody.has(v.motor)) return v.motor;
+  const cm = String(v.cislo_motoru || "").toUpperCase().replace(/\s/g, "").match(/^(OM|M)?(\d{3})/);
+  if (cm) { const k = (cm[1] || (cm[2][0] === "6" ? "OM" : "M")) + cm[2]; if (kody.has(k)) return k; }
+  const t = Object.fromEntries(typy.map(x => [normModel(x.klic), x.motor]));
+  const vk = String(v.vin || "").toUpperCase().match(/^(?:WDB)?(\d{3})(\d{3})/);
+  if (vk && t[vk[1] + "." + vk[2]]) return t[vk[1] + "." + vk[2]];
+  return t[normModel(v.model)] || null;
+}
 const plusMesice = (d: string, m: number) => { const x = new Date(d + "T12:00:00Z"); x.setUTCMonth(x.getUTCMonth() + m); return x.toISOString().slice(0, 10); };
 
 function hlavicky(origin: string | null) {
@@ -28,17 +40,23 @@ Deno.serve(async req => {
 
   const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
   const { data: v } = await sb.from("vozidla")
-    .select("id,vin,spz,znacka,typ,model,rok,mesic,verze,cislo_motoru,prevodovka,barva,rafky,pneu_letni,pneu_zimni,kody_vybavy,km_posledni,jednotka_tachometru,servisni_skupina")
+    .select("id,vin,spz,znacka,typ,model,rok,mesic,verze,cislo_motoru,prevodovka,barva,rafky,pneu_letni,pneu_zimni,kody_vybavy,km_posledni,jednotka_tachometru,servisni_skupina,motor")
     .eq("vin", vin).maybeSingle();
   if (!v) return odp(404, { chyba: "nenalezeno" });
 
   const sk = skupina(v);
-  const [{ data: vl }, { data: zak }, { data: tp }, { data: intervaly }] = await Promise.all([
+  const [{ data: vl }, { data: zak }, { data: tp }, { data: intervaly }, { data: motory }, { data: typy }, { data: ukony }] = await Promise.all([
     sb.from("vlastnictvi").select("zakaznik_id,vlastni_od,vlastni_do,zakaznici(jmeno,kontaktni_osoba,email,telefon)").eq("vozidlo_id", v.id).order("vlastni_od", { ascending: false }),
     sb.from("zakazky").select("id,cislo,stav,zakaznik_id,datum_prijmu,datum_predani,km_prijem,km_predani,zavady,servisni_ukony").eq("vozidlo_id", v.id).neq("stav", "zruseno").neq("stav", "poptavka").order("datum_prijmu", { ascending: false }),
     sb.from("soubory").select("klic,nazev,mime").eq("vozidlo_id", v.id).eq("druh", "tp").eq("verejne", true).is("smazano", null).order("vytvoreno"),
-    sb.from("servisni_intervaly").select("ukon,poradi,interval_km,interval_mesice,zdroj").eq("skupina", sk).order("poradi")
+    sb.from("servisni_intervaly").select("ukon,poradi,interval_km,interval_mesice,zdroj").eq("skupina", sk).order("poradi"),
+    sb.from("motory").select("kod,palivo,serizovani_ventilu"),
+    sb.from("typy_motoru").select("klic,motor"),
+    sb.from("servisni_ukony").select("ukon,jen_palivo,jen_serizovani_ventilu")
   ]);
+  const motor = urciMotor(v, motory || [], typy || []), mInfo = (motory || []).find(m => m.kod === motor);
+  const palivo = mInfo ? mInfo.palivo : /\b\d{3}\s*(D|TD|SD|CD|SDL)\b/i.test(v.model || "") ? "diesel" : "benzin";
+  const platne = new Set((ukony || []).filter(u => (!u.jen_palivo || u.jen_palivo === palivo) && (!u.jen_serizovani_ventilu || mInfo?.serizovani_ventilu)).map(u => u.ukon));
   const aktualni = (vl || []).find(x => !x.vlastni_do) || (vl || [])[0];
   const ids = (zak || []).map(z => z.id);
 
@@ -81,7 +99,7 @@ Deno.serve(async req => {
   const mil = v.jednotka_tachometru === "mi", naJed = (km: number | null) => km == null ? null : mil ? Math.round(km / 1.6 / 100) * 100 : km;
   const dnes = new Date().toISOString().slice(0, 10), za60 = plusMesice(dnes, 2);
   const hotove = (zak || []).filter(z => HOTOVO.includes(z.stav)).sort((a, b) => String(b.datum_predani || b.datum_prijmu).localeCompare(String(a.datum_predani || a.datum_prijmu)));
-  const servis = (intervaly || []).map(it => {
+  const servis = (intervaly || []).filter(it => platne.has(it.ukon)).map(it => {
     const z = hotove.find(x => (x.servisni_ukony || []).includes(it.ukon));
     const interval = naJed(it.interval_km);
     if (!z) return { ukon: it.ukon, interval_km: interval, interval_mesice: it.interval_mesice, zdroj: it.zdroj, posledni: null, pristi: null, stav: "nezname" };
@@ -94,13 +112,13 @@ Deno.serve(async req => {
       posledni: { datum, km, cislo: z.cislo }, pristi: { datum: pDatum, km: pKm }, stav: po ? "po" : brzy ? "brzy" : "ok" };
   });
 
-  const { id: _id, servisni_skupina: _s, ...vuz } = v;
+  const { id: _id, servisni_skupina: _s, motor: _m, ...vuz } = v;
   return odp(200, {
     vuz,
     zakaznik: aktualni?.zakaznici || null,
     tp: (tp || []).filter(f => url[f.klic]).map(f => ({ nazev: f.nazev, url: url[f.klic], pdf: f.mime === "application/pdf" })),
     navstevy,
-    servis, servis_skupina: sk,
+    servis, servis_skupina: sk, motor, palivo,
     platnost_odkazu_s: PLATNOST
   });
 });
