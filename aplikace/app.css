@@ -374,3 +374,15 @@ div.odkaz-radek { cursor: pointer; }
 .marze-vse .marze-pole { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-weight: 600; }
 .marze-vse input { width: 84px; min-height: 40px; }
 .marze-vse .napoveda { flex-basis: 100%; margin: 0; }
+
+/* stav zakázky jako výběr (vypadá jako štítek) */
+.vyber-stavu { position: relative; display: inline-flex; align-items: center; border-radius: 999px; background: var(--modra-svetla); color: var(--navy); }
+.vyber-stavu select { appearance: none; -webkit-appearance: none; border: 0; background: transparent; color: inherit; font: inherit; font-size: 14px; font-weight: 650;
+  padding: 8px 30px 8px 14px; min-height: 38px; cursor: pointer; }
+.vyber-stavu::after { content: "▾"; position: absolute; right: 12px; pointer-events: none; font-size: 12px; }
+.vyber-stavu.hotovo { background: var(--zelena-svetla); color: var(--zelena); }
+.vyber-stavu.zruseno { background: #eee; color: #777; }
+/* fotky podle fáze */
+.faze-nadpis { margin: 16px 0 0; }
+.fotka > a { display: block; width: 100%; height: 100%; }
+.fotka > .mutted { display: flex; align-items: center; justify-content: center; height: 100%; }

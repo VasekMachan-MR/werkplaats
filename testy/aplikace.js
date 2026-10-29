@@ -121,8 +121,8 @@ const server = http.createServer((q, r) => {
 
   await p.click("text=Detail zakázky");
   await p.waitForSelector("text=Otevřít PDF");
-  await p.waitForSelector("#fotky-detail video");
-  kontrola(await p.locator("#fotky-detail video").count() === 1 && await p.locator("#fotky-detail img").count() === 2, "detail ukazuje 2 fotky a přehrávatelné video");
+  await p.waitForSelector("#sekce-fotky-detail video");
+  kontrola(await p.locator("#sekce-fotky-detail video").count() === 1 && await p.locator("#sekce-fotky-detail img").count() === 2, "detail ukazuje 2 fotky a přehrávatelné video");
   await foto("05-detail");
 
   // ---------- práce, díly → nabídka 7377-2 → faktura 7377-3 → úhrada → protokol 7377-4 ----------
@@ -331,6 +331,26 @@ const server = http.createServer((q, r) => {
   await p.locator('.dil[data-i="0"] [data-f="marze_pct"]').fill("50");
   kontrola(await p.inputValue('.dil[data-i="0"] [data-f="prodejni_cena"]') === "579", "marže jednoho dílu jde dál změnit zvlášť (50 % → 579 Kč)");
   await foto("20-marze-vse");
+  // úpravy příjmu, stav zakázky, fotky během opravy
+  await p.click("#upravit-prijem");
+  await p.fill('[data-uf="km_prijem"]', "123750");
+  await p.fill('[data-uf="odhad_ceny"]', "45000");
+  await p.click('[data-up="zavady"]');
+  await p.locator('[data-ur="zavady"]').last().fill("Replace front shock absorbers");
+  await p.click('[data-useg="nadrz_prijem"] >> text=3/4');
+  await p.click("#ulozit-prijem");
+  await p.waitForSelector("#upravit-prijem");
+  const zu = await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky.find(z => z.cislo === 7378));
+  kontrola(zu.km_prijem === 123750 && zu.odhad_ceny === 45000 && zu.nadrz_prijem === "3/4" && zu.zavady.includes("Replace front shock absorbers") && zu.zavady.length === 2
+    && /Replace front shock absorbers/.test(await p.textContent("#sekce-prijem-detail")), "úprava příjmu: km, odhad, nádrž a nová závada uloženy a zobrazeny");
+  await p.selectOption("#stav-zakazky", "v_praci");
+  await p.waitForFunction(() => window.__ULOZENO__.tabulky.zakazky.find(z => z.cislo === 7378).stav === "v_praci");
+  kontrola(true, "stav zakázky jde ručně změnit (V práci)");
+  await p.setInputFiles("#sekce-fotky-detail [data-nahrat] >> nth=2", ["testy/auto-1.jpg"]);
+  await p.waitForSelector('#sekce-fotky-detail [data-faze="prubeh"] .fotka img', { timeout: 15000 });
+  kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.soubory.some(f => f.faze === "prubeh" && f.druh === "foto")) && /Během opravy/.test(await p.textContent("#sekce-fotky-detail")),
+    "fotka přidaná během opravy se uloží do skupiny „Během opravy“");
+  await foto("21-uprava-prijmu-fotky");
   // smazat všechny díly (s potvrzením)
   await p.click("#smazat-dily");
   await p.waitForSelector("#stav-dilu >> text=✓ Uloženo");
@@ -464,7 +484,7 @@ const server = http.createServer((q, r) => {
   const id7377 = await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky[0].id);
   await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, id7377); await p.waitForSelector("#zrusit-zakazku");
   kontrola(await p.locator("#smazat-zakazku").count() === 0, "zakázka s fakturou nejde smazat, jen zrušit");
-  await p.click("#zrusit-zakazku"); await p.waitForSelector(".stitek >> text=Zrušeno");
+  await p.click("#zrusit-zakazku"); await p.waitForFunction(() => document.querySelector("#stav-zakazky")?.value === "zruseno");
   kontrola(true, "zakázka s fakturou označena jako zrušená");
   odpovedPrompt = "2026-11-05";
 

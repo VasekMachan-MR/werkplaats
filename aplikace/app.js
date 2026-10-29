@@ -1142,13 +1142,13 @@
     if (!z) { app.innerHTML = `<div class="info chyba">Zakázka nenalezena.</div>`; return; }
     E = { id, z, polozky: polozky.map(p => ({ ...p, typ: p.typ || "prace" })), dily: dily.map(d => ({ ...d })), dodavatele };
     const v = z.vozidla || {}, c = z.zakaznici || {};
-    const fotky = (z.soubory || []).filter(s => (s.druh === "foto" || s.druh === "video") && !s.smazano).map(s => ({ ...s, video: s.druh === "video" }));
     const jedn = v.jednotka_tachometru === "mi" ? "mi" : "km";
     const doklady = (z.doklady || []).sort((a, b) => a.cislo.localeCompare(b.cislo, "cs", { numeric: true }));
     app.innerHTML = `
       <div class="hlavicka-prehledu">
         <div><div class="mutted">Zakázka · ${esc(c.jmeno || "")}</div><h1 style="margin:0">#${z.cislo} · ${esc([v.typ, v.model].filter(Boolean).join(" ") || "Mercedes-Benz")}</h1></div>
-        <span class="radek-tlacitek"><span class="stitek ${["predano", "zaplaceno", "hotovo"].includes(z.stav) ? "hotovo" : z.stav === "zruseno" ? "zruseno" : ""}">${STAVY[z.stav] || z.stav}</span>
+        <span class="radek-tlacitek"><label class="vyber-stavu ${["predano", "zaplaceno", "hotovo"].includes(z.stav) ? "hotovo" : z.stav === "zruseno" ? "zruseno" : ""}" title="Stav zakázky">
+            <select id="stav-zakazky" aria-label="Stav zakázky">${Object.entries(STAVY).map(([k, t]) => `<option value="${k}" ${k === z.stav ? "selected" : ""}>${t}</option>`).join("")}</select></label>
           ${uzivatel.role === "majitel" ? (doklady.some(d => ["faktura", "zalohova", "opravny"].includes(d.druh))
             ? (z.stav !== "zruseno" ? `<button class="tl tl-male tl-smazat" id="zrusit-zakazku">✕ Zrušit zakázku</button>` : "")
             : `<button class="tl tl-male tl-smazat" id="smazat-zakazku">🗑 Smazat</button>`) : ""}</span>
@@ -1188,22 +1188,24 @@
 
       <section class="karta"><h2>Vozidlo</h2><dl class="udaje">
         ${[["VIN", v.vin], ["Typ", v.typ], ["Model", v.model], ["Rok", v.rok], ["SPZ", v.spz], ["Barva", v.barva], ["Verze", v.verze],
-           ["Tachometr při příjmu", z.km_prijem != null ? `${Number(z.km_prijem).toLocaleString("cs-CZ")} ${jedn}` : ""],
-           ["Tachometr při předání", z.km_predani != null ? `${Number(z.km_predani).toLocaleString("cs-CZ")} ${jedn}` : ""],
-           ["Nádrž", z.nadrz_prijem], ["TP přiložen", z.tp_prilozen == null ? "" : z.tp_prilozen ? "Ano" : "Ne"]]
+           ["Tachometr při předání", z.km_predani != null ? `${Number(z.km_predani).toLocaleString("cs-CZ")} ${jedn}` : ""]]
           .filter(([, x]) => x != null && x !== "").map(([a, b]) => `<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join("")}</dl></section>
       <section class="karta"><h2>Dokumenty vozidla <span class="napoveda" style="font-weight:400">(v E-servisce ke stažení)</span></h2><div class="fotky" id="dokumenty-vozidla"><span class="mutted">Načítám…</span></div>
         <p style="margin:10px 0 0"><a href="#/vozidlo/${z.vozidlo_id || v.id}">Upravit vozidlo a TP →</a> · <a href="#/zakaznik/${z.zakaznik_id || c.id}">Upravit zákazníka →</a></p></section>
       <section class="karta"><h2>Zákazník</h2><dl class="udaje">
         ${[["Jméno", esc(c.jmeno)], ["Kontaktní osoba", esc(c.kontaktni_osoba)], ["Telefon", telOdkaz(c.telefon)], ["E-mail", mailOdkaz(c.email)], ["Adresa", esc([c.ulice, [c.psc, c.mesto].filter(Boolean).join(" "), c.zeme].filter(Boolean).join(", "))], ["IČO", esc(c.ico)], ["DIČ", esc(c.dic)]]
           .filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${b}</dd></div>`).join("")}</dl></section>
-      <section class="karta"><h2>Příjem ${datumCz(z.datum_prijmu)}</h2>
-        <dl class="udaje">${z.predpoklad_dokonceni ? `<div><dt>Předpoklad dokončení</dt><dd>${datumCz(z.predpoklad_dokonceni)}</dd></div>` : ""}
-          ${z.odhad_ceny != null ? `<div><dt>Odhadovaná cena</dt><dd>${kc(z.odhad_ceny)}</dd></div>` : ""}</dl>
-        ${z.zavady?.length ? `<p style="margin:14px 0 0"><b>Závady a objednané opravy</b></p><ul class="odrazky">${z.zavady.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
-        ${z.stav_prijem?.length ? `<p style="margin:14px 0 0"><b>Stav při převzetí do opravy</b></p><ul class="odrazky">${z.stav_prijem.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
-      </section>
-      <section class="karta"><h2>Fotky a videa${fotky.length ? ` (${popisPoctu(fotky)})` : ""}</h2><div class="fotky" id="fotky-detail"></div></section>`;
+      <section class="karta" id="sekce-prijem-detail"></section>
+      <section class="karta" id="sekce-fotky-detail"></section>`;
+    vykresliPrijemDetail(false);
+    vykresliFotkyDetail();
+    app.querySelector("#stav-zakazky").onchange = async e => {
+      const novy = e.target.value, stary = E.z.stav;
+      try { await db.upravit("zakazky", id, { stav: novy }); E.z.stav = novy; z.stav = novy;
+        const l = e.target.parentElement; l.className = `vyber-stavu ${["predano", "zaplaceno", "hotovo"].includes(novy) ? "hotovo" : novy === "zruseno" ? "zruseno" : ""}`;
+        hlaska(`Stav zakázky: ${STAVY[novy]}`); }
+      catch (err) { e.target.value = stary; hlaska(chybaText(err), true); }
+    };
 
     const sz = app.querySelector("#smazat-zakazku");
     if (sz) sz.onclick = async () => {
@@ -1245,14 +1247,122 @@
         hlaska("Úhrada zrušena – doklad je zase nezaplacený."); detail(id);
       } catch (e) { hlaska(chybaText(e), true); }
     });
-    if (fotky.length) {
-      try {
-        const odk = await db.odkazy(fotky.map(f => f.klic));
-        app.querySelector("#fotky-detail").innerHTML = odk.map((o, i) => fotky[i].video
-          ? `<div class="fotka"><video src="${esc(o.signedUrl)}#t=0.5" controls playsinline preload="metadata"></video></div>`
-          : `<a class="fotka" href="${esc(o.signedUrl)}" target="_blank" rel="noopener"><img src="${esc(o.signedUrl)}" alt="" loading="lazy"></a>`).join("");
-      } catch (e) { app.querySelector("#fotky-detail").innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; }
+  }
+
+  /* ---------- příjem: zobrazení a úpravy (zakázkový list -1 zůstává, jak byl podepsán) ---------- */
+  function vykresliPrijemDetail(upravy) {
+    const el = document.getElementById("sekce-prijem-detail"); if (!el || !E) return;
+    const z = E.z, v = z.vozidla || {}, jedn = v.jednotka_tachometru === "mi" ? "mi" : "km";
+    if (!upravy) {
+      el.innerHTML = `<h2>Příjem ${datumCz(z.datum_prijmu)} <button type="button" class="tl tl-male" id="upravit-prijem" style="margin-left:auto">✏️ Upravit příjem</button></h2>
+        <dl class="udaje">${[["Předpoklad dokončení", datumCz(z.predpoklad_dokonceni)], ["Tachometr při příjmu", z.km_prijem != null ? `${Number(z.km_prijem).toLocaleString("cs-CZ")} ${jedn}` : ""],
+          ["Nádrž", z.nadrz_prijem], ["TP přiložen", z.tp_prilozen == null ? "" : z.tp_prilozen ? "Ano" : "Ne"], ["Odhadovaná cena", z.odhad_ceny != null ? kc(z.odhad_ceny) : ""],
+          ["Jazyk dokladů", z.jazyk === "en" ? "English" : "Čeština"]].filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join("")}</dl>
+        ${z.zavady?.length ? `<p style="margin:14px 0 0"><b>Závady a objednané opravy</b></p><ul class="odrazky">${z.zavady.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
+        ${z.stav_prijem?.length ? `<p style="margin:14px 0 0"><b>Stav při převzetí do opravy</b></p><ul class="odrazky">${z.stav_prijem.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}`;
+      el.querySelector("#upravit-prijem").onclick = () => vykresliPrijemDetail(true);
+      return;
     }
+    const F = { datum_prijmu: z.datum_prijmu || "", predpoklad_dokonceni: z.predpoklad_dokonceni || "", km_prijem: z.km_prijem ?? "", nadrz_prijem: z.nadrz_prijem || "",
+      tp_prilozen: z.tp_prilozen, odhad_ceny: z.odhad_ceny ?? "", jazyk: z.jazyk || "cs",
+      zavady: z.zavady?.length ? [...z.zavady] : [""], stav_prijem: z.stav_prijem?.length ? [...z.stav_prijem] : [""] };
+    const seznam = klic => `<div class="seznam-radku">${F[klic].map((t, i) => `<div class="radek-polozky"><span class="tecka">●</span>
+        <textarea class="vstup" rows="1" data-ur="${klic}" data-i="${i}">${esc(t)}</textarea>
+        <button type="button" class="tl smazat" data-us="${klic}" data-i="${i}" aria-label="Smazat řádek">×</button></div>`).join("")}</div>
+      <div class="radek-tlacitek" style="margin-top:8px"><button type="button" class="tl tl-male" data-up="${klic}">＋ Přidat řádek</button></div>`;
+    const kresli = () => {
+      el.innerHTML = `<h2>Upravit příjem</h2>
+        <div class="info" style="margin:0 0 14px">Změny se uloží k zakázce a použijí se v dalších dokladech. Už podepsaný zakázkový list ${esc(String(z.cislo))}-1 zůstává beze změny.</div>
+        <div class="mrizka">
+          <label class="pole s2">Datum převzetí<input type="date" data-uf="datum_prijmu" value="${esc(F.datum_prijmu)}"></label>
+          <label class="pole s2">Předpoklad dokončení<input type="date" data-uf="predpoklad_dokonceni" value="${esc(F.predpoklad_dokonceni)}"></label>
+          <label class="pole s2">Stav tachometru (${jedn === "mi" ? "míle" : "km"})<input data-uf="km_prijem" inputmode="numeric" value="${esc(F.km_prijem)}"></label>
+          <div class="s4"><label class="pole">Stav nádrže</label><div class="segment" data-useg="nadrz_prijem">${NADRZ.map(n => `<button type="button" data-h='"${n}"' aria-pressed="${F.nadrz_prijem === n}">${n}</button>`).join("")}</div></div>
+          <div class="s2"><label class="pole">TP přiložen</label><div class="segment" data-useg="tp_prilozen"><button type="button" data-h="true" aria-pressed="${F.tp_prilozen === true}">Ano</button><button type="button" data-h="false" aria-pressed="${F.tp_prilozen === false}">Ne</button></div></div>
+          <label class="pole s2">Odhadovaná cena (Kč)<input data-uf="odhad_ceny" inputmode="numeric" value="${esc(F.odhad_ceny)}" placeholder="nepovinné"></label>
+          <div class="s4"><label class="pole">Jazyk dokladů</label><div class="segment" data-useg="jazyk"><button type="button" data-h='"cs"' aria-pressed="${F.jazyk === "cs"}">Čeština</button><button type="button" data-h='"en"' aria-pressed="${F.jazyk === "en"}">English</button></div></div>
+          <div class="s6"><label class="pole">Závady a objednané opravy</label>${seznam("zavady")}</div>
+          <div class="s6"><label class="pole">Stav při převzetí do opravy</label>${seznam("stav_prijem")}</div>
+        </div>
+        <div class="radek-tlacitek" style="margin-top:16px"><button type="button" class="tl tl-hlavni" id="ulozit-prijem">💾 Uložit změny</button><button type="button" class="tl" id="zrusit-upravy">Zrušit</button></div>`;
+      el.querySelectorAll("[data-uf]").forEach(i => i.addEventListener("input", () => { F[i.dataset.uf] = i.value; }));
+      el.querySelectorAll("[data-useg]").forEach(sg => sg.onclick = e => { const b = e.target.closest("button"); if (!b) return;
+        F[sg.dataset.useg] = JSON.parse(b.dataset.h); sg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); });
+      el.querySelectorAll("[data-ur]").forEach(t => { t.addEventListener("input", () => { F[t.dataset.ur][+t.dataset.i] = t.value; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; });
+        t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; });
+      el.querySelectorAll("[data-us]").forEach(b => b.onclick = () => { F[b.dataset.us].splice(+b.dataset.i, 1); if (!F[b.dataset.us].length) F[b.dataset.us].push(""); kresli(); });
+      el.querySelectorAll("[data-up]").forEach(b => b.onclick = () => { F[b.dataset.up].push(""); kresli(); const r = el.querySelectorAll(`[data-ur="${b.dataset.up}"]`); r[r.length - 1]?.focus(); });
+      el.querySelector("#zrusit-upravy").onclick = () => vykresliPrijemDetail(false);
+      el.querySelector("#ulozit-prijem").onclick = async () => {
+        const km = String(F.km_prijem).trim() === "" ? null : cisloZ(F.km_prijem), odhad = String(F.odhad_ceny).trim() === "" ? null : cisloZ(F.odhad_ceny);
+        if (km != null && (!Number.isFinite(km) || km < 0)) return hlaska("Stav tachometru zadejte jako číslo.", true);
+        if (odhad != null && (!Number.isFinite(odhad) || odhad < 0)) return hlaska("Odhadovanou cenu zadejte jako číslo.", true);
+        if (!F.datum_prijmu) return hlaska("Vyplňte datum převzetí.", true);
+        const zmena = { datum_prijmu: F.datum_prijmu, predpoklad_dokonceni: F.predpoklad_dokonceni || null, km_prijem: km == null ? null : Math.round(km),
+          nadrz_prijem: F.nadrz_prijem || null, tp_prilozen: F.tp_prilozen ?? null, odhad_ceny: odhad, jazyk: F.jazyk,
+          zavady: F.zavady.map(t => t.trim()).filter(Boolean), stav_prijem: F.stav_prijem.map(t => t.trim()).filter(Boolean) };
+        try { await db.upravit("zakazky", E.id, zmena); Object.assign(E.z, zmena); hlaska("Příjem upraven."); vykresliPrijemDetail(false); vykresliSouhrnZakazky(); }
+        catch (e) { hlaska("Neuloženo: " + chybaText(e), true); }
+      };
+    };
+    kresli();
+  }
+
+  /* ---------- fotky a videa zakázky: při příjmu, během opravy, při předání ---------- */
+  const FAZE_FOTEK = [["prijem", "Při příjmu"], ["prubeh", "Během opravy"], ["predani", "Při předání"]];
+  async function vykresliFotkyDetail() {
+    const el = document.getElementById("sekce-fotky-detail"); if (!el || !E) return;
+    const fotky = (E.z.soubory || []).filter(s => (s.druh === "foto" || s.druh === "video") && !s.smazano).map(s => ({ ...s, video: s.druh === "video" }));
+    el.innerHTML = `<h2>Fotky a videa${fotky.length ? ` (${popisPoctu(fotky)})` : ""}</h2>
+      <div class="radek-tlacitek">
+        <label class="tl tl-hlavni">📷 Vyfotit<input type="file" accept="image/*" capture="environment" multiple hidden data-nahrat></label>
+        <label class="tl">🎥 Natočit video<input type="file" accept="video/*" capture="environment" hidden data-nahrat></label>
+        <label class="tl">Vybrat z galerie<input type="file" accept="image/*,video/*" multiple hidden data-nahrat></label>
+        <select class="vstup" id="faze-fotek" style="max-width:200px" aria-label="Kdy vyfoceno">${FAZE_FOTEK.map(([k, t]) => `<option value="${k}" ${k === (E.fazeFotek || "prubeh") ? "selected" : ""}>${t}</option>`).join("")}</select>
+      </div>
+      <div id="nahravani-detail"></div>
+      ${FAZE_FOTEK.map(([k, t]) => { const f = fotky.filter(x => (x.faze || "prijem") === k); return f.length ? `<p class="faze-nadpis"><b>${t}</b> <span class="mutted">${popisPoctu(f)}</span></p><div class="fotky" data-faze="${k}">${f.map(x => `<div class="fotka" data-klic="${esc(x.klic)}"><span class="mutted" style="font-size:12px">Načítám…</span></div>`).join("")}</div>` : ""; }).join("")}
+      ${fotky.length ? "" : `<p class="mutted" style="margin:12px 0 0">Zatím žádné fotky.</p>`}`;
+    el.querySelector("#faze-fotek").onchange = e => { E.fazeFotek = e.target.value; };
+    el.querySelectorAll("[data-nahrat]").forEach(i => i.addEventListener("change", e => { const s = [...e.target.files]; e.target.value = ""; if (s.length) nahratFotkyKZakazce(s); }));
+    if (!fotky.length) return;
+    try {
+      const odk = await db.odkazy(fotky.map(f => f.klic));
+      fotky.forEach((f, i) => {
+        const box = el.querySelector(`.fotka[data-klic="${CSS.escape(f.klic)}"]`); if (!box) return;
+        const u = odk[i]?.signedUrl; if (!u) return;
+        box.innerHTML = (f.video ? `<video src="${esc(u)}#t=0.5" controls playsinline preload="metadata"></video>`
+          : `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="" loading="lazy"></a>`)
+          + (uzivatel.role === "majitel" ? `<button type="button" class="odebrat" data-smazat-fotku="${f.id}" aria-label="Smazat">×</button>` : "");
+      });
+      el.querySelectorAll("[data-smazat-fotku]").forEach(b => b.onclick = async () => {
+        if (!confirm("Smazat tuto fotku / video ze zakázky?")) return;
+        try { await db.upravit("soubory", b.dataset.smazatFotku, { smazano: new Date().toISOString() });
+          const s = E.z.soubory.find(x => x.id === b.dataset.smazatFotku); if (s) s.smazano = new Date().toISOString(); vykresliFotkyDetail(); hlaska("Smazáno."); }
+        catch (e) { hlaska(chybaText(e), true); }
+      });
+    } catch (e) { el.insertAdjacentHTML("beforeend", `<div class="info chyba">${esc(chybaText(e))}</div>`); }
+  }
+  async function nahratFotkyKZakazce(soubory) {
+    const zak = E, faze = E.fazeFotek || "prubeh", box = document.getElementById("nahravani-detail");
+    const radky = soubory.map(s => ({ s, stav: "čeká", video: jeVideo(s) }));
+    const kresli = () => { if (box && box.isConnected) box.innerHTML = `<div class="info">${radky.map(r => `${esc(r.s.name || (r.video ? "video" : "fotka"))}: <b>${r.stav}</b>`).join("<br>")}</div>`; };
+    kresli();
+    let ok = 0;
+    for (const r of radky) {
+      try {
+        if (r.video && r.s.size > MAX_VIDEO_MB * 1024 * 1024) { r.stav = `moc velké (nejvýš ${MAX_VIDEO_MB} MB)`; kresli(); continue; }
+        const mime = r.video ? (r.s.type || "video/quicktime") : "image/jpeg";
+        const blob = r.video ? r.s : (await zmensi(r.s)).blob;
+        const d = new Date(), id = uuid();
+        const klic = `${r.video ? "videa" : "fotky"}/${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${id}.${PRIPONA[mime] || "bin"}`;
+        await db.nahrat(klic, blob, mime, x => { r.stav = `nahrávám ${Math.round(x * 100)} %`; kresli(); });
+        const [rad] = await db.vlozit("soubory", [{ zakazka_id: zak.id, vozidlo_id: zak.z.vozidlo_id || zak.z.vozidla?.id, druh: r.video ? "video" : "foto", faze, klic, nazev: r.s.name || null, mime }]);
+        (zak.z.soubory ||= []).push(rad || { id, druh: r.video ? "video" : "foto", faze, klic });
+        r.stav = "✓ nahráno"; ok++; kresli();
+      } catch (e) { r.stav = "chyba – " + chybaText(e); kresli(); }
+    }
+    if (E === zak) { await vykresliFotkyDetail(); if (ok) hlaska(`Nahráno ${ok} ${ok === 1 ? "soubor" : ok < 5 ? "soubory" : "souborů"}.`); }
   }
 
   /* ---------- automatické ukládání prací a dílů ---------- */
@@ -1777,7 +1887,7 @@
     if (!el || !vid) return;
     try {
       const dok = await db.dokumentyVozidla(vid);
-      if (!dok.length) { el.innerHTML = `<span class="mutted">Žádné dokumenty.${upravy ? "" : " TP nafotíte při příjmu nebo v kartě vozidla."}</span>`; return; }
+      if (!dok.length) { el.innerHTML = `<span class="mutted" style="grid-column:1/-1">Žádné dokumenty.${upravy ? "" : " TP nafotíte při příjmu nebo v kartě vozidla."}</span>`; return; }
       const odk = await db.odkazy(dok.map(d => d.klic));
       el.innerHTML = dok.map((d, i) => `<a class="fotka dokument" href="${esc(odk[i].signedUrl)}" target="_blank" rel="noopener" title="${esc(d.nazev || "")}">
         ${d.mime === "application/pdf" ? `<span class="tp-pdf" style="display:grid;place-items:center;height:100%">PDF</span>` : `<img src="${esc(odk[i].signedUrl)}" alt="" loading="lazy">`}
