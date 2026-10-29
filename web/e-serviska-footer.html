@@ -1,68 +1,128 @@
 <script>
 (function(){
 var API='https://yokbljdjcvwbadbcwmgx.supabase.co/functions/v1/eserviska';
-var T={
-cs:{kn:'E-servisní knížka',hledat:'Zadejte VIN vozu',najit:'Zobrazit',nacitam:'Načítám servisní knížku…',nenalezeno:'Pro tento VIN zatím nemáme servisní knížku. Zkontrolujte prosím VIN, nebo nám zavolejte.',chyba:'Servisní knížku se nepodařilo načíst. Zkuste to prosím později.',vuz:'Údaje o voze',zak:'Údaje o zákazníkovi',nav:'Návštěvy servisu',zadne:'Zatím žádná návštěva servisu.',tp:'Technický průkaz',dok:'Dokumenty ke stažení',
- f:{typ:'Typ',model:'Model',rok:'Rok výroby',vin:'VIN',spz:'SPZ',motor:'Motor',prev:'Převodovka',verze:'Verze',barva:'Barva',km:'Stav tachometru',rafky:'Ráfky',pl:'Pneu letní',pz:'Pneu zimní',jm:'Zákazník',ko:'Kontaktní osoba',em:'E-mail',tel:'Telefon'},
- zav:'Požadavky a závady',prace:'Provedené práce',dily:'Použité díly a materiál',fot:'Fotky a videa',dokn:'Dokumenty k návštěvě',prijato:'přijato',predano:'předáno',
- druh:{zakazkovy_list:'Zakázkový list',nabidka:'Cenová nabídka',zalohova:'Zálohová faktura',faktura:'Faktura',opravny:'Opravný daňový doklad',predavaci_protokol:'Předávací protokol',parts_list:'Parts list'},pdf:'PDF · stáhnout',otevrit:'otevřít',
- stav:{prijato:'Přijato',nabidka:'Nabídka',schvaleno:'Schváleno',v_praci:'V práci',hotovo:'Hotovo',fakturovano:'Hotovo',zaplaceno:'Hotovo',predano:'Předáno'},
- cT:'Máte dotaz k vašemu vozu?',cX:'Napište nám nebo zavolejte, domluvíme termín další prohlídky.',cM:'Napsat e-mail'},
-en:{kn:'E-service book',hledat:'Enter the vehicle VIN',najit:'Show',nacitam:'Loading the service book…',nenalezeno:'We do not have a service book for this VIN yet. Please check the VIN or give us a call.',chyba:'The service book could not be loaded. Please try again later.',vuz:'Vehicle details',zak:'Customer details',nav:'Service visits',zadne:'No service visits yet.',tp:'Registration document',dok:'Documents to download',
- f:{typ:'Type',model:'Model',rok:'Year',vin:'VIN',spz:'Plate',motor:'Engine',prev:'Transmission',verze:'Version',barva:'Colour',km:'Odometer',rafky:'Rims',pl:'Summer tyres',pz:'Winter tyres',jm:'Customer',ko:'Contact person',em:'E-mail',tel:'Phone'},
- zav:'Requests and faults',prace:'Work carried out',dily:'Parts and materials used',fot:'Photos and videos',dokn:'Documents for this visit',prijato:'received',predano:'handed over',
- druh:{zakazkovy_list:'Work order',nabidka:'Quotation',zalohova:'Advance invoice',faktura:'Invoice',opravny:'Credit note',predavaci_protokol:'Handover protocol',parts_list:'Parts list'},pdf:'PDF · download',otevrit:'open',
- stav:{prijato:'Received',nabidka:'Quotation',schvaleno:'Approved',v_praci:'In progress',hotovo:'Done',fakturovano:'Done',zaplaceno:'Done',predano:'Handed over'},
- cT:'Questions about your car?',cX:'Write or call us and we will arrange the next check-up.',cM:'Send an e-mail'},
-nl:{kn:'E-onderhoudsboekje',hledat:'Voer het VIN in',najit:'Tonen',nacitam:'Onderhoudsboekje laden…',nenalezeno:'Voor dit VIN hebben we nog geen onderhoudsboekje. Controleer het VIN of bel ons.',chyba:'Het onderhoudsboekje kon niet worden geladen. Probeer het later opnieuw.',vuz:'Voertuiggegevens',zak:'Klantgegevens',nav:'Werkplaatsbezoeken',zadne:'Nog geen werkplaatsbezoeken.',tp:'Kentekenbewijs',dok:'Documenten om te downloaden',
- f:{typ:'Type',model:'Model',rok:'Bouwjaar',vin:'VIN',spz:'Kenteken',motor:'Motor',prev:'Transmissie',verze:'Uitvoering',barva:'Kleur',km:'Km-stand',rafky:'Velgen',pl:'Zomerbanden',pz:'Winterbanden',jm:'Klant',ko:'Contactpersoon',em:'E-mail',tel:'Telefoon'},
- zav:'Wensen en storingen',prace:'Uitgevoerde werkzaamheden',dily:'Gebruikte onderdelen en materialen',fot:'Foto’s en video’s',dokn:'Documenten bij dit bezoek',prijato:'ontvangen',predano:'overgedragen',
- druh:{zakazkovy_list:'Werkorder',nabidka:'Offerte',zalohova:'Voorschotfactuur',faktura:'Factuur',opravny:'Creditnota',predavaci_protokol:'Overdrachtsprotocol',parts_list:'Onderdelenlijst'},pdf:'PDF · downloaden',otevrit:'openen',
- stav:{prijato:'Ontvangen',nabidka:'Offerte',schvaleno:'Goedgekeurd',v_praci:'In behandeling',hotovo:'Klaar',fakturovano:'Klaar',zaplaceno:'Klaar',predano:'Overgedragen'},
- cT:'Vragen over uw auto?',cX:'Schrijf of bel ons, dan plannen we de volgende controle in.',cM:'E-mail sturen'}};
-var HOTOVO=['hotovo','fakturovano','zaplaceno','predano'];
+var CDN='https://cdn.prod.website-files.com/6606988ce196c11b806596eb/';
+var DEF=CDN+'6ae092f53e922b99a5002c5c_mr-logo-og.png';
+var FLAG={cs:CDN+'664b63f2afe3580e60e43853_CZ%20-%20Czech%20Republic.webp',en:CDN+'664b63f2dd7bbd660b71828c_GB-UKM%20-%20United%20Kingdom.webp',nl:CDN+'664b63f2a3340734fbe67cde_NL%20-%20Netherlands.webp'};
+var NAMES={cs:'Čeština',en:'English',nl:'Nederlands'};
+var WIKI={W114:['wiki-detail-w114-cz','en-version/wiki-detail-w114-en','nl-version/wiki-detail-w114-nl'],W115:['wiki-detail-w115-cz','en-version/wiki-detail-w115-en','nl-version/wiki-detail-w115-nl'],W116:['wiki-detail-w116-cz','en-version/wiki-detail-w116-en','nl-version/wiki-detail-w116-nl'],W123:['wiki-detail-w123-cz','en-version/wiki-detail-w123-en','nl-version/wiki-detail-w123-nl'],W126:['wiki-detail-w126-cz','en-version/wiki-detail-w126-en','nl-version/wiki-detail-w126-nl'],R107:['wiki-detail-r107-cz','en-version/wiki-detail-r107-en','nl-version/wiki-detail-r107-nl']};
+var L={
+cs:{kn:'E-servisní knížka',langAria:'Změnit jazyk',hledat:'Zadejte VIN vozu',najit:'Zobrazit',nacitam:'Načítám servisní knížku…',nenalezeno:'Pro tento VIN zatím nemáme servisní knížku. Zkontrolujte prosím VIN, nebo nám zavolejte.',chyba:'Servisní knížku se nepodařilo načíst. Zkuste to prosím později.',
+ photo:'Fotka',of:'z',prev:'Předchozí fotka',next:'Další fotka',close:'Zavřít',copyVin:'Kopírovat VIN',copied:'Zkopírováno',
+ hFacts:'Údaje o voze',hCust:'Údaje o zákazníkovi',hVisits:'Návštěvy servisu',hDocs:'Dokumenty ke stažení',none:'bez záznamu',soon:'bude doplněno',
+ f:{model:'Model',typ:'Typ',year:'Rok výroby',engine:'Motor',gear:'Převodovka',vin:'VIN',spz:'SPZ',km:'Stav km',ver:'Verze',color:'Barva',sa:'Kódy SA',codes:'kódů'},wheels:'Kola',wheel:{rims:'Ráfky',summer:'Pneu letní',winter:'Pneu zimní'},
+ c:{name:'Zákazník',contact:'Kontaktní osoba',mail:'E-mail',phone:'Telefon'},
+ hWork:'Provedené servisní úkony',hReq:'Požadované úkony',hParts:'Použitý materiál',photosL:'Fotky z návštěvy',docsL:'Dokumenty k návštěvě',noVisits:'Zatím žádná návštěva servisu.',visit:'Servis',recv:'Přijato',hand:'předáno',inprog:'Vůz je právě v dílně.',
+ vd:['Zakázkový list','Faktura','Předávací protokol','Parts list'],pdf:'PDF · stáhnout',pend:'PDF · bude doplněno',tp:'Technický průkaz',other:'Ostatní dokumenty',
+ thCode:'Kód',thDesc:'Popis',cTitle:'Máte dotaz k vašemu vozu?',cText:'Napište nám nebo zavolejte, domluvíme termín další prohlídky.',cMail:'Napsat e-mail'},
+en:{kn:'E-service book',langAria:'Change language',hledat:'Enter the vehicle VIN',najit:'Show',nacitam:'Loading the service book…',nenalezeno:'We do not have a service book for this VIN yet. Please check the VIN or give us a call.',chyba:'The service book could not be loaded. Please try again later.',
+ photo:'Photo',of:'of',prev:'Previous photo',next:'Next photo',close:'Close',copyVin:'Copy VIN',copied:'Copied',
+ hFacts:'Vehicle details',hCust:'Customer details',hVisits:'Service visits',hDocs:'Documents to download',none:'no record',soon:'to be added',
+ f:{model:'Model',typ:'Type',year:'Year of manufacture',engine:'Engine',gear:'Transmission',vin:'VIN',spz:'Plate',km:'Mileage',ver:'Version',color:'Colour',sa:'SA codes',codes:'codes'},wheels:'Wheels',wheel:{rims:'Rims',summer:'Summer tyres',winter:'Winter tyres'},
+ c:{name:'Customer',contact:'Contact person',mail:'E-mail',phone:'Phone'},
+ hWork:'Work carried out',hReq:'Requested work',hParts:'Materials used',photosL:'Photos from this visit',docsL:'Documents for this visit',noVisits:'No service visits yet.',visit:'Service',recv:'Received',hand:'handed over',inprog:'The car is currently in the workshop.',
+ vd:['Work order','Invoice','Handover protocol','Parts list'],pdf:'PDF · download',pend:'PDF · to be added',tp:'Registration document',other:'Other documents',
+ thCode:'Code',thDesc:'Description',cTitle:'Questions about your car?',cText:'Write or call us and we will arrange the next check-up.',cMail:'Send an e-mail'},
+nl:{kn:'E-onderhoudsboekje',langAria:'Taal wijzigen',hledat:'Voer het VIN in',najit:'Tonen',nacitam:'Onderhoudsboekje laden…',nenalezeno:'Voor dit VIN hebben we nog geen onderhoudsboekje. Controleer het VIN of bel ons.',chyba:'Het onderhoudsboekje kon niet worden geladen. Probeer het later opnieuw.',
+ photo:'Foto',of:'van',prev:'Vorige foto',next:'Volgende foto',close:'Sluiten',copyVin:'VIN kopiëren',copied:'Gekopieerd',
+ hFacts:'Voertuiggegevens',hCust:'Klantgegevens',hVisits:'Werkplaatsbezoeken',hDocs:'Documenten om te downloaden',none:'geen gegevens',soon:'wordt aangevuld',
+ f:{model:'Model',typ:'Type',year:'Bouwjaar',engine:'Motor',gear:'Transmissie',vin:'VIN',spz:'Kenteken',km:'Km-stand',ver:'Uitvoering',color:'Kleur',sa:'SA-codes',codes:'codes'},wheels:'Wielen',wheel:{rims:'Velgen',summer:'Zomerbanden',winter:'Winterbanden'},
+ c:{name:'Klant',contact:'Contactpersoon',mail:'E-mail',phone:'Telefoon'},
+ hWork:'Uitgevoerde werkzaamheden',hReq:'Gevraagde werkzaamheden',hParts:'Gebruikt materiaal',photosL:'Foto’s van dit bezoek',docsL:'Documenten bij dit bezoek',noVisits:'Nog geen werkplaatsbezoeken.',visit:'Onderhoud',recv:'Ontvangen',hand:'overgedragen',inprog:'De auto staat momenteel in de werkplaats.',
+ vd:['Werkorder','Factuur','Overdrachtsprotocol','Onderdelenlijst'],pdf:'PDF · downloaden',pend:'PDF · wordt aangevuld',tp:'Kentekenbewijs',other:'Overige documenten',
+ thCode:'Code',thDesc:'Omschrijving',cTitle:'Vragen over uw auto?',cText:'Schrijf of bel ons, dan plannen we de volgende controle in.',cMail:'E-mail sturen'}};
 var MON={en:['January','February','March','April','May','June','July','August','September','October','November','December'],nl:['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december']};
+var DOCMAP=[['zakazkovy_list'],['faktura','opravny','zalohova'],['predavaci_protokol'],['parts_list']];
+var HOT=['hotovo','fakturovano','zaplaceno','predano'];
+var I_INFO='<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#092b50" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 11v6" stroke-linecap="square"/><circle cx="12" cy="7.5" r="0.6" fill="#092b50"/></svg>';
+var I_CHEV=function(o){return '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#092b50" stroke-width="2" style="flex:0 0 auto;transform:rotate('+(o?180:0)+'deg)"><path d="M5 8l5 5 5-5"/></svg>'};
+var I_DL='<svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#092b50" stroke-width="2"><path d="M10 3v10M6 9l4 4 4-4M4 17h12"/></svg>';
+var I_CHECK='<svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#092b50" stroke-width="2.4" style="flex:0 0 auto;margin-top:3px"><path d="M4 10l4 4 8-8"/></svg>';
+var I_DOT='<span aria-hidden="true" style="flex:0 0 auto;width:6px;height:6px;margin:8px 5px 0;background:#092b50"></span>';
+var I_L='<svg aria-hidden="true" width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="square"><path d="M16 4L7 13l9 9"/></svg>';
+var I_R='<svg aria-hidden="true" width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="square"><path d="M10 4l9 9-9 9"/></svg>';
+var I_X='<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4l16 16M20 4L4 20"/></svg>';
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
-function dat(s,l){if(!s)return'';var p=s.split('-');var D=+p[2],M=+p[1],Y=p[0];if(l==='cs')return D+'. '+M+'. '+Y;return D+' '+MON[l][M-1]+' '+Y}
-function cislo(n,l){return Number(n).toLocaleString(l==='cs'?'cs-CZ':l==='nl'?'nl-NL':'en-GB')}
-var lang='cs';try{var sl=localStorage.getItem('sk-lang');if(T[sl])lang=sl}catch(e){}
+function fdate(s,l){if(!s)return'';var p=String(s).split('-'),D=+p[2],M=+p[1],Y=p[0];return l==='cs'?D+'. '+M+'. '+Y:D+' '+MON[l][M-1]+' '+Y}
+function num(n,l){return Number(n).toLocaleString(l==='cs'?'cs-CZ':l==='nl'?'nl-NL':'en-GB')}
+function typKod(t){t=String(t||'').toUpperCase().replace(/\s+/g,'');var m=t.match(/^([WRC])?(\d{3})/);if(!m)return t;return (m[1]||(m[2]==='107'?'R':m[2]==='124'&&/C$/.test(t)?'C':'W'))+m[2]}
+function kody(k){if(!k)return[];if(Array.isArray(k))return k.map(function(x){return typeof x==='string'?[x,'']:[x.kod||x.code||'',x.popis||x.text||x.desc||'']});if(typeof k==='object')return Object.keys(k).map(function(c){return[c,k[c]]});return[]}
+var S={lang:'cs',langOpen:false,open:{0:true},slide:0,wheels:false,cust:false,sa:false,copied:false,gal:null};
+try{var sl=localStorage.getItem('sk-lang');if(L[sl])S.lang=sl}catch(e){}
 var vin=(new URLSearchParams(location.search).get('vin')||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-var D=null,stav='',otevrene={0:true};
+var D=null,stav='';
 var root=document.createElement('div');root.id='es';document.body.appendChild(root);
-function nacti(){if(!vin){stav='';kresli();return}stav='nacitam';kresli();
- fetch(API+'?vin='+encodeURIComponent(vin)).then(function(r){if(r.status===404||r.status===400){stav='nenalezeno';return null}if(!r.ok)throw 0;return r.json()}).then(function(j){if(j){D=j;stav='ok'}kresli()}).catch(function(){stav='chyba';kresli()})}
-function row(k,v,html){if(v==null||v==='')return'';return'<div class="row"><span>'+esc(k)+'</span><b>'+(html||esc(v))+'</b></div>'}
-function kresli(){var t=T[lang],h='';document.documentElement.lang=lang;
- h+='<header><div class="hl" style="max-width:880px;margin:0 auto"><div class="mo logo">Mercedes Restorations</div><div style="display:flex;gap:16px;align-items:center"><div class="mo kn">'+esc(t.kn)+'</div><div class="jaz">'+['cs','en','nl'].map(function(k){return'<button data-l="'+k+'" aria-pressed="'+(k===lang)+'">'+k.toUpperCase()+'</button>'}).join('')+'</div></div></div></header><main class="in" style="padding-bottom:48px">';
- if(stav!=='ok'){h+='<h1>'+esc(t.kn)+'</h1><p class="sub" style="font-size:16px;color:#4a4f55;font-weight:500">Mercedes Restorations</p><form id="es-f"><input name="vin" placeholder="'+esc(t.hledat)+'" value="'+esc(vin)+'" autocomplete="off" aria-label="VIN"><button type="submit">'+esc(t.najit)+'</button></form>';
-  if(stav)h+='<div class="info">'+esc(t[stav])+'</div>'}
- else{var v=D.vuz,c=D.zakaznik,km=v.km_posledni!=null?cislo(v.km_posledni,lang)+' '+(v.jednotka_tachometru||'km'):'';
-  h+='<h1>'+esc([v.znacka,v.model].filter(Boolean).join(' '))+'</h1><p class="sub">'+esc(['#'+(v.typ||''),v.rok].filter(Boolean).join(' · '))+'</p>';
-  h+='<section><h2>'+esc(t.vuz)+'</h2><div class="box"><div class="grid"><div>'+row(t.f.typ,v.typ)+row(t.f.model,v.model)+row(t.f.rok,v.mesic?v.mesic+'/'+v.rok:v.rok)+row(t.f.motor,v.cislo_motoru)+row(t.f.prev,v.prevodovka)+row(t.f.barva,v.barva)+'</div><div>'+row(t.f.vin,v.vin)+row(t.f.spz,v.spz)+row(t.f.km,km)+row(t.f.verze,v.verze)+row(t.f.rafky,v.rafky)+row(t.f.pl,v.pneu_letni)+row(t.f.pz,v.pneu_zimni)+'</div></div></div></section>';
-  if(c)h+='<section><h2>'+esc(t.zak)+'</h2><div class="box">'+row(t.f.jm,c.jmeno)+row(t.f.ko,c.kontaktni_osoba)+row(t.f.em,c.email,c.email?'<a href="mailto:'+esc(c.email)+'">'+esc(c.email)+'</a>':'')+row(t.f.tel,c.telefon,c.telefon?'<a href="tel:'+esc(String(c.telefon).replace(/\s/g,''))+'">'+esc(c.telefon)+'</a>':'')+'</div></section>';
-  h+='<section><h2>'+esc(t.nav)+'</h2>';
-  if(!D.navstevy.length)h+='<div class="info">'+esc(t.zadne)+'</div>';
-  D.navstevy.forEach(function(n,i){var o=!!otevrene[i],hot=HOTOVO.indexOf(n.stav)>-1,kmN=n.km_predani||n.km_prijem;
-   h+='<div class="nav"><button data-n="'+i+'" aria-expanded="'+o+'"><span class="dat">'+esc(dat(n.datum_predani||n.datum_prijmu,lang))+'</span><span class="nt">#'+n.cislo+(n.zavady[0]?' · '+esc(n.zavady[0]):'')+'</span>'+(kmN?'<span class="km">'+cislo(kmN,lang)+' '+esc(v.jednotka_tachometru||'km')+'</span>':'')+'<span class="st'+(hot?' ok':'')+'">'+esc(t.stav[n.stav]||n.stav)+'</span><svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#092b50" stroke-width="2" style="transform:rotate('+(o?180:0)+'deg)"><path d="M5 8l5 5 5-5"/></svg></button>';
-   if(o){h+='<div class="pan"><div class="km">'+esc(t.prijato)+' '+esc(dat(n.datum_prijmu,lang))+(n.datum_predani?' · '+esc(t.predano)+' '+esc(dat(n.datum_predani,lang)):'')+'</div>';
-    if(n.zavady.length)h+='<div><div class="sh">'+esc(t.zav)+'</div><ul>'+n.zavady.map(function(z){return'<li>'+esc(z)+'</li>'}).join('')+'</ul></div>';
-    if(n.prace.length)h+='<div><div class="sh">'+esc(t.prace)+'</div><ul>'+n.prace.map(function(p){return'<li'+(p.typ==='nadpis'?' class="np"':'')+'>'+esc(p.popis)+'</li>'}).join('')+'</ul></div>';
-    if(n.dily.length)h+='<div><div class="sh">'+esc(t.dily)+'</div><ul>'+n.dily.map(function(d){return'<li>'+esc(d.nazev)+(d.mnozstvi&&+d.mnozstvi!==1?' · '+esc(cislo(d.mnozstvi,lang))+' '+esc(d.jednotka||''):'')+'<br><small>'+esc([d.vyrobce,d.cislo_mb].filter(Boolean).join(' · '))+'</small></li>'}).join('')+'</ul></div>';
-    if(n.fotky.length)h+='<div><div class="sh">'+esc(t.fot)+' ('+n.fotky.length+')</div><div class="fot">'+n.fotky.map(function(f){return f.video?'<video src="'+esc(f.url)+'#t=0.5" controls playsinline preload="metadata"></video>':'<a href="'+esc(f.url)+'" target="_blank" rel="noopener"><img src="'+esc(f.url)+'" alt="" loading="lazy"></a>'}).join('')+'</div></div>';
-    if(n.dokumenty.length)h+='<div><div class="sh" style="margin-bottom:10px">'+esc(t.dokn)+'</div>'+n.dokumenty.map(function(d){return'<a class="dok" href="'+esc(d.url)+'" target="_blank" rel="noopener"><span style="font-weight:600">'+esc(t.druh[d.druh]||d.druh)+(d.druh!=='parts_list'&&d.cislo?' '+esc(d.cislo):'')+'</span><span>'+esc(t.pdf)+'</span></a>'}).join('')+'</div>';
-    h+='</div>'}
+function load(){if(!vin){stav='';view();return}stav='nacitam';view();
+ fetch(API+'?vin='+encodeURIComponent(vin)).then(function(r){if(r.status===404||r.status===400){stav='nenalezeno';return null}if(!r.ok)throw 0;return r.json()}).then(function(j){if(j){D=j;stav='ok'}view()}).catch(function(){stav='chyba';view()})}
+function row(k,v,html){return '<div class="row"><span>'+esc(k)+'</span><span class="v">'+(html||esc(v))+'</span></div>'}
+function heroPhotos(){var a=[];D.navstevy.forEach(function(n){n.fotky.forEach(function(f){if(!f.video)a.push(f.url)})});return a}
+function view(){
+ var t=L[S.lang],lang=S.lang,h='<div class="hdr"><div class="hl"><div class="logo">Mercedes Restorations</div><div style="display:flex;gap:20px;align-items:center"><div class="kn">'+esc(t.kn)+'</div><div style="position:relative"><button class="b" data-a="lang" aria-label="'+esc(t.langAria)+'" style="display:flex;align-items:center;justify-content:center;width:44px;height:44px"><img class="flag" src="'+FLAG[lang]+'" alt="" width="30" height="24"></button>';
+ if(S.langOpen){h+='<div class="jm">';['cs','en','nl'].forEach(function(k){h+='<button class="b" data-a="setlang" data-k="'+k+'" style="font-weight:'+(k===lang?700:500)+'"><img class="flag" src="'+FLAG[k]+'" alt="" width="30" height="24"><span>'+NAMES[k]+'</span></button>'});h+='</div>'}
+ h+='</div></div></div></div><div class="wrap" style="padding-bottom:48px">';
+ if(stav!=='ok'){h+='<div class="sec hero"><div style="flex:1 1 300px"><div class="h1">'+esc(t.kn)+'</div></div></div><form id="es-f"><input name="vin" placeholder="'+esc(t.hledat)+'" value="'+esc(vin)+'" autocomplete="off" aria-label="VIN"><button type="submit">'+esc(t.najit)+'</button></form>';if(stav)h+='<div class="info">'+esc(t[stav])+'</div>'}
+ else{
+  var v=D.vuz,c=D.zakaznik||{},kod=typKod(v.typ),wk=WIKI[kod],wiki=wk?'https://www.mercedesrestorations.cz/'+wk[{cs:0,en:1,nl:2}[lang]]:'',unit=v.jednotka_tachometru||'km';
+  var ph=heroPhotos(),def=!ph.length,cnt=ph.length,sl=S.slide>=cnt?0:S.slide;
+  h+='<div class="sec hero"><div style="flex:1 1 300px;min-width:0"><div class="h1">'+esc([v.znacka||'Mercedes-Benz',v.model].filter(Boolean).join(' '))+'</div><p style="margin:0">'+(wiki?'<a class="hash" href="'+esc(wiki)+'">#'+esc(kod)+'</a>':'<span class="hash">#'+esc(kod)+'</span>')+'</p></div>';
+  h+='<div style="flex:0 1 340px;min-width:0;width:100%"><div class="foto'+(def?' def':'')+'"><img class="f" src="'+esc(def?DEF:ph[sl])+'" alt="">';
+  if(!def){h+='<span class="lb">'+esc(t.photo+' '+(sl+1)+' '+t.of+' '+cnt)+'</span>';if(cnt>1)h+='<button class="b" data-a="prev" aria-label="'+esc(t.prev)+'" style="position:absolute;left:4px;top:50%;margin-top:-22px;width:44px;height:44px;display:flex;align-items:center;justify-content:center">'+I_L+'</button><button class="b" data-a="next" aria-label="'+esc(t.next)+'" style="position:absolute;right:4px;top:50%;margin-top:-22px;width:44px;height:44px;display:flex;align-items:center;justify-content:center">'+I_R+'</button>'}
+  h+='</div></div></div>';
+  var km=v.km_posledni!=null?num(v.km_posledni,lang)+' '+unit:t.none,sa=kody(v.kody_vybavy);
+  h+='<div class="sec"><div class="h2">'+esc(t.hFacts)+'</div><div class="box"><div class="cols"><div>'+row(t.f.model,v.model||t.none)+row(t.f.typ,v.typ||t.none)+row(t.f.year,v.rok?(v.mesic?v.mesic+'/':'')+v.rok:t.none)+row(t.f.engine,v.cislo_motoru||t.none)+row(t.f.gear,v.prevodovka||t.none)+'</div><div>';
+  h+=row(t.f.vin,'','<span style="display:flex;align-items:center;gap:2px;justify-content:flex-end"><span style="word-break:break-all">'+esc(v.vin)+'</span><button class="b" data-a="copy" aria-label="'+esc(S.copied?t.copied:t.copyVin)+'" title="'+esc(S.copied?t.copied:t.copyVin)+'" style="flex:0 0 auto;margin:-10px -6px -10px 0;width:44px;height:44px;display:flex;align-items:center;justify-content:center">'+(S.copied?'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#092b50" stroke-width="2.4"><path d="M4 10l4 4 8-8"/></svg>':'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#092b50" stroke-width="2"><rect x="7" y="7" width="10" height="10"/><path d="M13 7V3H3v10h4"/></svg>')+'</button></span>');
+  h+=row(t.f.spz,v.spz||t.none)+row(t.f.km,km)+row(t.f.ver,v.verze||t.none);
+  if(sa.length)h+='<div class="row" style="align-items:center;padding:2px 0"><span>'+esc(t.f.sa)+'</span><span style="display:flex;align-items:center;gap:4px"><span class="v">'+sa.length+' '+esc(t.f.codes)+'</span><button class="b" data-a="sa" style="width:44px;height:44px;display:flex;align-items:center;justify-content:center">'+I_INFO+'</button></span></div>';
+  h+='</div></div>';
+  var wnow=v.pneu_letni||v.rafky||t.none;
+  h+='<div><button class="b tog" data-a="wheels" aria-expanded="'+S.wheels+'" style="padding:10px 0"><span style="color:#4a4f55">'+esc(t.wheels)+'</span><span style="display:flex;align-items:center;gap:12px;font-weight:600"><span>'+esc(wnow)+'</span>'+I_CHEV(S.wheels)+'</span></button>';
+  if(S.wheels)h+='<div style="padding:0 0 8px">'+[['rims',v.rafky],['summer',v.pneu_letni],['winter',v.pneu_zimni]].map(function(x){return'<div style="display:flex;justify-content:space-between;gap:12px;padding:10px 0 10px 12px;border-top:1px solid #c3c6c9"><span style="color:#4a4f55">'+esc(t.wheel[x[0]])+'</span><span style="font-weight:600;text-align:right">'+esc(x[1]||t.none)+'</span></div>'}).join('')+'</div>';
+  h+='</div></div></div>';
+  h+='<div class="sec"><button class="b tog" data-a="cust" aria-expanded="'+S.cust+'" style="margin:0 0 '+(S.cust?14:0)+'px"><div class="h2" style="margin:0">'+esc(t.hCust)+'</div>'+I_CHEV(S.cust)+'</button>';
+  if(S.cust)h+='<div class="box">'+row(t.c.name,c.jmeno||t.none)+(c.kontaktni_osoba?row(t.c.contact,c.kontaktni_osoba):'')+row(t.c.mail,'',c.email?'<a href="mailto:'+esc(c.email)+'">'+esc(c.email)+'</a>':esc(t.none))+row(t.c.phone,'',c.telefon?'<a href="tel:'+esc(String(c.telefon).replace(/\s/g,''))+'">'+esc(c.telefon)+'</a>':esc(t.none))+'</div>';
+  h+='</div>';
+  h+='<div class="sec"><div class="h2">'+esc(t.hVisits)+'</div>';
+  if(!D.navstevy.length)h+='<div class="info">'+esc(t.noVisits)+'</div>';
+  D.navstevy.forEach(function(n,i){var o=!!S.open[i],kmN=n.km_predani||n.km_prijem,hot=HOT.indexOf(n.stav)>-1;
+   var title=(n.prace.filter(function(p){return p.typ==='nadpis'})[0]||{}).popis||n.zavady[0]||t.visit;
+   h+='<div class="vis"><button class="b vh" data-a="visit" data-i="'+i+'" aria-expanded="'+o+'"><span class="vd">'+esc(fdate(n.datum_predani||n.datum_prijmu,lang))+'</span><span class="vt">'+esc(title)+'</span><span class="vk">'+(kmN?esc(num(kmN,lang)+' '+unit):'#'+n.cislo)+'</span>'+I_CHEV(o)+'</button>';
+   if(o){h+='<div class="vp"><p style="margin:0;color:#4a4f55">'+esc(t.recv+' '+fdate(n.datum_prijmu,lang))+(n.datum_predani?esc(' · '+t.hand+' '+fdate(n.datum_predani,lang)):'')+' · #'+n.cislo+(hot?'':'<br><b style="color:#333">'+esc(t.inprog)+'</b>')+'</p>';
+    var work=n.prace.length?n.prace:n.zavady.map(function(z){return{typ:'prace',popis:z}});
+    if(work.length){h+='<div><div class="sub">'+esc(n.prace.length?t.hWork:t.hReq)+'</div><div class="tasks">';work.forEach(function(p){h+=p.typ==='nadpis'?'<div class="task np">'+esc(p.popis)+'</div>':'<div class="task">'+(n.prace.length&&hot?I_CHECK:I_DOT)+'<span style="flex:1 1 auto;min-width:0">'+esc(p.popis)+'</span></div>'});h+='</div></div>'}
+    if(n.dily.length){h+='<div><div class="sub">'+esc(t.hParts)+'</div><div class="tasks">';n.dily.forEach(function(d){h+='<div class="task">'+I_DOT+'<span style="flex:1 1 auto;min-width:0">'+esc(d.nazev)+(d.mnozstvi&&+d.mnozstvi!==1?' · '+esc(num(d.mnozstvi,lang)+' '+(d.jednotka||'')):'')+'<small>'+esc([d.vyrobce,d.cislo_mb].filter(Boolean).join(' · '))+'</small></span></div>'});h+='</div></div>'}
+    if(n.fotky.length){var fs=n.fotky,show=Math.min(4,fs.length);h+='<div><div class="sub">'+esc(t.photosL+' ('+fs.length+')')+'</div><div class="gal">';for(var p=0;p<show;p++){var f=fs[p];h+='<button class="b" data-a="gal" data-v="'+i+'" data-i="'+p+'" aria-label="'+esc(t.photo+' '+(p+1))+'">'+(f.video?'<video src="'+esc(f.url)+'#t=0.5" muted playsinline preload="metadata"></video>':'<img src="'+esc(f.url)+'" alt="" loading="lazy">')+(p===3&&fs.length>4?'<span class="more">+'+(fs.length-3)+'</span>':'')+'</button>'}h+='</div></div>'}
+    h+='<div><div class="sub">'+esc(t.docsL)+'</div><div class="docs">';
+    DOCMAP.forEach(function(dr,k){var d=null;dr.forEach(function(x){if(!d)n.dokumenty.forEach(function(y){if(!d&&y.druh===x)d=y})});
+     var inner='<span style="font-weight:600">'+esc(t.vd[k])+(d&&d.druh!=='parts_list'&&d.cislo?' '+esc(d.cislo):'')+'</span><span class="m"><span>'+esc(d?t.pdf:t.pend)+'</span>'+I_DL+'</span>';
+     h+=d?'<a class="doc" href="'+esc(d.url)+'" target="_blank" rel="noopener">'+inner+'</a>':'<div class="doc">'+inner+'</div>'});
+    h+='</div></div></div>'}
    h+='</div>'});
-  h+='</section>';
-  if(D.tp.length)h+='<section><h2>'+esc(t.dok)+'</h2>'+D.tp.map(function(f,i){return'<a class="dok" style="background:#eceeef" href="'+esc(f.url)+'" target="_blank" rel="noopener"><span style="font-weight:600">'+esc(t.tp)+(D.tp.length>1?' '+(i+1):'')+'</span><span>'+esc(f.pdf?t.pdf:t.otevrit)+'</span></a>'}).join('')+'</section>';
+  h+='</div>';
+  h+='<div class="sec gdoc"><div class="h2">'+esc(t.hDocs)+'</div><div style="display:flex;flex-direction:column;gap:8px">';
+  if(D.tp.length)D.tp.forEach(function(f,i){h+='<a class="doc" href="'+esc(f.url)+'" target="_blank" rel="noopener"><span style="font-weight:600">'+esc(t.tp)+(D.tp.length>1?' '+(i+1):'')+'</span><span class="m"><span>'+esc(f.pdf?t.pdf:t.photo)+'</span>'+I_DL+'</span></a>'});
+  else h+='<div class="doc"><span style="font-weight:600">'+esc(t.tp)+'</span><span class="m"><span>'+esc(t.soon)+'</span>'+I_DL+'</span></div>';
+  h+='<div class="doc"><span style="font-weight:600">'+esc(t.other)+'</span><span class="m"><span>'+esc(t.soon)+'</span>'+I_DL+'</span></div></div></div>';
  }
- h+='<section class="kontakt"><div style="flex:1 1 280px;min-width:0"><h2 class="mo">'+esc(t.cT)+'</h2><p>'+esc(t.cX)+'</p></div><div style="display:flex;flex-wrap:wrap;gap:10px"><a class="bil" href="mailto:info@mercedesrest.cz">'+esc(t.cM)+'</a><a class="obr" href="tel:+420732518016">+420 732 518 016</a></div></section></main>';
- h+='<footer><div class="in"><span>Mercedes Restorations s.r.o. · Vlčkovická 223/1A, Hradec Králové</span><a href="https://www.mercedesrestorations.cz" style="color:#d1d3d5">mercedesrestorations.cz</a></div></footer>';
- root.innerHTML=h;
- var f=root.querySelector('#es-f');if(f)f.onsubmit=function(e){e.preventDefault();vin=f.vin.value.toUpperCase().replace(/[^A-Z0-9]/g,'');history.replaceState(null,'','?vin='+vin);nacti()};
+ h+='<div class="sec cta"><div style="flex:1 1 280px;min-width:0"><div class="h2">'+esc(t.cTitle)+'</div><p>'+esc(t.cText)+'</p></div><div style="display:flex;flex-wrap:wrap;gap:10px"><a href="mailto:info@mercedesrest.cz" style="background:#fff;color:#092b50">'+esc(t.cMail)+'</a><a href="tel:+420732518016" style="border:2px solid #d1d3d5;color:#fff">+420 732 518 016</a></div></div></div>';
+ h+='<div class="ftr"><div><span>Mercedes Restorations s.r.o. · Vlčkovická 223/1A, Hradec Králové</span><span>mercedesrestorations.cz</span></div></div>';
+ if(stav==='ok'&&S.sa){h+='<div class="md"><button class="b bd" data-a="close" aria-label="'+esc(t.close)+'"></button><div class="dl" role="dialog" aria-modal="true"><div style="display:flex;justify-content:flex-end;padding:8px;border-bottom:1px solid #e1e2e3"><button class="b" data-a="close" aria-label="'+esc(t.close)+'" style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;color:#222">'+I_X+'</button></div><div style="padding:0 28px 12px"><div style="display:flex;gap:24px;padding:16px 0;border-bottom:1px solid #e1e2e3;color:#6b7075"><span style="flex:0 0 80px">'+esc(t.thCode)+'</span><span>'+esc(t.thDesc)+'</span></div>'+kody(D.vuz.kody_vybavy).map(function(s){return'<div style="display:flex;gap:24px;padding:18px 0;border-bottom:1px solid #e1e2e3"><span style="flex:0 0 80px">'+esc(s[0])+'</span><span style="min-width:0">'+esc(s[1])+'</span></div>'}).join('')+'</div></div></div>'}
+ if(stav==='ok'&&S.gal){var G=D.navstevy[S.gal[0]].fotky,gi=S.gal[1],g=G[gi];h+='<div class="ov"><button class="b" data-a="gclose" aria-label="'+esc(t.close)+'" style="position:absolute;right:8px;top:8px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;color:#fff">'+I_X+'</button><div style="position:relative;width:100%;max-width:900px">'+(g.video?'<video src="'+esc(g.url)+'" controls playsinline autoplay></video>':'<img src="'+esc(g.url)+'" alt="">')+(G.length>1?'<button class="b arw" data-a="gprev" aria-label="'+esc(t.prev)+'" style="left:4px">'+I_L+'</button><button class="b arw" data-a="gnext" aria-label="'+esc(t.next)+'" style="right:4px">'+I_R+'</button>':'')+'</div><div style="margin-top:12px;color:#fff;font-size:14px">'+(gi+1)+' / '+G.length+'</div></div>'}
+ root.innerHTML=h;document.documentElement.lang=lang;
+ var fm=root.querySelector('#es-f');if(fm)fm.onsubmit=function(e){e.preventDefault();vin=fm.vin.value.toUpperCase().replace(/[^A-Z0-9]/g,'');history.replaceState(null,'','?vin='+vin);load()};
 }
-root.addEventListener('click',function(e){var b=e.target.closest('[data-l],[data-n]');if(!b)return;
- if(b.dataset.l){lang=b.dataset.l;try{localStorage.setItem('sk-lang',lang)}catch(x){}}else{var i=+b.dataset.n;otevrene[i]=!otevrene[i]}kresli()});
+function copy(){var done=function(){S.copied=true;view();setTimeout(function(){S.copied=false;view()},1800)};try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(D.vuz.vin).then(done,done);return}}catch(e){}done()}
+root.addEventListener('click',function(e){var el=e.target.closest('[data-a]');if(!el)return;var a=el.getAttribute('data-a'),n=D?heroPhotos().length:0;
+ if(a==='lang')S.langOpen=!S.langOpen;
+ else if(a==='setlang'){S.lang=el.getAttribute('data-k');S.langOpen=false;try{localStorage.setItem('sk-lang',S.lang)}catch(x){}}
+ else if(a==='prev')S.slide=(S.slide-1+n)%n;else if(a==='next')S.slide=(S.slide+1)%n;
+ else if(a==='copy'){copy();return}
+ else if(a==='wheels')S.wheels=!S.wheels;else if(a==='cust')S.cust=!S.cust;else if(a==='sa')S.sa=true;else if(a==='close')S.sa=false;
+ else if(a==='visit'){var i=+el.getAttribute('data-i');S.open[i]=!S.open[i]}
+ else if(a==='gal')S.gal=[+el.getAttribute('data-v'),+el.getAttribute('data-i')];else if(a==='gclose')S.gal=null;
+ else if(a==='gprev'||a==='gnext'){var G=D.navstevy[S.gal[0]].fotky;S.gal[1]=(S.gal[1]+(a==='gnext'?1:-1)+G.length)%G.length}
+ view()});
+document.addEventListener('keydown',function(e){if(e.key==='Escape'){S.sa=false;S.gal=null;S.langOpen=false;view()}else if(S.gal&&(e.key==='ArrowLeft'||e.key==='ArrowRight')){var G=D.navstevy[S.gal[0]].fotky;S.gal[1]=(S.gal[1]+(e.key==='ArrowRight'?1:-1)+G.length)%G.length;view()}});
 [].forEach.call(document.body.children,function(el){if(el!==root&&el.tagName!=='SCRIPT')el.style.display='none'});
-nacti();
+load();
 })();
 </script>
