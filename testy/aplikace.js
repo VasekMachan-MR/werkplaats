@@ -204,6 +204,10 @@ const server = http.createServer((q, r) => {
   await p.waitForSelector(".velke-cislo >> text=7377-5");
   await p.click("text=Detail zakázky");
   await p.waitForSelector("[data-zaplaceno]");
+  // nezaplacená záloha se do faktury sama neodečte (jinak by chyběly peníze)
+  await p.click("text=💳 Faktura"); await p.waitForSelector('[data-odecist="7377-5"]');
+  kontrola(!(await p.isChecked('[data-odecist="7377-5"]')), "faktura: nezaplacená záloha není předvybraná k odečtu");
+  await p.goBack(); await p.waitForSelector("[data-zaplaceno]");
   await p.click("[data-zaplaceno]");
   await p.waitForSelector("text=zaplaceno 5. 11. 2026");
   await p.click("text=💳 Faktura");

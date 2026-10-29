@@ -204,7 +204,7 @@
       async upravit(tabulka, id, zmeny) { return ok(await sb.from(tabulka).update(zmeny).eq("id", id).select()); },
       async detail(id) {
         return ok(await sb.from("zakazky")
-          .select("*,vozidla(*),zakaznici(*),doklady(id,druh,cislo,verze,vystaveno,splatnost,zamceno,celkem,zaplaceno,pdf_soubor_id,soubory!doklady_pdf_soubor_id_fkey(klic)),soubory!soubory_zakazka_id_fkey(id,druh,faze,klic,nazev,vytvoreno,smazano,doklad_id)")
+          .select("*,vozidla(*),zakaznici(*),doklady(id,druh,cislo,verze,vystaveno,splatnost,zamceno,celkem,zaplaceno,odeslano_uol,data,pdf_soubor_id,soubory!doklady_pdf_soubor_id_fkey(klic)),soubory!soubory_zakazka_id_fkey(id,druh,faze,klic,nazev,vytvoreno,smazano,doklad_id)")
           .eq("id", id).maybeSingle());
       }
     };
@@ -1976,7 +1976,10 @@
     const s = soucty(polozky, dily);
     const jeFaktura = druh !== "predavaci_protokol";
     // zálohové faktury této zakázky (u konečné faktury se odečtou)
-    const zalohy = (z.doklady || []).filter(d => d.druh === "zalohova" && d.celkem);
+    // záloha snížená / stornovaná opravným dokladem se odečítá jen zbytkem (nebo vůbec)
+    const opravyZaloh = (z.doklady || []).filter(d => d.druh === "opravny" && d.data?.opravuje);
+    const ucinnaZaloha = d => Number(d.celkem) + opravyZaloh.filter(o => o.data.opravuje === d.cislo).reduce((a, o) => a + (Number(o.celkem) || 0), 0);
+    const zalohy = (z.doklady || []).filter(d => d.druh === "zalohova" && d.celkem && ucinnaZaloha(d) > 0);
     const nabidkaCislo = (z.doklady || []).filter(d => d.druh === "nabidka").map(d => d.cislo).sort().pop();
     // opravný doklad jde jen k vystavené faktuře nebo zálohové faktuře
     const opravitelne = (z.doklady || []).filter(d => ["faktura", "zalohova"].includes(d.druh))
@@ -1993,7 +1996,7 @@
     }
     // výchozí hodnoty formuláře
     const f = druh === "nabidka" ? { vystaveno: dnes(), platnost: plusDni(dnes(), 7) }
-      : druh === "faktura" ? { vystaveno: dnes(), splatnost: plusDni(dnes(), 14), odecist: Object.fromEntries(zalohy.map(d => [d.cislo, true])) }
+      : druh === "faktura" ? { vystaveno: dnes(), splatnost: plusDni(dnes(), 14), odecist: Object.fromEntries(zalohy.map(d => [d.cislo, !!d.zaplaceno])) }   // předvybrat jen zaplacené zálohy
       : druh === "opravny" ? { vystaveno: dnes(), splatnost: plusDni(dnes(), 14), opravuje: opravitelne[0].cislo, duvod: "", radky: [{ popis: "", castka: "" }] }
       : druh === "zalohova" ? { vystaveno: dnes(), splatnost: plusDni(dnes(), 7), castka: s.material || "",
           popis: en ? `Advance payment for parts${nabidkaCislo ? ` according to quotation ${nabidkaCislo}` : ""}` : `Záloha na materiál${nabidkaCislo ? ` dle cenové nabídky ${nabidkaCislo}` : ""}` }
@@ -2015,7 +2018,7 @@
           <label class="pole s2">Datum splatnosti<input type="date" data-d="splatnost" value="${f.splatnost}"></label>
           <div class="pole s2"><span>Celkem k úhradě · VS ${vs}</span><div class="velka-castka" id="k-uhrade">${kc(s.celkem)}</div></div>
           ${zalohy.length ? `<div class="s6"><label class="pole">Odečíst zálohy</label><div class="cipy" style="margin:0">${zalohy.map(d => `
-            <label class="cip zaskrt"><input type="checkbox" data-odecist="${esc(d.cislo)}" checked> ${esc(d.cislo)} · ${kc(d.celkem)}${d.zaplaceno ? " · zaplaceno" : " · <b>nezaplaceno</b>"}</label>`).join("")}</div></div>` : ""}` : ""}
+            <label class="cip zaskrt"><input type="checkbox" data-odecist="${esc(d.cislo)}" ${f.odecist[d.cislo] ? "checked" : ""}> ${esc(d.cislo)} · ${kc(ucinnaZaloha(d))}${ucinnaZaloha(d) !== Number(d.celkem) ? ` (po opravě, původně ${kc(d.celkem)})` : ""}${d.zaplaceno ? " · zaplaceno" : " · <b>nezaplaceno</b>"}</label>`).join("")}</div></div>` : ""}` : ""}
         ${druh === "opravny" ? `
           <label class="pole s3"><span class="povinne">Opravuje doklad</span><select data-d="opravuje">${opravitelne.map(d => `<option value="${esc(d.cislo)}" ${d.cislo === f.opravuje ? "selected" : ""}>${esc(d.cislo)} · ${DRUHY[d.druh]} · ${kc(d.celkem)} · ${datumCz(d.vystaveno)}</option>`).join("")}</select></label>
           <label class="pole s3"><span class="povinne">Důvod opravy</span><input data-d="duvod" value="" placeholder="${en ? "e.g. Discount agreed with the customer" : "např. Sleva dohodnutá se zákazníkem"}"></label>
@@ -2071,7 +2074,7 @@
     const sablona = jeFaktura ? "faktura.html" : "zakazkovy-list.html";
     let vyh = await podpisVyhotovil(), mujPad = null, pad = null;
     const podpisVyh = () => vyh || mujPad?.png() || null;
-    const odecty = () => druh !== "faktura" ? [] : zalohy.filter(d => f.odecist[d.cislo]).map(d => ({ typ: "pausal", popis: `${en ? "Advance payment" : "Odečet zálohy"} ${d.cislo}`, castka: -Number(d.celkem) }));
+    const odecty = () => druh !== "faktura" ? [] : zalohy.filter(d => f.odecist[d.cislo]).map(d => ({ typ: "pausal", popis: `${en ? "Advance payment" : "Odečet zálohy"} ${d.cislo}`, castka: -ucinnaZaloha(d) }));
     const opravovany = () => opravitelne.find(d => d.cislo === f.opravuje);
     const polozkyOpravy = () => {
       const o = opravovany(); if (!o) return [];
@@ -2174,7 +2177,7 @@
         const nabidka_id = druh === "nabidka" ? nabidkaVystaveni : null;     // při opakovaném pokusu stejná nabídka
         const pl = dataPartsListu(z, dily, true, { druh, cislo });
         const prilohy = (druh === "nabidka" || druh === "faktura") && pl.dily.length ? [{ sablona: "parts-list.html", data: pl, nazev: "parts list", slug: "parts-list" }] : [];
-        await ulozitDoklad({ iframe, sablona, data: data(), jazyk, zakazka_id: id, vozidlo_id: z.vozidlo_id || z.vozidla?.id, cisloZakazky: z.cislo, druh, verze, prilohy,
+        await ulozitDoklad({ iframe, sablona, data: druh === "opravny" ? { ...data(), opravuje: f.opravuje } : data(), jazyk, zakazka_id: id, vozidlo_id: z.vozidlo_id || z.vozidla?.id, cisloZakazky: z.cislo, druh, verze, prilohy,
           vystaveno: druh === "predavaci_protokol" ? f.prevzeti : f.vystaveno, splatnost: ["faktura", "zalohova", "opravny"].includes(druh) ? f.splatnost : druh === "nabidka" ? f.platnost : null,
           podpisZak: pad.png(), jmenoZakaznika: z.zakaznici?.jmeno || "", vyhPodepsalNaIpadu: !vyh, nabidka_id, prubeh: p.text });
         // stav zakázky
