@@ -1,7 +1,7 @@
 // E-serviska: veřejná data servisní knížky podle VIN pro web mercedesrestorations.cz (/e-serviska?vin=…).
 // Zatím BEZ ochrany (rozhodnutí Vaška 29.10.2026) – kdo zná VIN, vidí vše včetně údajů zákazníka. Ochrana se doplní později.
 // Jen čtení. Odkazy na soubory jsou podepsané a platí 1 hodinu.
-// „Co je příště na řadě“: intervaly z tabulky servisni_intervaly (skupina A/B/C podle roku) + zaškrtnuté servisní úkony u zakázek.
+// „Co je příště na řadě“: intervaly z tabulky servisni_intervaly (skupina A/B/C podle roku), případně servisni_intervaly_motoru, + zaškrtnuté servisní úkony u zakázek.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const POVOLENE = [/^https:\/\/(www\.)?mercedesrestorations\.cz$/, /^https:\/\/[\w-]+\.webflow\.io$/, /^https:\/\/werk\.mercedesrestorations\.cz$/, /^https:\/\/werkplaats\.pages\.dev$/];
@@ -45,14 +45,15 @@ Deno.serve(async req => {
   if (!v) return odp(404, { chyba: "nenalezeno" });
 
   const sk = skupina(v);
-  const [{ data: vl }, { data: zak }, { data: tp }, { data: intervaly }, { data: motory }, { data: typy }, { data: ukony }] = await Promise.all([
+  const [{ data: vl }, { data: zak }, { data: tp }, { data: intervaly }, { data: motory }, { data: typy }, { data: ukony }, { data: intMot }] = await Promise.all([
     sb.from("vlastnictvi").select("zakaznik_id,vlastni_od,vlastni_do,zakaznici(jmeno,kontaktni_osoba,email,telefon)").eq("vozidlo_id", v.id).order("vlastni_od", { ascending: false }),
     sb.from("zakazky").select("id,cislo,stav,zakaznik_id,datum_prijmu,datum_predani,km_prijem,km_predani,zavady,servisni_ukony").eq("vozidlo_id", v.id).neq("stav", "zruseno").neq("stav", "poptavka").order("datum_prijmu", { ascending: false }),
     sb.from("soubory").select("klic,nazev,mime").eq("vozidlo_id", v.id).eq("druh", "tp").eq("verejne", true).is("smazano", null).order("vytvoreno"),
     sb.from("servisni_intervaly").select("ukon,poradi,interval_km,interval_mesice,zdroj").eq("skupina", sk).order("poradi"),
     sb.from("motory").select("kod,palivo,serizovani_ventilu"),
     sb.from("typy_motoru").select("klic,motor"),
-    sb.from("servisni_ukony").select("ukon,jen_palivo,jen_serizovani_ventilu")
+    sb.from("servisni_ukony").select("ukon,jen_palivo,jen_serizovani_ventilu"),
+    sb.from("servisni_intervaly_motoru").select("motor,ukon,interval_km,interval_mesice,zdroj")
   ]);
   const motor = urciMotor(v, motory || [], typy || []), mInfo = (motory || []).find(m => m.kod === motor);
   const palivo = mInfo ? mInfo.palivo : /\b\d{3}\s*(D|TD|SD|CD|SDL)\b/i.test(v.model || "") ? "diesel" : "benzin";
@@ -99,7 +100,8 @@ Deno.serve(async req => {
   const mil = v.jednotka_tachometru === "mi", naJed = (km: number | null) => km == null ? null : mil ? Math.round(km / 1.6 / 100) * 100 : km;
   const dnes = new Date().toISOString().slice(0, 10), za60 = plusMesice(dnes, 2);
   const hotove = (zak || []).filter(z => HOTOVO.includes(z.stav)).sort((a, b) => String(b.datum_predani || b.datum_prijmu).localeCompare(String(a.datum_predani || a.datum_prijmu)));
-  const servis = (intervaly || []).filter(it => platne.has(it.ukon)).map(it => {
+  // interval podle motoru přebíjí interval skupiny
+  const servis = (intervaly || []).filter(it => platne.has(it.ukon)).map(it => (intMot || []).find(x => x.motor === motor && x.ukon === it.ukon) || it).map(it => {
     const z = hotove.find(x => (x.servisni_ukony || []).includes(it.ukon));
     const interval = naJed(it.interval_km);
     if (!z) return { ukon: it.ukon, interval_km: interval, interval_mesice: it.interval_mesice, zdroj: it.zdroj, posledni: null, pristi: null, stav: "nezname" };
