@@ -19,7 +19,8 @@
   };
   const DNI_DOKONCENI = 60;                          // předpoklad dokončení = převzetí + 60 dní
   const datumCz = d => { if (!d) return ""; const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${+m[3]}. ${+m[2]}. ${m[1]}` : d; };
-  const kc = n => (n == null || n === "" ? "" : Number(n).toLocaleString("cs-CZ", { maximumFractionDigits: 0 }) + " Kč");
+  const kc = n => { if (n == null || n === "") return ""; const x = Math.round(Number(n) * 100) / 100, cele = Number.isInteger(x);   // haléře jen když nějaké jsou (jako v PDF)
+    return x.toLocaleString("cs-CZ", { minimumFractionDigits: cele ? 0 : 2, maximumFractionDigits: cele ? 0 : 2 }) + " Kč"; };
   // číslo z textu, jak ho píše člověk: „1 500“, „1.500“ (tisíce), „1 500,50“, „385.99“, „30 %“, „1 200 Kč“ → číslo; prázdné → null; nesmysl → NaN
   const cisloZ = s => {
     let t = String(s ?? "").replace(/[\s\u00a0\u202f]/g, "").replace(/(%|kč|czk|eur|€|,-)$/i, "").replace(/^[−–]/, "-");
@@ -259,7 +260,7 @@
     [/^#\/lide$/, lide]
   ];
   let uklid = null;
-  let aktualniHash = location.hash, navratBezVykresleni = false;
+  let aktualniHash = location.hash, navratBezVykresleni = false, navId = 0;
   async function navigace() {
     if (navratBezVykresleni) { navratBezVykresleni = false; return; }
     // nejdřív doukládat; když to nejde (bez signálu), zůstat na stránce – jinak by se změny ztratily
@@ -270,7 +271,7 @@
     for (const k in neulozene) delete neulozene[k];
     if (uklid) { try { uklid(); } catch (e) { /* nic */ } uklid = null; }
     if (!uzivatel || obnovaHesla) return;
-    const h = location.hash || "#/"; aktualniHash = h;
+    const h = location.hash || "#/"; aktualniHash = h; navId++;
     zavriMenu(); oznacMenu();
     if (novaVerze) obnovitKdyzLzeTo();
     for (const [re, fn] of trasy) { const m = h.match(re); if (m) { window.scrollTo(0, 0); return fn(...m.slice(1)); } }
@@ -393,6 +394,7 @@
   };
   /* ================= úvodní přehled (po přihlášení) ================= */
   async function uvod() {
+    const n0 = navId;
     const d0 = new Date(), datumDnes = d0.toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
     const hodina = d0.getHours(), pozdrav = hodina < 10 ? "Dobré ráno" : hodina < 18 ? "Dobrý den" : "Dobrý večer";
     app.innerHTML = `
@@ -402,9 +404,11 @@
       </div>
       ${nacti("werk-koncept-prijmu") ? `<div class="info pozor" style="margin:0 0 14px">Máte rozpracovaný příjem. <a href="#/novy"><b>Pokračovat</b></a></div>` : ""}
       <div id="uvod"><div class="nacitani">Načítám přehled…</div></div>`;
+    app.querySelector("#uvod").onclick = e => { const a = e.target.closest("[data-filtr]"); if (a) uloz("werk-filtr-zakazek", { ...(nacti("werk-filtr-zakazek") || {}), stav: a.dataset.filtr }); };
     let zak = [], dok = [];
     try { [zak, dok] = await Promise.all([db.zakazky(), db.vsechnyDoklady().catch(() => [])]); }
     catch (e) { app.querySelector("#uvod").innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+    if (navId !== n0) return;                         // mezitím se přešlo jinam – nepřekreslovat cizí stránku
     const D = dnes(), za7 = plusDni(D, 7), mesic = D.slice(0, 7);
     const jeFa = d => ["faktura", "zalohova", "opravny"].includes(d.druh);
     const vDilne = zak.filter(z => !HOTOVE_STAVY.includes(z.stav) && !["zruseno", "poptavka"].includes(z.stav))
@@ -438,7 +442,7 @@
       </div>
       <div class="uvod-mrizka">
         <section class="karta"><h2>V dílně</h2>
-          ${vDilne.length ? `<div class="zakazky">${vDilne.slice(0, MAX).map(z => radek(z, termin(z))).join("")}</div>${vice(vDilne.length, "#/zakazky", "Všechny rozpracované")}` : `<p class="mutted" style="margin:0">Teď v dílně nic není.</p>`}
+          ${vDilne.length ? `<div class="zakazky">${vDilne.slice(0, MAX).map(z => radek(z, termin(z))).join("")}</div>${vice(vDilne.length, "#/zakazky", "Všechny rozpracované").replace("<a ", '<a data-filtr="otevrene" ')}` : `<p class="mutted" style="margin:0">Teď v dílně nic není.</p>`}
         </section>
         <div>
           ${kPredani.length ? `<section class="karta"><h2>Čeká na předání</h2><div class="zakazky">${kPredani.slice(0, MAX).map(z => radek(z)).join("")}</div>${vice(kPredani.length, "#/zakazky", "Všechny")}</section>` : ""}
@@ -455,6 +459,7 @@
   }
 
   async function prehled() {
+    const n0 = navId;
     app.innerHTML = `
       <div class="hlavicka-prehledu">
         <h1>Zakázky</h1>
@@ -472,6 +477,7 @@
       <div class="zakazky" id="seznam"><div class="nacitani">Načítám zakázky…</div></div>`;
     let data = [];
     try { data = await db.zakazky(); } catch (e) { app.querySelector("#seznam").innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+    if (navId !== n0) return;                         // mezitím se přešlo jinam – nepřekreslovat cizí stránku
     const F = { stav: "", typ: "", razeni: "cislo-", ...(nacti("werk-filtr-zakazek") || {}) };
     const typy = [...new Set(data.map(z => z.vozidla?.typ).filter(Boolean))].sort((a, b) => a.localeCompare(b, "cs", { numeric: true }));
     app.querySelector("#f-typ").insertAdjacentHTML("beforeend", typy.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join(""));
@@ -515,10 +521,14 @@
   const blobyFotek = {};      // id fotky → zmenšený soubor (jen v paměti, než se nahraje)
   let posledniPdf = null;     // {zakazka_id, cislo, bytes}
 
+  // koncept příjmu v iPadu: fotky bez náhledů (náhled se při obnově načte z úložiště), aby se paměť prohlížeče nepřeplnila
   function ulozKoncept() {
     if (!P) return;
-    uloz(KONCEPT, { ...P, fotky: P.fotky.filter(f => f.klic && f.stav === "nahrano") });
-    const s = document.getElementById("stav-ulozeni"); if (s) s.textContent = "Rozpracováno – uloženo v iPadu";
+    let ok = true;
+    try { localStorage.setItem(KONCEPT, JSON.stringify({ ...P, fotky: P.fotky.filter(f => f.klic && f.stav === "nahrano").map(({ nahled, ...f }) => f) })); }
+    catch (e) { ok = false; }
+    const s = document.getElementById("stav-ulozeni");
+    if (s) { s.textContent = ok ? "Rozpracováno – uloženo v iPadu" : "⚠︎ Rozpracovaný příjem se nepodařilo uložit v iPadu – dokončete ho"; s.style.color = ok ? "" : "var(--cervena)"; }
     kontrolaPripravenosti();
   }
 
@@ -526,6 +536,11 @@
     const koncept = nacti(KONCEPT);
     P = koncept || novyPrijem();
     P.rucne = P.rucne || { datum: false, dokonceni: false };
+    const bezNahledu = P.fotky.filter(f => !f.nahled && f.klic);
+    if (bezNahledu.length) db.odkazy(bezNahledu.map(f => f.klic)).then(u => {      // náhledy fotek z rozpracovaného příjmu
+      (u || []).forEach(x => { const f = bezNahledu.find(f => f.klic === x.path); if (f && x.signedUrl) f.nahled = x.signedUrl; });
+      if (document.getElementById("fotky")) vykresliFotky();
+    }).catch(() => {});
     if (!P.vysledek) {                                 // rozpracovaný příjem z jiného dne: datum vždy dnešní
       if (!P.rucne.datum) P.zakazka.datum_prijmu = dnes();
       if (!P.rucne.dokonceni) P.zakazka.predpoklad_dokonceni = plusDni(P.zakazka.datum_prijmu, DNI_DOKONCENI);
@@ -1383,11 +1398,13 @@
   /* ================= detail zakázky ================= */
   let E = null;   // rozpracované práce a díly otevřené zakázky {id, polozky, dily, dodavatele}
   async function detail(id) {
+    const n0 = navId;
     await dokoncitUkladani();                            // překreslení zakázky nesmí předběhnout rozdělané uložení
     app.innerHTML = `<div class="nacitani">Načítám zakázku…</div>`;
     let z, polozky = [], dily = [], dodavatele = [];
     try {
       [z, polozky, dily, dodavatele] = await Promise.all([db.detail(id), db.polozky(id), db.dily(id), db.dodavatele().catch(() => [])]);
+      if (navId !== n0) return;                         // mezitím se přešlo jinam – nepřekreslovat cizí stránku
     } catch (e) { app.innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
     if (!z) { app.innerHTML = `<div class="info chyba">Zakázka nenalezena.</div>`; return; }
     E = { id, z, polozky: polozky.map(p => ({ ...p, typ: p.typ || "prace" })), dily: dily.map(d => ({ ...d })), dodavatele };
@@ -2004,11 +2021,13 @@
 
   /* ================= vystavení nabídky / faktury / protokolu ================= */
   async function vystavit(id, co) {
+    const n0 = navId;
     const druh = { nabidka: "nabidka", faktura: "faktura", protokol: "predavaci_protokol", zaloha: "zalohova", opravny: "opravny" }[co];
     app.innerHTML = `<div class="nacitani">Připravuji…</div>`;
     let z, polozky, dily;
     try { [z, polozky, dily] = await Promise.all([db.detail(id), db.polozky(id), db.dily(id)]); }
     catch (e) { app.innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+    if (navId !== n0) return;                         // mezitím se přešlo jinam – nepřekreslovat cizí stránku
     if (!z) { app.innerHTML = `<div class="info chyba">Zakázka nenalezena.</div>`; return; }
     const jazyk = z.jazyk || "cs", en = jazyk === "en";
     const verze = (z.doklady || []).filter(d => d.druh === druh).length + 1;
@@ -2239,9 +2258,11 @@
   /* ================= přehled dokladů (všechny zakázky) ================= */
   const nazevMesice = m => { const [y, mm] = m.split("-"); return `${["leden", "únor", "březen", "duben", "květen", "červen", "červenec", "srpen", "září", "říjen", "listopad", "prosinec"][+mm - 1]} ${y}`; };
   async function prehledDokladu() {
+    const n0 = navId;
     app.innerHTML = `<h1>Doklady</h1><div class="nacitani">Načítám doklady…</div>`;
     let vse = [];
     try { vse = await db.vsechnyDoklady(); } catch (e) { app.innerHTML = `<h1>Doklady</h1><div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+    if (navId !== n0) return;                         // mezitím se přešlo jinam – nepřekreslovat cizí stránku
     const F = { druh: "vse", mesic: "", nezaplacene: false };          // po otevření z menu vždy „Vše“
     const mesice = [...new Set(vse.map(d => String(d.vystaveno).slice(0, 7)))].sort().reverse();
     const DRUHY_FILTR = [["vse", "Vše"], ["faktury", "Faktury"], ["nabidka", "Nabídky"], ["predavaci_protokol", "Protokoly"], ["zakazkovy_list", "Zakázkové listy"]];
@@ -2307,11 +2328,13 @@
   const ZAK_POLE = [["jmeno", "Jméno a příjmení / název firmy", "s3", true], ["kontaktni_osoba", "Kontaktní osoba", "s3"], ["telefon", "Telefon", "s3"], ["email", "E-mail", "s3"],
     ["ulice", "Ulice a číslo", "s3"], ["psc", "PSČ", "s1"], ["mesto", "Město", "s2"], ["zeme", "Země", "s2"], ["ico", "IČO", "s2"], ["dic", "DIČ", "s2"]];
   async function zakaznici() {
+    const n0 = navId;
     app.innerHTML = `<div class="hlavicka-prehledu"><h1>Zákazníci</h1><a class="tl tl-hlavni" href="#/zakaznik/novy">＋ Nový zákazník</a></div>
       <input class="vstup" id="filtr" type="search" placeholder="Hledat: jméno, telefon, e-mail, město" style="margin-bottom:14px">
       <div class="doklady" id="seznam"><div class="nacitani">Načítám…</div></div>`;
     let data = [];
     try { data = await db.seznamZakazniku(); } catch (e) { app.querySelector("#seznam").innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+    if (navId !== n0) return;                         // mezitím se přešlo jinam – nepřekreslovat cizí stránku
     const vykresli = q => {
       const t = q.trim().toLowerCase();
       const r = data.filter(z => !t || [z.jmeno, z.telefon, z.email, z.mesto, z.kontaktni_osoba].some(x => String(x ?? "").toLowerCase().includes(t)));
@@ -2328,11 +2351,13 @@
     app.querySelector("#seznam").onclick = e => { if (e.target.closest("a")) return; const r = e.target.closest("[data-href]"); if (r) location.hash = r.dataset.href; };
   }
   async function zakaznikDetail(id) {
+    const n0 = navId;
     const novy = id === "novy";
     let z = { je_firma: false, zeme: "Česká Republika", jazyk: "cs", vlastnictvi: [], zakazky: [] };
     if (!novy) {
       app.innerHTML = `<div class="nacitani">Načítám…</div>`;
       try { z = await db.zakaznik(id); } catch (e) { app.innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+      if (navId !== n0) return;                         // mezitím se přešlo jinam – nepřekreslovat cizí stránku
       if (!z) { app.innerHTML = `<div class="info chyba">Zákazník nenalezen.</div>`; return; }
     }
     const auta = (z.vlastnictvi || []).filter(x => x.vozidla);
@@ -2383,11 +2408,13 @@
 
   /* ================= vozidla ================= */
   async function vozidla() {
+    const n0 = navId;
     app.innerHTML = `<div class="hlavicka-prehledu"><h1>Vozidla</h1></div>
       <input class="vstup" id="filtr" type="search" placeholder="Hledat: VIN, SPZ, typ, model, majitel" style="margin-bottom:14px">
       <div class="doklady" id="seznam"><div class="nacitani">Načítám…</div></div>`;
     let data = [];
     try { data = await db.seznamVozidel(); } catch (e) { app.querySelector("#seznam").innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+    if (navId !== n0) return;                         // mezitím se přešlo jinam – nepřekreslovat cizí stránku
     const vykresli = q => {
       const t = q.trim().toLowerCase();
       const majitel = v => (v.vlastnictvi || []).filter(x => !x.vlastni_do && x.zakaznici).map(x => x.zakaznici.jmeno).join(", ");
@@ -2400,9 +2427,11 @@
     vykresli(""); app.querySelector("#filtr").oninput = e => vykresli(e.target.value);
   }
   async function vozidloDetail(id) {
+    const n0 = navId;
     app.innerHTML = `<div class="nacitani">Načítám…</div>`;
     let v;
     try { v = await db.vozidlo(id); } catch (e) { app.innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+    if (navId !== n0) return;                         // mezitím se přešlo jinam – nepřekreslovat cizí stránku
     if (!v) { app.innerHTML = `<div class="info chyba">Vozidlo nenalezeno.</div>`; return; }
     const vin = rozlustitVin(v.vin);
     let K = null; try { K = await nactiKatalogServisu(); } catch (e) { /* bez katalogu jen bez výběru motoru */ }
