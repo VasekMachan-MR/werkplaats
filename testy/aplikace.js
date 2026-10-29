@@ -371,13 +371,16 @@ const server = http.createServer((q, r) => {
   kontrola(!(await p.isVisible("#marze-vse")) && await p.isVisible("#marze-sbal > summary"), "marže pro všechny díly je schovaná pod rozbalovací šipkou");
   await p.click("#marze-sbal > summary");
     kontrola(await p.inputValue("#marze-vse") === "30", "master marže ukazuje 30 % (marže dílů zakázky)");
-  await p.fill("#marze-vse", "40"); await p.click("#marze-pouzit");
+  await p.fill("#marze-vse", "40 %"); await p.click("#marze-pouzit");                  // i se znakem procenta
   await p.waitForSelector("#stav-dilu >> text=✓ Uloženo");
   const dm = await p.evaluate(() => window.__ULOZENO__.tabulky.dily.find(d => d.cislo_mb === "LO 00596"));
   kontrola(dm.marze_pct === 40 && dm.prodejni_cena === 540 && await p.inputValue('.dil[data-i="0"] [data-f="marze_pct"]') === "40", "„Použít na všechny díly“: marže 40 % → prodej 540 Kč");
   await p.locator('.dil[data-i="0"] [data-f="marze_pct"]').fill("50");
   kontrola(await p.inputValue('.dil[data-i="0"] [data-f="prodejni_cena"]') === "579", "marže jednoho dílu jde dál změnit zvlášť (50 % → 579 Kč)");
   await foto("20-marze-vse");
+  await p.locator('.dil[data-i="0"] [data-f="marze_pct"]').fill("abc");
+  kontrola(await p.evaluate(() => document.querySelector('.dil[data-i="0"] [data-f="marze_pct"]').classList.contains("chybi")) && await p.inputValue('.dil[data-i="0"] [data-f="prodejni_cena"]') === "579", "nesmyslná marže zčervená a cena se nezmění");
+  await p.locator('.dil[data-i="0"] [data-f="marze_pct"]').fill("50");
   // úpravy příjmu, stav zakázky, fotky během opravy
   await p.click("#upravit-prijem");
   await p.fill('[data-uf="km_prijem"]', "123750");

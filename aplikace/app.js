@@ -20,7 +20,17 @@
   const DNI_DOKONCENI = 60;                          // předpoklad dokončení = převzetí + 60 dní
   const datumCz = d => { if (!d) return ""; const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${+m[3]}. ${+m[2]}. ${m[1]}` : d; };
   const kc = n => (n == null || n === "" ? "" : Number(n).toLocaleString("cs-CZ", { maximumFractionDigits: 0 }) + " Kč");
-  const cisloZ = s => { const t = String(s ?? "").replace(/\s/g, "").replace(",", "."); return t === "" ? null : Number(t); };
+  // číslo z textu, jak ho píše člověk: „1 500“, „1.500“ (tisíce), „1 500,50“, „385.99“, „30 %“, „1 200 Kč“ → číslo; prázdné → null; nesmysl → NaN
+  const cisloZ = s => {
+    let t = String(s ?? "").replace(/[\s\u00a0\u202f]/g, "").replace(/(%|kč|czk|eur|€|,-)$/i, "").replace(/^[−–]/, "-");
+    if (t === "") return null;
+    if (t.includes(",") && t.includes(".")) t = t.lastIndexOf(",") > t.lastIndexOf(".") ? t.replace(/\./g, "").replace(",", ".") : t.replace(/,/g, "");
+    else if (t.includes(",")) t = /^-?\d{1,3}(,\d{3}){2,}$/.test(t) ? t.replace(/,/g, "") : t.replace(",", ".");
+    else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, "");                // 1.500 / 12.000 = tisíce
+    return /^-?(\d+\.?\d*|\.\d+)$/.test(t) ? Number(t) : NaN;
+  };
+  // číselné pole ve formuláři: nesmysl zčervená a neuloží se
+  const ciselnyVstup = inp => { const v = cisloZ(inp.value), spatne = v != null && !Number.isFinite(v); inp.classList.toggle("chybi", spatne); return spatne ? undefined : v; };
   const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : "x" + Date.now() + Math.random().toString(16).slice(2));
   const cekej = ms => new Promise(r => setTimeout(r, ms));
   function hlaska(text, chyba = false, ms = 3500) {
@@ -1695,7 +1705,7 @@
       const p = E.polozky[+r.dataset.i];
       r.querySelectorAll("[data-f]").forEach(inp => inp.addEventListener("input", () => {
         const f = inp.dataset.f;
-        p[f] = ["mnozstvi", "sazba", "castka"].includes(f) ? cisloZ(inp.value) : inp.value;
+        if (["mnozstvi", "sazba", "castka"].includes(f)) { const v = ciselnyVstup(inp); if (v === undefined) return; p[f] = v; } else p[f] = inp.value;
         const c = r.querySelector(".celkem-pol"); if (c) c.textContent = kc(cenaPrace(p));
         vykresliSouhrnZakazky(); ulozitPozdeji("prace");
       }));
@@ -1764,7 +1774,7 @@
       const d = E.dily[+r.dataset.i];
       r.querySelectorAll("[data-f]").forEach(inp => inp.addEventListener(inp.tagName === "SELECT" ? "change" : "input", () => {
         const f = inp.dataset.f;
-        d[f] = ["mnozstvi", "nakupni_cena", "kurz", "marze_pct", "prodejni_cena"].includes(f) ? cisloZ(inp.value) : inp.value;
+        if (["mnozstvi", "nakupni_cena", "kurz", "marze_pct", "prodejni_cena"].includes(f)) { const v = ciselnyVstup(inp); if (v === undefined) return; d[f] = v; } else d[f] = inp.value;
         if (f === "mena") { d.kurz = d.mena === "EUR" ? (d.kurz && d.kurz !== 1 ? d.kurz : 25) : 1; }
         if (f === "dodavatel_id" && d.dodavatel_id) d.puvod = puvodPodleDodavatele(d.dodavatel_id);   // MB (original) → original, ostatní → aftermarket
         if (["nakupni_cena", "kurz", "marze_pct", "mena"].includes(f)) {          // přepočítat prodejní cenu
@@ -1797,7 +1807,8 @@
     if (mv) {
       const pouzit = () => {
         const m = cisloZ(mv.value);
-        if (m == null || m < 0 || m > 1000) return hlaska("Zadejte marži v procentech, např. 30.", true);
+        if (m == null || !Number.isFinite(m) || m < 0 || m > 1000) { mv.classList.add("chybi"); return hlaska("Zadejte marži v procentech, např. 30.", true); }
+        mv.classList.remove("chybi");
         E.marze = m;
         for (const d of E.dily) { d.marze_pct = m; if (d.nakupni_cena != null) d.prodejni_cena = prodejDilu(d); }
         vykresliDily(); vykresliSouhrnZakazky(); ulozitPozdeji("dily");
@@ -1891,7 +1902,7 @@
       const p = v.polozky[+r.dataset.ip];
       r.querySelectorAll("[data-if]").forEach(inp => inp.addEventListener(inp.type === "checkbox" ? "change" : "input", () => {
         const f = inp.dataset.if;
-        p[f] = f === "vybrano" ? inp.checked : ["mnozstvi", "cena"].includes(f) ? cisloZ(inp.value) : inp.value;
+        if (["mnozstvi", "cena"].includes(f)) { const v = ciselnyVstup(inp); if (v === undefined) return; p[f] = v; } else p[f] = f === "vybrano" ? inp.checked : inp.value;
       }));
     });
     el.querySelector("#imp-pridat").onclick = () => {
