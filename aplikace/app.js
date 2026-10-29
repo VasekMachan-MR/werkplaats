@@ -1180,6 +1180,7 @@
         </div>
         <p class="napoveda" style="margin:10px 0 0">Nabídka i faktura se vytvoří z prací a dílů níže. Každý vystavený doklad se uzamkne; nová verze dostane další číslo (např. 7377-2-2).</p>
       </section>
+      <section class="karta" id="sekce-archiv"></section>
 
       <section class="karta" id="sekce-prace">
         <h2>Práce <span class="napoveda" id="stav-prace" style="margin-left:auto;font-weight:400"></span></h2>
@@ -1203,8 +1204,7 @@
         ${[["Jméno", esc(c.jmeno)], ["Kontaktní osoba", esc(c.kontaktni_osoba)], ["Telefon", telOdkaz(c.telefon)], ["E-mail", mailOdkaz(c.email)], ["Adresa", esc([c.ulice, [c.psc, c.mesto].filter(Boolean).join(" "), c.zeme].filter(Boolean).join(", "))], ["IČO", esc(c.ico)], ["DIČ", esc(c.dic)]]
           .filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${b}</dd></div>`).join("")}</dl></section>
       <section class="karta" id="sekce-prijem-detail"></section>
-      <section class="karta" id="sekce-fotky-detail"></section>
-      <section class="karta" id="sekce-archiv"></section>`;
+      <section class="karta" id="sekce-fotky-detail"></section>`;
     vykresliPrijemDetail(false);
     vykresliFotkyDetail();
     vykresliArchiv();
