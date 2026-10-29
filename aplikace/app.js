@@ -141,6 +141,7 @@
       async uzivatele() { return ok(await sb.from("uzivatele").select("id,jmeno,role,email,aktivni,vytvoreno").order("vytvoreno")); },
       async ulozitMujPodpis(id, obrazek) { return ok(await sb.from("uzivatele").update({ podpis_obrazek: obrazek }).eq("id", id).select("id")); },
       async ulozitMojeJmeno(id, jmeno) { return ok(await sb.from("uzivatele").update({ jmeno }).eq("id", id).select("id")); },
+      async kurzEur() { const { data, error } = await sb.functions.invoke("kurz-cnb"); if (error || !data?.kurz) throw error || new Error("kurz"); return data; },
       async sprava(telo) {                              // serverová funkce: přidat mechanika, heslo, zablokovat, role (jen majitel)
         const { data, error } = await sb.functions.invoke("sprava-uzivatelu", { body: telo });
         if (error) { let m = error.message; try { const j = await error.context.json(); m = j.chyba || m; } catch (e) { /* bez těla */ } throw new Error(m); }
@@ -1397,9 +1398,14 @@
 
   /* ================= detail zakázky ================= */
   let E = null;   // rozpracované práce a díly otevřené zakázky {id, polozky, dily, dodavatele}
+  // kurz EUR podle ČNB (načte se jednou za otevření aplikace; bez spojení 25 Kč) – jde u dílu přepsat
+  let kurzCnb = null, kurzCnbNacitam = null;
+  const kurzEur = () => kurzCnb?.kurz ? Math.round(kurzCnb.kurz * 100) / 100 : 25;
+  const nactiKurzEur = () => kurzCnbNacitam ||= (db.kurzEur ? db.kurzEur() : Promise.reject()).then(k => (kurzCnb = k)).catch(() => { kurzCnbNacitam = null; });
   async function detail(id) {
     const n0 = navId;
     await dokoncitUkladani();                            // překreslení zakázky nesmí předběhnout rozdělané uložení
+    nactiKurzEur();
     app.innerHTML = `<div class="nacitani">Načítám zakázku…</div>`;
     let z, polozky = [], dily = [], dodavatele = [];
     try {
@@ -1847,7 +1853,7 @@
           <label>Ks<input class="vstup cislo" data-f="mnozstvi" value="${d.mnozstvi ?? 1}" inputmode="decimal"></label>
           <label>Nákup / ks<input class="vstup cislo" data-f="nakupni_cena" value="${d.nakupni_cena ?? ""}" inputmode="decimal" placeholder="0"></label>
           <label>Měna<select class="vstup" data-f="mena"><option ${d.mena !== "EUR" ? "selected" : ""}>CZK</option><option ${d.mena === "EUR" ? "selected" : ""}>EUR</option></select></label>
-          ${d.mena === "EUR" ? `<label>Kurz<input class="vstup cislo" data-f="kurz" value="${d.kurz ?? 25}" inputmode="decimal"></label>` : ""}
+          ${d.mena === "EUR" ? `<label title="${kurzCnb ? `ČNB ${esc(kurzCnb.datum)}: ${String(kurzEur()).replace(".", ",")} Kč/€` : "Kurz Kč za 1 €"}">Kurz Kč/€<input class="vstup cislo" data-f="kurz" value="${String(d.kurz ?? kurzEur()).replace(".", ",")}" inputmode="decimal"></label>` : ""}
           <label>Marže %<input class="vstup cislo" data-f="marze_pct" value="${d.marze_pct ?? 30}" inputmode="decimal"></label>
           <label>Prodej / ks (Kč)<input class="vstup cislo" data-f="prodejni_cena" value="${d.prodejni_cena ?? ""}" inputmode="numeric"></label>
           <label>Původ<select class="vstup" data-f="puvod"><option value="" ${!d.puvod ? "selected" : ""}>—</option><option value="original" ${d.puvod === "original" ? "selected" : ""}>MB (original)</option><option value="aftermarket" ${d.puvod === "aftermarket" ? "selected" : ""}>Aftermarket</option></select></label>
@@ -1872,7 +1878,7 @@
           const v = ciselnyVstup(inp, { mnozstvi: { min: 0, max: 10000 }, nakupni_cena: { min: 0, max: 10000000 }, kurz: { min: 0.01, max: 1000 }, marze_pct: { min: 0, max: 1000 }, prodejni_cena: { min: 0, max: 10000000 } }[f]);
           if (v === undefined) return; d[f] = v;
         } else d[f] = inp.value;
-        if (f === "mena") { d.kurz = d.mena === "EUR" ? (d.kurz && d.kurz !== 1 ? d.kurz : 25) : 1; }
+        if (f === "mena") { d.kurz = d.mena === "EUR" ? (d.kurz && d.kurz !== 1 ? d.kurz : kurzEur()) : 1; }
         if (f === "dodavatel_id" && d.dodavatel_id) d.puvod = puvodPodleDodavatele(d.dodavatel_id);   // MB (original) → original, ostatní → aftermarket
         if (["nakupni_cena", "kurz", "marze_pct", "mena"].includes(f)) {          // přepočítat prodejní cenu
           d.prodejni_cena = d.nakupni_cena == null ? null : prodejDilu(d);
@@ -2008,7 +2014,7 @@
       const dod = I.dodavatel_id || null;
       for (const p of vybrane) {
         const d = { id: uuid(), nazev: p.nazev || "", cislo_mb: p.cislo || "", mnozstvi: p.mnozstvi || 1, jednotka: "ks", nakupni_cena: p.cena ?? null,
-          mena: p.mena === "EUR" ? "EUR" : "CZK", kurz: p.mena === "EUR" ? 25 : 1, marze_pct: E.marze ?? 30, stav: I.stav || "objednano",
+          mena: p.mena === "EUR" ? "EUR" : "CZK", kurz: p.mena === "EUR" ? kurzEur() : 1, marze_pct: E.marze ?? 30, stav: I.stav || "objednano",
           dodavatel_id: dod, puvod: puvodPodleDodavatele(dod) };
         d.prodejni_cena = d.nakupni_cena == null ? null : prodejDilu(d);
         E.dily.push(d);

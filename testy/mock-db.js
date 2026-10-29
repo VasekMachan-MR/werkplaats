@@ -130,6 +130,7 @@ window.__WERK_DB__ = (() => {
     async odkaz(klic) { return URL.createObjectURL(new Blob([S[klic]], { type: klic.endsWith(".pdf") ? "application/pdf" : "image/jpeg" })); },
     async odkazy(klice) { return Promise.all(klice.map(async k => ({ path: k, signedUrl: await this.odkaz(k) }))); },
     async stahnout(klic) { return new Blob([S[klic]]); },
+    async kurzEur() { return { kurz: 24.335, datum: "29.10.2026" }; },
     async vystavitDoklad(p) {                       // jako vystavit_doklad v databázi: všechno najednou, nebo nic
       await cekej(); if (window.__OFFLINE_DOKLAD__) throw new Error("Failed to fetch");
       const uz = T.doklady.find(x => x.cislo === p.cislo); if (uz) return { ...kopie(uz), uz_existoval: true };

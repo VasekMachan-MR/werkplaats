@@ -159,6 +159,8 @@ const server = http.createServer((q, r) => {
   await p.click("#pridat-dil");
   await p.locator('.dil[data-i="1"] [data-f="nazev"]').fill("Těsnění");
   await p.selectOption('.dil[data-i="1"] [data-f="mena"]', "EUR");
+  kontrola(await p.inputValue('.dil[data-i="1"] [data-f="kurz"]') === "24,34", "díl v EUR: kurz se předvyplní podle ČNB (24,34)");
+  await p.locator('.dil[data-i="1"] [data-f="kurz"]').fill("25");
   await p.locator('.dil[data-i="1"] [data-f="nakupni_cena"]').fill("10");
   kontrola(await p.inputValue('.dil[data-i="1"] [data-f="prodejni_cena"]') === "325", "díl v EUR: 10 € × 25 + 30 % = 325 Kč");
   await p.selectOption('.dil[data-i="1"] [data-f="dodavatel_id"]', "d1");
