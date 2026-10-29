@@ -437,7 +437,10 @@ const server = http.createServer((q, r) => {
   kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.soubory.some(f => f.faze === "prubeh" && f.druh === "foto")) && /Během opravy/.test(await p.textContent("#sekce-fotky-detail")),
     "fotka přidaná během opravy se uloží do skupiny „Během opravy“");
   await foto("21-uprava-prijmu-fotky");
-  kontrola(/mercedesrestorations\.cz\/e-serviska\?vin=[A-Z0-9]+$/.test(await p.getAttribute("#odkaz-eservisky", "href")), "detail zakázky má odkaz do E-servisky podle VIN");
+  kontrola(/mercedesrestorations\.cz\/e-serviska\?k=[0-9a-f]{20}$/.test(await p.getAttribute("#odkaz-eservisky", "href")), "detail zakázky má tajný odkaz do E-servisky (VIN sám nestačí)");
+  await p.evaluate(() => { navigator.share = async d => { window.__SDILENO__ = d.url; }; });
+  await p.click("#sdilet-eservisku");
+  kontrola(await p.evaluate(() => window.__SDILENO__) === await p.getAttribute("#odkaz-eservisky", "href"), "ikona 🔗 vedle E-servisky pošle zákazníkovi tajný odkaz (Sdílet)");
   await p.check('#sekce-servis [data-servis="olej"]');
   await p.waitForSelector("#stav-servisu >> text=✓ Uloženo");
   await p.check('#sekce-servis [data-servis="brzdy"]');

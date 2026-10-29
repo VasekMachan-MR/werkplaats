@@ -472,3 +472,8 @@ html, body { overflow-x: clip; }
 .neplatne, .pole input.neplatne { border-color: var(--cervena) !important; box-shadow: 0 0 0 3px var(--cervena-svetla) !important; }
 .chyba-pole { display: block; color: var(--cervena); font-size: 13px; font-weight: 500; margin-top: 4px; }
 input.chybi, .vstup.chybi { border-color: var(--cervena) !important; box-shadow: 0 0 0 3px var(--cervena-svetla) !important; }
+
+/* E-serviska + ikona sdílení odkazu vedle sebe */
+.tl-skupina { display: inline-flex; gap: 0; }
+.tl-skupina > .tl:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.tl-skupina > .tl-ikona { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-width: 0; min-width: 44px; padding-left: 10px; padding-right: 10px; }

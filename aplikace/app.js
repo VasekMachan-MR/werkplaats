@@ -381,7 +381,9 @@
   }
   // skupina intervalů MB podle modelového roku (A 1986+, B 1981–85, C do 1980); jde přepsat u vozidla
   const skupinaServisu = v => v?.servisni_skupina || (!v?.rok ? "A" : v.rok >= 1986 ? "A" : v.rok >= 1981 ? "B" : "C");
-  const odkazEservisky = vin => "https://www.mercedesrestorations.cz/e-serviska?vin=" + encodeURIComponent(String(vin).toUpperCase().replace(/[^A-Z0-9]/g, ""));
+  // tajný odkaz na E-servisku konkrétního auta (VIN sám nestačí); při změně majitele se odkaz změní
+  const odkazEservisky = v => v?.eserviska_kod ? "https://www.mercedesrestorations.cz/e-serviska?k=" + encodeURIComponent(v.eserviska_kod)
+    : "https://www.mercedesrestorations.cz/e-serviska?vin=" + encodeURIComponent(String(v?.vin || "").toUpperCase().replace(/[^A-Z0-9]/g, ""));
 
   /* ================= přehled zakázek ================= */
   const HOTOVE_STAVY = ["hotovo", "fakturovano", "zaplaceno", "predano"];
@@ -1468,7 +1470,7 @@
           ${jeMajitel() ? `<a class="tl" href="#/zakazka/${id}/zaloha">💰 Zálohová faktura</a>
           <a class="tl tl-hlavni" href="#/zakazka/${id}/faktura">💳 Faktura</a>` : ""}
           <a class="tl tl-hlavni" href="#/zakazka/${id}/protokol">🔑 Předávací protokol</a>
-          ${v.vin ? `<a class="tl" href="${esc(odkazEservisky(v.vin))}" target="_blank" rel="noopener" id="odkaz-eservisky">📖 E-serviska ↗</a>` : ""}
+          ${v.vin ? `<span class="tl-skupina"><a class="tl" href="${esc(odkazEservisky(v))}" target="_blank" rel="noopener" id="odkaz-eservisky">📖 E-serviska ↗</a><button type="button" class="tl tl-ikona" id="sdilet-eservisku" title="Poslat zákazníkovi odkaz na E-servisku" aria-label="Poslat zákazníkovi odkaz na E-servisku">🔗</button></span>` : ""}
           ${jeMajitel() && doklady.some(d => ["faktura", "zalohova"].includes(d.druh)) ? `<a class="tl" href="#/zakazka/${id}/opravny">↩︎ Opravný doklad</a>` : ""}
         </div>
         <p class="napoveda" style="margin:10px 0 0">Nabídka i faktura se vytvoří z prací a dílů níže. Každý vystavený doklad se uzamkne; nová verze dostane další číslo (např. 7377-2-2).</p>
@@ -1505,6 +1507,13 @@
       document.getElementById("sekce-fotky-detail")?.scrollIntoView({ behavior: "smooth", block: "start" });
       nahratFotkyKZakazce(f);
     }));
+    const sd = app.querySelector("#sdilet-eservisku");
+    if (sd) sd.onclick = async () => {                   // iPhone/iPad: nabídka Sdílet (WhatsApp, Zprávy, e-mail…); jinak zkopírovat
+      const url = odkazEservisky(v), titul = `E-servisní knížka – ${[v.typ, v.model].filter(Boolean).join(" ")}`;
+      try { if (navigator.share) { await navigator.share({ title: titul, text: titul, url }); return; } } catch (e) { if (e?.name === "AbortError") return; }
+      try { await navigator.clipboard.writeText(url); hlaska("Odkaz na E-servisku zkopírován – vložte ho zákazníkovi do zprávy."); }
+      catch (e) { prompt("Odkaz na E-servisku:", url); }
+    };
     vykresliFotkyDetail();
     vykresliArchiv();
     app.querySelector("#stav-zakazky").onchange = async e => {
