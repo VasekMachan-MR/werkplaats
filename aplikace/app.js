@@ -259,6 +259,11 @@
     };
   }
 
+  const SERVISNI_UKONY = [["olej", "Motorový olej + filtr"], ["servis", "Velký servis (prohlídka)"], ["atf", "Olej + filtr automatu"], ["vzduch", "Vzduchový filtr"],
+    ["svicky", "Zapalovací svíčky"], ["palivo", "Palivový filtr"], ["brzdy", "Brzdová kapalina"], ["chladici", "Chladicí kapalina"],
+    ["diferencial", "Olej diferenciálu"], ["servo", "Olej servořízení"], ["ventily", "Seřízení ventilů"]];
+  // skupina intervalů MB podle modelového roku (A 1986+, B 1981–85, C do 1980); jde přepsat u vozidla
+  const skupinaServisu = v => v?.servisni_skupina || (!v?.rok ? "A" : v.rok >= 1986 ? "A" : v.rok >= 1981 ? "B" : "C");
   const odkazEservisky = vin => "https://www.mercedesrestorations.cz/e-serviska?vin=" + encodeURIComponent(String(vin).toUpperCase().replace(/[^A-Z0-9]/g, ""));
 
   /* ================= přehled zakázek ================= */
@@ -1223,6 +1228,7 @@
         <h2>Díly <span class="napoveda" id="stav-dilu" style="margin-left:auto;font-weight:400"></span></h2>
         <div id="dily"></div>
       </section>
+      <section class="karta" id="sekce-servis"></section>
 
       <section class="karta souhrn-zakazky" id="souhrn"></section>
 
@@ -1262,7 +1268,7 @@
       if (!confirm(`Zakázka #${z.cislo} má vystavenou fakturu, proto ji nejde smazat (faktury se musí archivovat). Označit ji jako zrušenou?`)) return;
       try { await db.upravit("zakazky", id, { stav: "zruseno" }); hlaska("Zakázka zrušena."); detail(id); } catch (e) { hlaska(chybaText(e), true); }
     };
-    vykresliPrace(); vykresliDily(); vykresliSouhrnZakazky();
+    vykresliPrace(); vykresliDily(); vykresliSouhrnZakazky(); vykresliServisniUkony();
     vykresliDokumentyVozidla(z.vozidlo_id || v.id, app.querySelector("#dokumenty-vozidla"));
     app.querySelectorAll("[data-pdf]").forEach(b => b.onclick = async () => {
       const okno = window.open("", "_blank");
@@ -1385,6 +1391,23 @@
       });
     } catch (e) { el.insertAdjacentHTML("beforeend", `<div class="info chyba">${esc(chybaText(e))}</div>`); }
   }
+  /* ---------- servisní úkony: zaškrtnuté úkony → E-serviska spočítá „Co je příště na řadě“ ---------- */
+  function vykresliServisniUkony() {
+    const el = document.getElementById("sekce-servis"); if (!el || !E) return;
+    const v = E.z.vozidla || {}, sk = skupinaServisu(v), zvol = new Set(E.z.servisni_ukony || []);
+    el.innerHTML = `<h2>Servisní úkony <span class="napoveda" style="margin-left:auto;font-weight:400">pro E-servisku · intervaly skupina ${sk}</span></h2>
+      <p class="napoveda" style="margin:0 0 6px">Zaškrtněte, co se při této návštěvě provedlo. E-serviska podle toho spočítá, co je příště na řadě.</p>
+      <div class="cipy">${SERVISNI_UKONY.filter(([k]) => k !== "ventily" || sk === "B" || zvol.has(k)).map(([k, t]) =>
+        `<label class="cip zaskrt"><input type="checkbox" data-servis="${k}" ${zvol.has(k) ? "checked" : ""}> ${esc(t)}</label>`).join("")}</div>
+      <div class="napoveda" id="stav-servisu" style="margin-top:8px"></div>`;
+    el.querySelectorAll("[data-servis]").forEach(i => i.onchange = async () => {
+      const nove = [...el.querySelectorAll("[data-servis]:checked")].map(x => x.dataset.servis), stav = el.querySelector("#stav-servisu");
+      stav.textContent = "Ukládám…";
+      try { await db.upravit("zakazky", E.id, { servisni_ukony: nove }); E.z.servisni_ukony = nove; stav.textContent = "✓ Uloženo"; }
+      catch (e) { i.checked = !i.checked; stav.textContent = ""; hlaska(chybaText(e), true); }
+    });
+  }
+
   /* ---------- archiv (legacy): původní PDF ze starého systému (Excel), jen pro čtení, nic se z nich nedigitalizuje ---------- */
   function vykresliArchiv() {
     const el = document.getElementById("sekce-archiv"); if (!el || !E) return;

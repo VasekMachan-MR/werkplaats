@@ -379,6 +379,11 @@ const server = http.createServer((q, r) => {
     "fotka přidaná během opravy se uloží do skupiny „Během opravy“");
   await foto("21-uprava-prijmu-fotky");
   kontrola(/mercedesrestorations\.cz\/e-serviska\?vin=[A-Z0-9]+$/.test(await p.getAttribute("#odkaz-eservisky", "href")), "detail zakázky má odkaz do E-servisky podle VIN");
+  await p.check('#sekce-servis [data-servis="olej"]');
+  await p.waitForSelector("#stav-servisu >> text=✓ Uloženo");
+  await p.check('#sekce-servis [data-servis="brzdy"]');
+  await p.waitForFunction(() => (window.__ULOZENO__.tabulky.zakazky.find(z => z.cislo === 7378).servisni_ukony || []).length === 2);
+  kontrola(JSON.stringify(await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky.find(z => z.cislo === 7378).servisni_ukony)) === '["olej","brzdy"]', "servisní úkony se zaškrtnou a uloží k zakázce");
   // archiv (legacy): původní PDF jen jako příloha zakázky
   await p.setInputFiles("#archiv-nahrat", [{ name: "Zakazkovy_list_stary.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF") }]);
   await p.waitForSelector("#sekce-archiv [data-archiv-otevrit]", { timeout: 15000 });
