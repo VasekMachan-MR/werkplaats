@@ -301,6 +301,15 @@ const server = http.createServer((q, r) => {
   await p.evaluate(() => { location.hash = "#/"; });
   await p.waitForSelector(".zakazka-radek");
   kontrola(await p.locator(".zakazka-radek").count() === 2, "přehled ukazuje 2 zakázky");
+  await p.selectOption("#f-razeni", "cislo+");
+  kontrola(/7377/.test(await p.locator(".zakazka-radek").first().textContent()), "řazení: nejstarší zakázka první");
+  const stavy = await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky.map(z => z.stav));
+  const hot = stavy.filter(x => ["hotovo", "fakturovano", "zaplaceno", "predano"].includes(x)).length;
+  await p.selectOption("#f-stav", "hotove");
+  kontrola(await p.locator(".zakazka-radek").count() === hot && new RegExp(`${hot} z 2|2 zakázek`).test(await p.textContent("#f-pocet")), "filtr Hotové / předané");
+  await p.selectOption("#f-stav", "otevrene");
+  kontrola(await p.locator(".zakazka-radek").count() === 2 - hot - stavy.filter(x => x === "zruseno").length, "filtr Rozpracované");
+  await p.selectOption("#f-stav", ""); await p.selectOption("#f-razeni", "cislo-");
   await foto("07-prehled");
 
   // ---------- import dílů z e-mailu dodavatele ----------

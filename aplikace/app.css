@@ -205,6 +205,9 @@ section.chybi { outline: 2px solid var(--cervena); }
 /* přehled zakázek */
 .hlavicka-prehledu { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .hlavicka-prehledu h1 { margin: 0; }
+.filtry-zakazek { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+.filtry-zakazek select.vstup { flex: 1 1 160px; width: auto; max-width: 240px; }
+.filtry-zakazek .napoveda { margin-left: auto; white-space: nowrap; }
 .zakazky { display: flex; flex-direction: column; gap: 10px; }
 .zakazka-radek {
   display: grid; grid-template-columns: 84px 1fr auto; gap: 14px; align-items: center;

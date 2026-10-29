@@ -260,6 +260,17 @@
   }
 
   /* ================= přehled zakázek ================= */
+  const HOTOVE_STAVY = ["hotovo", "fakturovano", "zaplaceno", "predano"];
+  const PORADI_STAVU = ["poptavka", "prijato", "nabidka", "schvaleno", "v_praci", "hotovo", "fakturovano", "zaplaceno", "predano", "zruseno"];
+  const RAZENI_ZAKAZEK = {
+    "cislo-": ["Nejnovější zakázky", (a, b) => b.cislo - a.cislo],
+    "cislo+": ["Nejstarší zakázky", (a, b) => a.cislo - b.cislo],
+    "prijem-": ["Datum příjmu ↓", (a, b) => String(b.datum_prijmu || "").localeCompare(String(a.datum_prijmu || "")) || b.cislo - a.cislo],
+    "prijem+": ["Datum příjmu ↑", (a, b) => String(a.datum_prijmu || "").localeCompare(String(b.datum_prijmu || "")) || a.cislo - b.cislo],
+    "stav": ["Podle stavu", (a, b) => PORADI_STAVU.indexOf(a.stav) - PORADI_STAVU.indexOf(b.stav) || b.cislo - a.cislo],
+    "typ": ["Podle typu vozu", (a, b) => String(a.vozidla?.typ || "").localeCompare(String(b.vozidla?.typ || ""), "cs", { numeric: true }) || b.cislo - a.cislo],
+    "zakaznik": ["Podle zákazníka A–Z", (a, b) => String(a.zakaznici?.jmeno || "").localeCompare(String(b.zakaznici?.jmeno || ""), "cs") || b.cislo - a.cislo]
+  };
   async function prehled() {
     app.innerHTML = `
       <div class="hlavicka-prehledu">
@@ -267,14 +278,31 @@
         <a class="tl tl-hlavni tl-velke" href="#/novy">＋ Nový příjem vozu</a>
       </div>
       ${nacti("werk-koncept-prijmu") ? `<div class="info pozor" style="margin:0 0 14px">Máte rozpracovaný příjem. <a href="#/novy"><b>Pokračovat</b></a></div>` : ""}
-      <input class="vstup" id="filtr" type="search" placeholder="Hledat: číslo, zákazník, model, VIN, SPZ" style="margin-bottom:14px">
+      <input class="vstup" id="filtr" type="search" placeholder="Hledat: číslo, zákazník, model, VIN, SPZ" style="margin-bottom:10px">
+      <div class="filtry-zakazek">
+        <select class="vstup" id="f-stav" aria-label="Stav"><option value="">Všechny stavy</option><option value="otevrene">Rozpracované</option><option value="hotove">Hotové / předané</option>
+          ${Object.entries(STAVY).map(([k, t]) => `<option value="${k}">${t}</option>`).join("")}</select>
+        <select class="vstup" id="f-typ" aria-label="Typ vozu"><option value="">Všechny typy</option></select>
+        <select class="vstup" id="f-razeni" aria-label="Řazení">${Object.entries(RAZENI_ZAKAZEK).map(([k, [t]]) => `<option value="${k}">${t}</option>`).join("")}</select>
+        <span class="napoveda" id="f-pocet"></span>
+      </div>
       <div class="zakazky" id="seznam"><div class="nacitani">Načítám zakázky…</div></div>`;
     let data = [];
     try { data = await db.zakazky(); } catch (e) { app.querySelector("#seznam").innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+    const F = { stav: "", typ: "", razeni: "cislo-", ...(nacti("werk-filtr-zakazek") || {}) };
+    const typy = [...new Set(data.map(z => z.vozidla?.typ).filter(Boolean))].sort((a, b) => a.localeCompare(b, "cs", { numeric: true }));
+    app.querySelector("#f-typ").insertAdjacentHTML("beforeend", typy.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join(""));
+    if (F.typ && !typy.includes(F.typ)) F.typ = "";
+    if (!RAZENI_ZAKAZEK[F.razeni]) F.razeni = "cislo-";
+    app.querySelector("#f-stav").value = F.stav; app.querySelector("#f-typ").value = F.typ; app.querySelector("#f-razeni").value = F.razeni;
     const vykresli = q => {
       const t = q.trim().toLowerCase();
       const r = data.filter(z => !t || [z.cislo, z.zakaznici?.jmeno, z.zakaznici?.telefon, z.vozidla?.model, z.vozidla?.typ, z.vozidla?.vin, z.vozidla?.spz]
-        .some(x => String(x ?? "").toLowerCase().includes(t)));
+        .some(x => String(x ?? "").toLowerCase().includes(t)))
+        .filter(z => !F.stav || (F.stav === "hotove" ? HOTOVE_STAVY.includes(z.stav) : F.stav === "otevrene" ? !HOTOVE_STAVY.includes(z.stav) && z.stav !== "zruseno" : z.stav === F.stav))
+        .filter(z => !F.typ || z.vozidla?.typ === F.typ)
+        .sort(RAZENI_ZAKAZEK[F.razeni][1]);
+      app.querySelector("#f-pocet").textContent = r.length === data.length ? `${data.length} zakázek` : `${r.length} z ${data.length}`;
       app.querySelector("#seznam").innerHTML = r.length ? r.map(z => `
         <a class="zakazka-radek" href="#/zakazka/${z.id}">
           <span class="c">${z.cislo}</span>
@@ -285,6 +313,8 @@
     };
     vykresli("");
     app.querySelector("#filtr").oninput = e => vykresli(e.target.value);
+    [["#f-stav", "stav"], ["#f-typ", "typ"], ["#f-razeni", "razeni"]].forEach(([sel, k]) => app.querySelector(sel).onchange = e => {
+      F[k] = e.target.value; uloz("werk-filtr-zakazek", F); vykresli(app.querySelector("#filtr").value); });
   }
 
   /* ================= příjem vozu ================= */
@@ -1180,7 +1210,6 @@
         </div>
         <p class="napoveda" style="margin:10px 0 0">Nabídka i faktura se vytvoří z prací a dílů níže. Každý vystavený doklad se uzamkne; nová verze dostane další číslo (např. 7377-2-2).</p>
       </section>
-      <section class="karta" id="sekce-archiv"></section>
 
       <section class="karta" id="sekce-prace">
         <h2>Práce <span class="napoveda" id="stav-prace" style="margin-left:auto;font-weight:400"></span></h2>
@@ -1204,6 +1233,7 @@
         ${[["Jméno", esc(c.jmeno)], ["Kontaktní osoba", esc(c.kontaktni_osoba)], ["Telefon", telOdkaz(c.telefon)], ["E-mail", mailOdkaz(c.email)], ["Adresa", esc([c.ulice, [c.psc, c.mesto].filter(Boolean).join(" "), c.zeme].filter(Boolean).join(", "))], ["IČO", esc(c.ico)], ["DIČ", esc(c.dic)]]
           .filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${b}</dd></div>`).join("")}</dl></section>
       <section class="karta" id="sekce-prijem-detail"></section>
+      <section class="karta" id="sekce-archiv"></section>
       <section class="karta" id="sekce-fotky-detail"></section>`;
     vykresliPrijemDetail(false);
     vykresliFotkyDetail();
