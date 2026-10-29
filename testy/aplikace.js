@@ -251,6 +251,24 @@ const server = http.createServer((q, r) => {
   await p.click('.doklad:has(b:text-is("7377-2")) [data-smazat-doklad]');
   await p.waitForFunction(() => document.querySelectorAll("#seznam-dokladu .doklad").length === 4);
   kontrola(await p.evaluate(() => !window.__ULOZENO__.tabulky.doklady.some(d => d.cislo === "7377-2")), "koš smaže chybnou nabídku 7377-2 (zbývají 4 doklady)");
+  // opravný doklad k faktuře 7377-3
+  await p.click('.doklad:has(b:text-is("7377-3")) a[href^="#/zakazka/"]');
+  await p.waitForSelector('a[href$="/opravny"]');
+  await p.click('a[href$="/opravny"]');
+  await p.waitForSelector("#co-chybi:not([hidden])");
+  kontrola(/důvod opravy/.test(await p.textContent("#co-chybi")), "opravný doklad chce důvod a položku");
+  await p.fill('[data-d="duvod"]', "Sleva dohodnutá se zákazníkem");
+  await p.click('[data-opr-cip="Sleva z ceny"]');
+  await p.fill('[data-or="castka"] >> nth=0', "-1000");
+  await p.waitForSelector("#vystavit:not([disabled])");
+  kontrola((await p.textContent("#k-uhrade")).replace(/\s/g, "") === "-1000Kč" && (await p.textContent("#vystavit")).includes("7377-6"), "opravný doklad 7377-6 na −1 000 Kč");
+  await p.click("#vystavit");
+  await p.waitForSelector(".velke-cislo >> text=7377-6", { timeout: 10000 });
+  const op = await p.evaluate(() => ({ d: window.__ULOZENO__.tabulky.doklady.find(d => d.cislo === "7377-6"), pdf: Object.entries(window.__ULOZENO__.soubory).filter(([k]) => /7377-6-opravny/.test(k)).map(([, v]) => Array.from(v))[0] }));
+  kontrola(op.d && op.d.celkem === -1000 && op.d.variabilni_symbol === "73776" && op.d.zamceno, "opravný doklad uložen: −1 000 Kč, VS 73776, uzamčený");
+  fs.writeFileSync(path.join(OUT, "7377-6.pdf"), Buffer.from(op.pdf));
+  const txtOp = require("child_process").execFileSync("pdftotext", ["-layout", path.join(OUT, "7377-6.pdf"), "-"]).toString();
+  kontrola(/OPRAVNÝ DOKLAD/.test(txtOp) && /Oprava faktury 7377-3 ze dne/.test(txtOp) && /Důvod: Sleva dohodnutá se zákazníkem/.test(txtOp) && /-1 000,00 Kč/.test(txtOp), "PDF opravného dokladu: odkaz na fakturu 7377-3, důvod, −1 000,00 Kč");
 
   // ---------- příjem 2: stejné auto, stávající zákazník přes hledání ----------
   await p.goto(URL0 + "#/novy");

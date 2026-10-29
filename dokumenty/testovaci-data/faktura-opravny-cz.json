@@ -1,0 +1,44 @@
+{
+ "cislo": "7372-6",
+ "vystaveno": "2026-10-28",
+ "splatnost": "2026-11-11",
+ "zakaznik": {
+  "jmeno": "Jan Novák",
+  "ulice": "Lipová 12",
+  "mesto": "500 02 Hradec Králové",
+  "zeme": "Česká Republika",
+  "telefon": "+420 600 111 222",
+  "email": "jan.novak@example.cz"
+ },
+ "vozidlo": {
+  "znacka": "Mercedes-Benz",
+  "model": "300 SE",
+  "typ": "126",
+  "rok": "1989",
+  "vin": "WDB1260241A000001"
+ },
+ "polozky": [
+  {
+   "typ": "nadpis",
+   "popis": "Oprava faktury 7372-3 ze dne 9. 10. 2026"
+  },
+  {
+   "typ": "nadpis",
+   "popis": "Důvod: Sleva dohodnutá se zákazníkem"
+  },
+  {
+   "typ": "pausal",
+   "popis": "Sleva z ceny opravy",
+   "castka": -1500
+  },
+  {
+   "typ": "pausal",
+   "popis": "Vrácený nepoužitý díl – filtr",
+   "castka": -301
+  }
+ ],
+ "material": 0,
+ "druh": "opravny",
+ "vs": "73726",
+ "bezMaterialu": true
+}

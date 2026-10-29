@@ -386,3 +386,6 @@ div.odkaz-radek { cursor: pointer; }
 .faze-nadpis { margin: 16px 0 0; }
 .fotka > a { display: block; width: 100%; height: 100%; }
 .fotka > .mutted { display: flex; align-items: center; justify-content: center; height: 100%; }
+
+/* řádky opravného dokladu */
+.radek-opravy { display: grid; grid-template-columns: 1fr 130px 44px; gap: 8px; margin-bottom: 8px; }

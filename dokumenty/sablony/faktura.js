@@ -160,6 +160,43 @@ const ZALOHOVA = {
   }
 };
 
+/* Opravný doklad (7377-6) – oprava vystavené faktury nebo zálohové faktury (sleva, storno, vrácený díl, doúčtování) */
+const OPRAVNY = {
+  cs: {
+    titul: "OPRAVNÝ DOKLAD", splatnost: "Datum splatnosti:",
+    backpage: [
+      ["Opravný doklad:", [
+        "Tento doklad opravuje doklad uvedený na přední straně. Důvod opravy je uveden v položkách.",
+        "Částky v tomto dokladu se připočítávají k opravovanému dokladu."]],
+      ["Vrácení nebo doplatek:", [
+        "Je-li celková částka záporná, vrátíme ji na Váš účet do data splatnosti. Je-li kladná, uhraďte ji prosím",
+        "do data splatnosti na účet uvedený na přední straně s variabilním symbolem tohoto dokladu."]],
+      ["Archivace a zpracování osobních údajů:", [
+        "Faktury, dokumentace a fotografie vozidla jsou archivovány v souladu s platnými zákony a GDPR.",
+        "Zákazník může požádat o výmaz údajů e-mailem, pokud to neodporuje zákonným povinnostem."]],
+      ["Poděkování:", [
+        "Děkujeme, že jste si vybrali Mercedes Restorations. Vážíme si vaší důvěry."]]
+    ]
+  },
+  en: {
+    titul: "CREDIT NOTE", splatnost: "Due date:",
+    backpage: [
+      ["Credit note:", [
+        "This document corrects the document stated on the front page. The reason for the correction is given",
+        "in the items. The amounts in this document are added to the corrected document."]],
+      ["Refund or additional payment:", [
+        "If the total amount is negative, we will refund it to your account by the due date. If it is positive,",
+        "please pay it by the due date to the account stated on the front, using this document's variable symbol."]],
+      ["Archiving and Processing of Personal Data:", [
+        "Invoices, documentation and photographs of the vehicle are archived in accordance with applicable laws",
+        "and the GDPR. The customer may request the deletion of their data via email, provided that this",
+        "does not conflict with legal obligations."]],
+      ["Thank you!", [
+        "Thank you for choosing Mercedes Restorations. We appreciate your trust."]]
+    ]
+  }
+};
+
 /* Sloupce tabulky položek (středy podle originálu) */
 const COL = { popisX: 61.7, popisStred: 196.0, mn: 357.7, mj: 389.1, cena: 433.9, celkem: 503.4 };
 const MAX_RADKU = 13;
@@ -275,7 +312,7 @@ function strana2(tx) {
 
 window.render = async function (data, lang = "cs") {
   await nactiPisma();
-  const tx = { ...TEXTY[lang], ...(data.druh === "nabidka" ? NABIDKA[lang] : data.druh === "zalohova" ? ZALOHOVA[lang] : {}), lang };
+  const tx = { ...TEXTY[lang], ...(data.druh === "nabidka" ? NABIDKA[lang] : data.druh === "zalohova" ? ZALOHOVA[lang] : data.druh === "opravny" ? OPRAVNY[lang] : {}), lang };
   const s1 = strana1(data, tx);
   document.getElementById("doc").innerHTML = s1.html + strana2(tx);
   return { celkem: s1.celkem };

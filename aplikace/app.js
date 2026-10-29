@@ -186,7 +186,7 @@
     [/^#?\/?$/, prehled],
     [/^#\/novy$/, prijem],
     [/^#\/zakazka\/([\w-]+)$/, detail],
-    [/^#\/zakazka\/([\w-]+)\/(nabidka|faktura|protokol|zaloha)$/, vystavit],
+    [/^#\/zakazka\/([\w-]+)\/(nabidka|faktura|protokol|zaloha|opravny)$/, vystavit],
     [/^#\/doklady$/, prehledDokladu],
     [/^#\/zakaznici$/, zakaznici],
     [/^#\/zakaznik\/([\w-]+)$/, zakaznikDetail],
@@ -943,8 +943,8 @@
   const SOUBOR_DOKLADU = { zakazkovy_list: ["zakazkovy-list", "work-order"], nabidka: ["cenova-nabidka", "quotation"], faktura: ["faktura", "invoice"],
     predavaci_protokol: ["predavaci-protokol", "handover-protocol"], zalohova: ["zalohova-faktura", "advance-invoice"], opravny: ["opravny-doklad", "credit-note"] };
   const NAZEV_DOKLADU = {
-    cs: { zakazkovy_list: "Zakázkový list", nabidka: "Cenová nabídka", faktura: "Faktura", predavaci_protokol: "Předávací protokol", zalohova: "Zálohová faktura" },
-    en: { zakazkovy_list: "Work order", nabidka: "Quotation", faktura: "Invoice", predavaci_protokol: "Handover protocol", zalohova: "Advance invoice" }
+    cs: { zakazkovy_list: "Zakázkový list", nabidka: "Cenová nabídka", faktura: "Faktura", predavaci_protokol: "Předávací protokol", zalohova: "Zálohová faktura", opravny: "Opravný doklad" },
+    en: { zakazkovy_list: "Work order", nabidka: "Quotation", faktura: "Invoice", predavaci_protokol: "Handover protocol", zalohova: "Advance invoice", opravny: "Credit note" }
   };
   /* 7377 + faktura (verze 1) → 7377-3; druhá faktura → 7377-3-2. VS jen číslice: 73773 / 737732 */
   const cisloDokladu = (c, druh, verze = 1) => `${c}-${PRIPONY[druh]}${verze > 1 ? `-${verze}` : ""}`;
@@ -1104,10 +1104,10 @@
   /* Data pro šablonu faktury / nabídky */
   function dataFaktury({ z, polozky, dily, druh, cislo, vs, vystaveno, splatnost, platnost, podpisVyh, podpisZak, odecty = [] }) {
     const c = z.zakaznici || {}, v = z.vozidla || {};
-    const zaloha = druh === "zalohova";
+    const zaloha = druh === "zalohova" || druh === "opravny";             // bez řádku materiálu
     if (odecty.length) polozky = [...polozky, ...odecty];
     return {
-      druh: ["nabidka", "zalohova"].includes(druh) ? druh : undefined, bezMaterialu: zaloha || undefined, cislo, vs, vystaveno, splatnost, platnost,
+      druh: ["nabidka", "zalohova", "opravny"].includes(druh) ? druh : undefined, bezMaterialu: zaloha || undefined, cislo, vs, vystaveno, splatnost, platnost,
       zakaznik: { jmeno: c.jmeno || "", ulice: c.ulice || "", mesto: [c.psc, c.mesto].filter(Boolean).join(" "), zeme: c.zeme || "",
         telefon: c.telefon || "", email: c.email || "", ico: c.ico || "", dic: c.dic || "" },
       vozidlo: { znacka: v.znacka || "Mercedes-Benz", typ: v.typ || "", model: v.model || "", rok: v.rok ? String(v.rok) : "", vin: v.vin || "" },
@@ -1157,9 +1157,9 @@
       <section class="karta"><h2>Doklady</h2>
         <div class="doklady">${doklady.map(d => `
           <div class="doklad"><span><b>${esc(d.cislo)}</b> · ${DRUHY[d.druh] || d.druh}${d.celkem != null ? ` · <b>${kc(d.celkem)}</b>` : ""}<br>
-            <small class="mutted">vystaveno ${datumCz(d.vystaveno)}${d.splatnost ? ` · ${d.druh === "nabidka" ? "platnost" : "splatnost"} ${datumCz(d.splatnost)}` : ""}${["faktura", "zalohova"].includes(d.druh) ? (d.zaplaceno ? ` · <b style="color:var(--zelena)">zaplaceno ${datumCz(d.zaplaceno)}</b>` : " · nezaplaceno") : ""}</small></span>
+            <small class="mutted">vystaveno ${datumCz(d.vystaveno)}${d.splatnost ? ` · ${d.druh === "nabidka" ? "platnost" : "splatnost"} ${datumCz(d.splatnost)}` : ""}${["faktura", "zalohova", "opravny"].includes(d.druh) ? (d.zaplaceno ? ` · <b style="color:var(--zelena)">${d.druh === "opravny" && Number(d.celkem) < 0 ? "vráceno" : "zaplaceno"} ${datumCz(d.zaplaceno)}</b>` : Number(d.celkem) < 0 ? " · nevráceno" : " · nezaplaceno") : ""}</small></span>
             <span class="radek-tlacitek">
-              ${["faktura", "zalohova"].includes(d.druh) ? (d.zaplaceno ? `<button class="tl tl-male" data-nezaplaceno="${d.id}" title="Omylem označeno jako zaplacené? Vrátit zpět">↺ Zrušit úhradu</button>`
+              ${["faktura", "zalohova", "opravny"].includes(d.druh) ? (d.zaplaceno ? `<button class="tl tl-male" data-nezaplaceno="${d.id}" title="Omylem označeno jako zaplacené? Vrátit zpět">↺ Zrušit úhradu</button>`
                 : `<button class="tl tl-male" data-zaplaceno="${d.id}">✓ Zaplaceno</button>`) : ""}
               ${d.soubory?.klic ? `<button class="tl tl-male" data-pdf="${esc(d.soubory.klic)}">Otevřít PDF</button>` : ""}
               ${(z.soubory || []).filter(f => f.doklad_id === d.id && f.klic !== d.soubory?.klic && f.druh === "pdf").map(f => `<button class="tl tl-male" data-pdf="${esc(f.klic)}">${/parts list/.test(f.nazev || "") ? "Parts list" : "Příloha"}</button>`).join("")}
@@ -1170,6 +1170,7 @@
           <a class="tl" href="#/zakazka/${id}/zaloha">💰 Zálohová faktura</a>
           <a class="tl tl-hlavni" href="#/zakazka/${id}/faktura">💳 Faktura</a>
           <a class="tl tl-hlavni" href="#/zakazka/${id}/protokol">🔑 Předávací protokol</a>
+          ${doklady.some(d => ["faktura", "zalohova"].includes(d.druh)) ? `<a class="tl" href="#/zakazka/${id}/opravny">↩︎ Opravný doklad</a>` : ""}
         </div>
         <p class="napoveda" style="margin:10px 0 0">Nabídka i faktura se vytvoří z prací a dílů níže. Každý vystavený doklad se uzamkne; nová verze dostane další číslo (např. 7377-2-2).</p>
       </section>
@@ -1661,7 +1662,7 @@
 
   /* ================= vystavení nabídky / faktury / protokolu ================= */
   async function vystavit(id, co) {
-    const druh = { nabidka: "nabidka", faktura: "faktura", protokol: "predavaci_protokol", zaloha: "zalohova" }[co];
+    const druh = { nabidka: "nabidka", faktura: "faktura", protokol: "predavaci_protokol", zaloha: "zalohova", opravny: "opravny" }[co];
     app.innerHTML = `<div class="nacitani">Připravuji…</div>`;
     let z, polozky, dily;
     try { [z, polozky, dily] = await Promise.all([db.detail(id), db.polozky(id), db.dily(id)]); }
@@ -1675,7 +1676,15 @@
     // zálohové faktury této zakázky (u konečné faktury se odečtou)
     const zalohy = (z.doklady || []).filter(d => d.druh === "zalohova" && d.celkem);
     const nabidkaCislo = (z.doklady || []).filter(d => d.druh === "nabidka").map(d => d.cislo).sort().pop();
-    if (druh !== "zalohova" && jeFaktura && !polozky.some(p => (p.typ || "prace") !== "prazdny") && !s.material) {
+    // opravný doklad jde jen k vystavené faktuře nebo zálohové faktuře
+    const opravitelne = (z.doklady || []).filter(d => ["faktura", "zalohova"].includes(d.druh))
+      .sort((a, b) => (a.druh === "faktura" ? 0 : 1) - (b.druh === "faktura" ? 0 : 1) || b.cislo.localeCompare(a.cislo, "cs", { numeric: true }));   // výchozí = poslední faktura
+    if (druh === "opravny" && !opravitelne.length) {
+      app.innerHTML = `<div class="karta"><h1>Opravný doklad</h1><div class="info pozor">Zakázka nemá žádnou vystavenou fakturu – není co opravovat.</div>
+        <div class="radek-tlacitek" style="margin-top:14px"><a class="tl tl-hlavni" href="#/zakazka/${id}">← Zpět na zakázku</a></div></div>`;
+      return;
+    }
+    if (!["zalohova", "opravny"].includes(druh) && jeFaktura && !polozky.some(p => (p.typ || "prace") !== "prazdny") && !s.material) {
       app.innerHTML = `<div class="karta"><h1>${NAZEV_DOKLADU.cs[druh]}</h1><div class="info pozor">Zakázka zatím nemá žádné práce ani díly. Doplňte je v detailu zakázky.</div>
         <div class="radek-tlacitek" style="margin-top:14px"><a class="tl tl-hlavni" href="#/zakazka/${id}">← Zpět na zakázku</a></div></div>`;
       return;
@@ -1683,6 +1692,7 @@
     // výchozí hodnoty formuláře
     const f = druh === "nabidka" ? { vystaveno: dnes(), platnost: plusDni(dnes(), 7) }
       : druh === "faktura" ? { vystaveno: dnes(), splatnost: plusDni(dnes(), 14), odecist: Object.fromEntries(zalohy.map(d => [d.cislo, true])) }
+      : druh === "opravny" ? { vystaveno: dnes(), splatnost: plusDni(dnes(), 14), opravuje: opravitelne[0].cislo, duvod: "", radky: [{ popis: "", castka: "" }] }
       : druh === "zalohova" ? { vystaveno: dnes(), splatnost: plusDni(dnes(), 7), castka: s.material || "",
           popis: en ? `Advance payment for parts${nabidkaCislo ? ` according to quotation ${nabidkaCislo}` : ""}` : `Záloha na materiál${nabidkaCislo ? ` dle cenové nabídky ${nabidkaCislo}` : ""}` }
       : { vystaveno: dnes(), prevzeti: dnes(), km: z.km_predani ?? "", nadrz: z.nadrz_predani || z.nadrz_prijem || "1/2", tp: z.tp_prilozen ?? true,
@@ -1704,6 +1714,18 @@
           <div class="pole s2"><span>Celkem k úhradě · VS ${vs}</span><div class="velka-castka" id="k-uhrade">${kc(s.celkem)}</div></div>
           ${zalohy.length ? `<div class="s6"><label class="pole">Odečíst zálohy</label><div class="cipy" style="margin:0">${zalohy.map(d => `
             <label class="cip zaskrt"><input type="checkbox" data-odecist="${esc(d.cislo)}" checked> ${esc(d.cislo)} · ${kc(d.celkem)}${d.zaplaceno ? " · zaplaceno" : " · <b>nezaplaceno</b>"}</label>`).join("")}</div></div>` : ""}` : ""}
+        ${druh === "opravny" ? `
+          <label class="pole s3"><span class="povinne">Opravuje doklad</span><select data-d="opravuje">${opravitelne.map(d => `<option value="${esc(d.cislo)}" ${d.cislo === f.opravuje ? "selected" : ""}>${esc(d.cislo)} · ${DRUHY[d.druh]} · ${kc(d.celkem)} · ${datumCz(d.vystaveno)}</option>`).join("")}</select></label>
+          <label class="pole s3"><span class="povinne">Důvod opravy</span><input data-d="duvod" value="" placeholder="${en ? "e.g. Discount agreed with the customer" : "např. Sleva dohodnutá se zákazníkem"}"></label>
+          <label class="pole s2">Datum vystavení<input type="date" data-d="vystaveno" value="${f.vystaveno}"></label>
+          <label class="pole s2">Datum splatnosti<input type="date" data-d="splatnost" value="${f.splatnost}"></label>
+          <div class="pole s2"><span>Celkem · VS ${vs}</span><div class="velka-castka" id="k-uhrade">0 Kč</div></div>
+          <div class="s6"><label class="pole"><span class="povinne">Položky opravy</span></label>
+            <p class="napoveda" style="margin:0 0 8px">Záporná částka = vracíte zákazníkovi (sleva, storno, vrácený díl). Kladná = doúčtování.</p>
+            <div id="radky-opravy"></div>
+            <div class="cipy"><button type="button" class="cip" id="opr-storno">Stornovat celý doklad</button>
+              <button type="button" class="cip" data-opr-cip="${en ? "Discount" : "Sleva z ceny"}">${en ? "Discount" : "Sleva z ceny"}</button>
+              <button type="button" class="cip" data-opr-cip="${en ? "Returned part" : "Vrácený nepoužitý díl"}">${en ? "Returned part" : "Vrácený nepoužitý díl"}</button></div></div>` : ""}
         ${druh === "zalohova" ? `
           <label class="pole s4"><span class="povinne">Text položky</span><input data-d="popis" value="${esc(f.popis)}"></label>
           <label class="pole s2"><span class="povinne">Částka zálohy (Kč)</span><input data-d="castka" inputmode="numeric" value="${f.castka}"></label>
@@ -1748,8 +1770,16 @@
     let vyh = await podpisVyhotovil(), mujPad = null, pad = null;
     const podpisVyh = () => vyh || mujPad?.png() || null;
     const odecty = () => druh !== "faktura" ? [] : zalohy.filter(d => f.odecist[d.cislo]).map(d => ({ typ: "pausal", popis: `${en ? "Advance payment" : "Odečet zálohy"} ${d.cislo}`, castka: -Number(d.celkem) }));
+    const opravovany = () => opravitelne.find(d => d.cislo === f.opravuje);
+    const polozkyOpravy = () => {
+      const o = opravovany(); if (!o) return [];
+      return [{ typ: "nadpis", popis: en ? `Correction of ${o.druh === "zalohova" ? "advance invoice" : "invoice"} ${o.cislo} dated ${datumCz(o.vystaveno)}` : `Oprava ${o.druh === "zalohova" ? "zálohové faktury" : "faktury"} ${o.cislo} ze dne ${datumCz(o.vystaveno)}` },
+        { typ: "nadpis", popis: `${en ? "Reason" : "Důvod"}: ${String(f.duvod || "").trim()}` },
+        ...f.radky.filter(r => String(r.popis).trim() || cisloZ(r.castka)).map(r => ({ typ: "pausal", popis: String(r.popis).trim(), castka: cisloZ(r.castka) || 0 }))];
+    };
+    const celkemOpravy = () => f.radky.reduce((a, r) => a + (cisloZ(r.castka) || 0), 0);
     const data = () => jeFaktura
-      ? dataFaktury({ z, polozky: druh === "zalohova" ? [{ typ: "pausal", popis: f.popis, castka: cisloZ(f.castka) || 0 }] : polozky, dily, druh, cislo, vs,
+      ? dataFaktury({ z, polozky: druh === "zalohova" ? [{ typ: "pausal", popis: f.popis, castka: cisloZ(f.castka) || 0 }] : druh === "opravny" ? polozkyOpravy() : polozky, dily, druh, cislo, vs,
           vystaveno: f.vystaveno, splatnost: druh === "nabidka" ? f.platnost : f.splatnost, platnost: f.platnost, podpisVyh: podpisVyh(), podpisZak: pad?.png(), odecty: odecty() })
       : dataProtokolu({ z, cislo, f, podpisVyh: podpisVyh(), podpisZak: pad?.png() });
     const chybi = () => {
@@ -1757,6 +1787,11 @@
       if (!vyh && (!mujPad || mujPad.prazdny())) ch.push("váš podpis");
       if (podpisZakPovinny && (!pad || pad.prazdny())) ch.push("podpis zákazníka");
       if (druh === "zalohova") { if (!(cisloZ(f.castka) > 0)) ch.push("částka zálohy"); if (!String(f.popis || "").trim()) ch.push("text položky"); }
+      if (druh === "opravny") {
+        if (!String(f.duvod || "").trim()) ch.push("důvod opravy");
+        if (!f.radky.some(r => String(r.popis).trim() && cisloZ(r.castka))) ch.push("položka s popisem a částkou");
+        if (f.radky.length + 2 > MAX_POLOZEK) ch.push(`méně řádků (max. ${MAX_POLOZEK - 2})`);
+      }
       if (druh === "faktura" || druh === "zalohova") { if (polozkyCelkem() > MAX_POLOZEK) ch.push(`méně řádků (max. ${MAX_POLOZEK})`); }
       if (druh === "predavaci_protokol") {
         if (cisloZ(f.km) == null || isNaN(cisloZ(f.km))) ch.push("stav tachometru");
@@ -1766,7 +1801,7 @@
     };
     const polozkyCelkem = () => (druh === "zalohova" ? 1 : polozky.length) + odecty().length;
     const kontrola = () => {
-      const ku = app.querySelector("#k-uhrade"); if (ku) ku.textContent = kc(s.celkem + odecty().reduce((a, o) => a + o.castka, 0));
+      const ku = app.querySelector("#k-uhrade"); if (ku) ku.textContent = kc(druh === "opravny" ? celkemOpravy() : s.celkem + odecty().reduce((a, o) => a + o.castka, 0));
       const ch = chybi(), b = app.querySelector("#vystavit"), i = app.querySelector("#co-chybi");
       b.disabled = ch.length > 0; i.hidden = !ch.length; i.textContent = ch.length ? "Chybí: " + ch.join(", ") : ""; };
     let cekani = null;
@@ -1791,6 +1826,25 @@
       stavEl.querySelector("#st-pridat").onclick = () => { f.stav.push(""); vykresliStav(); stavEl.querySelectorAll("textarea")[f.stav.length - 1]?.focus(); };
     };
     vykresliStav();
+    const oprEl = app.querySelector("#radky-opravy");
+    const vykresliOpravu = () => {
+      if (!oprEl) return;
+      oprEl.innerHTML = f.radky.map((r, i) => `<div class="radek-opravy"><input class="vstup" data-or="popis" data-i="${i}" value="${esc(r.popis)}" placeholder="${en ? "Item" : "Popis položky"}">
+        <input class="vstup cislo" data-or="castka" data-i="${i}" value="${esc(r.castka)}" inputmode="decimal" placeholder="-1000">
+        <button type="button" class="tl smazat" data-or-smaz="${i}" aria-label="Smazat řádek">×</button></div>`).join("") +
+        `<div class="radek-tlacitek" style="margin-top:8px"><button type="button" class="tl tl-male" id="or-pridat">＋ Přidat řádek</button></div>`;
+      oprEl.querySelectorAll("[data-or]").forEach(inp => inp.addEventListener("input", () => { f.radky[+inp.dataset.i][inp.dataset.or] = inp.value; obnov(); }));
+      oprEl.querySelectorAll("[data-or-smaz]").forEach(b => b.onclick = () => { f.radky.splice(+b.dataset.orSmaz, 1); if (!f.radky.length) f.radky.push({ popis: "", castka: "" }); vykresliOpravu(); obnov(); });
+      oprEl.querySelector("#or-pridat").onclick = () => { f.radky.push({ popis: "", castka: "" }); vykresliOpravu(); oprEl.querySelectorAll('[data-or="popis"]')[f.radky.length - 1]?.focus(); };
+    };
+    vykresliOpravu();
+    const vlozRadek = (popis, castka = "") => { const i = f.radky.findIndex(r => !String(r.popis).trim() && !String(r.castka).trim());
+      if (i >= 0) f.radky[i] = { popis, castka }; else f.radky.push({ popis, castka }); vykresliOpravu(); obnov(); };
+    app.querySelector("#opr-storno")?.addEventListener("click", () => { const o = opravovany(); if (!o) return;
+      f.radky = [{ popis: en ? `Cancellation of ${o.cislo}` : `Storno dokladu ${o.cislo}`, castka: String(-Number(o.celkem || 0)) }];
+      const d = app.querySelector('[data-d="duvod"]'); if (d && !d.value) { d.value = f.duvod = en ? "Document cancelled" : "Storno dokladu"; }
+      vykresliOpravu(); obnov(); });
+    app.querySelectorAll("[data-opr-cip]").forEach(b => b.onclick = () => vlozRadek(b.dataset.oprCip));
     app.querySelectorAll("[data-cip-stav]").forEach(b => b.onclick = () => {
       if (f.stav.includes(b.textContent)) return; const i = f.stav.findIndex(t => !t.trim()); if (i >= 0) f.stav[i] = b.textContent; else f.stav.push(b.textContent); vykresliStav(); obnov();
     });
@@ -1803,8 +1857,9 @@
 
     app.querySelector("#vystavit").onclick = async () => {
       if (chybi().length) return;
-      const kUhrade = druh === "zalohova" ? cisloZ(f.castka) : s.celkem + odecty().reduce((a, o) => a + o.castka, 0);
+      const kUhrade = druh === "zalohova" ? cisloZ(f.castka) : druh === "opravny" ? celkemOpravy() : s.celkem + odecty().reduce((a, o) => a + o.castka, 0);
       if ((druh === "faktura" || druh === "zalohova") && !confirm(`Vystavit ${druh === "zalohova" ? "zálohovou fakturu" : "fakturu"} ${cislo} na ${kc(kUhrade)}? Vydaná faktura se už nedá změnit (oprava jen opravným dokladem).`)) return;
+      if (druh === "opravny" && !confirm(`Vystavit opravný doklad ${cislo} k dokladu ${f.opravuje} na ${kc(kUhrade)}? Vydaný opravný doklad se už nedá změnit ani smazat.`)) return;
       const p = prekryv("Ukládám…");
       try {
         if (!vyh && mujPad && !mujPad.prazdny()) { const png = mujPad.png(); await db.ulozitMujPodpis(uzivatel.id, png); uzivatel.podpis_obrazek = png; }
@@ -1813,7 +1868,7 @@
         const pl = dataPartsListu(z, dily, true, { druh, cislo });
         const prilohy = (druh === "nabidka" || druh === "faktura") && pl.dily.length ? [{ sablona: "parts-list.html", data: pl, nazev: "parts list", slug: "parts-list" }] : [];
         await ulozitDoklad({ iframe, sablona, data: data(), jazyk, zakazka_id: id, vozidlo_id: z.vozidlo_id || z.vozidla?.id, cisloZakazky: z.cislo, druh, verze, prilohy,
-          vystaveno: druh === "predavaci_protokol" ? f.prevzeti : f.vystaveno, splatnost: ["faktura", "zalohova"].includes(druh) ? f.splatnost : druh === "nabidka" ? f.platnost : null,
+          vystaveno: druh === "predavaci_protokol" ? f.prevzeti : f.vystaveno, splatnost: ["faktura", "zalohova", "opravny"].includes(druh) ? f.splatnost : druh === "nabidka" ? f.platnost : null,
           podpisZak: pad.png(), jmenoZakaznika: z.zakaznici?.jmeno || "", vyhPodepsalNaIpadu: !vyh, nabidka_id, prubeh: p.text });
         // stav zakázky
         if (druh === "nabidka" && ["prijato", "poptavka"].includes(z.stav)) await db.upravit("zakazky", id, { stav: "nabidka" });
@@ -1837,7 +1892,7 @@
     const F = { druh: "vse", mesic: "", nezaplacene: false };          // po otevření z menu vždy „Vše“
     const mesice = [...new Set(vse.map(d => String(d.vystaveno).slice(0, 7)))].sort().reverse();
     const DRUHY_FILTR = [["vse", "Vše"], ["faktury", "Faktury"], ["nabidka", "Nabídky"], ["predavaci_protokol", "Protokoly"], ["zakazkovy_list", "Zakázkové listy"]];
-    const jeFa = d => d.druh === "faktura" || d.druh === "zalohova";
+    const jeFa = d => d.druh === "faktura" || d.druh === "zalohova" || d.druh === "opravny";
     const poSplatnosti = d => jeFa(d) && !d.zaplaceno && d.splatnost && d.splatnost < dnes();
     app.innerHTML = `
       <h1>Doklady</h1>
@@ -1851,7 +1906,7 @@
     const vykresli = () => {
       const r = vse.filter(d => (F.druh === "vse" || (F.druh === "faktury" ? jeFa(d) : d.druh === F.druh))
         && (!F.mesic || String(d.vystaveno).startsWith(F.mesic)) && (!F.nezaplacene || (jeFa(d) && !d.zaplaceno)));
-      const fa = r.filter(d => d.druh === "faktura"), za = r.filter(d => d.druh === "zalohova");
+      const fa = r.filter(d => d.druh === "faktura" || d.druh === "opravny"), za = r.filter(d => d.druh === "zalohova");
       const suma = a => a.reduce((x, d) => x + (Number(d.celkem) || 0), 0);
       const nezapl = r.filter(d => jeFa(d) && !d.zaplaceno), po = r.filter(poSplatnosti);
       app.querySelector("#dlazdice").innerHTML = F.druh === "faktury" || F.druh === "vse" ? `
