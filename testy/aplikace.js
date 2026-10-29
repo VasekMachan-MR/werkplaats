@@ -514,6 +514,19 @@ const server = http.createServer((q, r) => {
   const sirka = await q.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
   kontrola(sirka, "na iPhonu se stránka nevodorovně neposouvá");
 
+  // ---------- odkaz „zapomenuté heslo“ z e-mailu ----------
+  const ob = await ph.newPage(); await ob.goto(URL0 + "#access_token=x&expires_in=3600&refresh_token=y&token_type=bearer&type=recovery");
+  await ob.waitForSelector("text=Nové heslo");
+  await ob.evaluate(() => { location.hash = ""; });          // Supabase si token z adresy hned smaže – formulář musí zůstat
+  await ob.waitForTimeout(300);
+  kontrola(await ob.isVisible("text=Nové heslo") && await ob.isVisible('input[autocomplete="new-password"]'), "odkaz pro obnovu hesla: formulář „Nové heslo“ zůstane i po smazání tokenu z adresy");
+  await ob.fill('input[name="heslo"]', "nove-heslo-1234"); await ob.click("button[type=submit]");
+  await ob.waitForSelector("a[href=\"#/novy\"]");
+  kontrola(true, "po uložení nového hesla je uživatel přihlášený v aplikaci");
+  const ex = await ph.newPage(); await ex.goto(URL0 + "#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired");
+  await ex.waitForSelector("text=vypršel");
+  kontrola(true, "prošlý odkaz z e-mailu ukáže srozumitelnou hlášku");
+
   kontrola(chyby.length === 0, "bez chyb v konzoli" + (chyby.length ? ": " + chyby.join(" | ") : ""));
   await b.close(); server.close();
 })().catch(e => { console.error(e.message); server.close(); process.exit(1); });

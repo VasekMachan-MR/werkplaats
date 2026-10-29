@@ -4,6 +4,11 @@
   "use strict";
   const K = window.WERK_KONFIG;
   const app = document.getElementById("app");
+  /* Odkaz z e-mailu „zapomenuté heslo“: #access_token=…&type=recovery (Supabase ho po načtení z adresy smaže, proto si ho pamatujeme hned) */
+  const H0 = location.hash;
+  let obnovaHesla = /type=recovery/.test(H0);
+  const chybaOdkazu = /error_code=otp_expired/.test(H0) ? "Odkaz pro nastavení hesla už vypršel nebo byl použit. Pošlete si prosím nový přes „Zapomenuté heslo“."
+    : (H0.match(/error_description=([^&]+)/) || [])[1] ? "Odkaz z e-mailu nefunguje: " + decodeURIComponent(H0.match(/error_description=([^&]+)/)[1].replace(/\+/g, " ")) : null;
 
   /* ================= pomocné funkce ================= */
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -72,6 +77,7 @@
     const sb = window.supabase.createClient(K.supabaseUrl, K.supabaseKlic, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: "werkplaats-prihlaseni" }
     });
+    sb.auth.onAuthStateChange(ud => { if (ud === "PASSWORD_RECOVERY") obnovaHesla = true; });
     const ok = ({ data, error }) => { if (error) throw error; return data; };
     const kos = () => sb.storage.from(K.kos);
     return {
@@ -200,7 +206,7 @@
   async function navigace() {
     if (uklid) { try { uklid(); } catch (e) { /* nic */ } uklid = null; }
     await dokoncitUkladani();
-    if (!uzivatel) return;
+    if (!uzivatel || obnovaHesla) return;
     const h = location.hash || "#/";
     for (const [re, fn] of trasy) { const m = h.match(re); if (m) { window.scrollTo(0, 0); return fn(...m.slice(1)); } }
     location.hash = "#/";
@@ -220,7 +226,7 @@
   /* ================= přihlášení ================= */
   function prihlaseni(zprava) {
     lista();
-    const obnova = /type=recovery/.test(location.hash);
+    const obnova = obnovaHesla;
     app.innerHTML = `
       <div class="prihlaseni"><div class="karta">
         <h1>${obnova ? "Nové heslo" : "Přihlášení"}</h1>
@@ -238,7 +244,7 @@
       e.preventDefault();
       const b = f.querySelector("button[type=submit]"); b.disabled = true;
       try {
-        if (obnova) { await db.noveHeslo(f.heslo.value); history.replaceState(null, "", location.pathname); hlaska("Heslo uloženo."); start(); }
+        if (obnova) { await db.noveHeslo(f.heslo.value); obnovaHesla = false; history.replaceState(null, "", location.pathname); hlaska("Heslo uloženo – jste přihlášen."); start(); }
         else { await db.prihlasit(f.email.value.trim(), f.heslo.value); await start(); }
       } catch (err) {
         z.innerHTML = `<div class="info chyba">${/invalid/i.test(chybaText(err)) ? "Nesprávný e-mail nebo heslo." : esc(chybaText(err))}</div>`;
@@ -2219,7 +2225,8 @@
 
   /* ================= start ================= */
   async function start() {
-    if (/type=recovery/.test(location.hash)) return prihlaseni();
+    if (obnovaHesla) return prihlaseni();
+    if (chybaOdkazu && !start.hotovo) { start.hotovo = true; history.replaceState(null, "", location.pathname); return prihlaseni(chybaOdkazu); }
     let s = null;
     try { s = await db.relace(); } catch (e) { /* offline */ }
     if (!s) { uzivatel = null; return prihlaseni(); }
