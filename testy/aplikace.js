@@ -378,6 +378,7 @@ const server = http.createServer((q, r) => {
   kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.soubory.some(f => f.faze === "prubeh" && f.druh === "foto")) && /Během opravy/.test(await p.textContent("#sekce-fotky-detail")),
     "fotka přidaná během opravy se uloží do skupiny „Během opravy“");
   await foto("21-uprava-prijmu-fotky");
+  kontrola(/mercedesrestorations\.cz\/e-serviska\?vin=[A-Z0-9]+$/.test(await p.getAttribute("#odkaz-eservisky", "href")), "detail zakázky má odkaz do E-servisky podle VIN");
   // archiv (legacy): původní PDF jen jako příloha zakázky
   await p.setInputFiles("#archiv-nahrat", [{ name: "Zakazkovy_list_stary.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF") }]);
   await p.waitForSelector("#sekce-archiv [data-archiv-otevrit]", { timeout: 15000 });
