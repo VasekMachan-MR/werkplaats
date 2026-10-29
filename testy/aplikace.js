@@ -56,6 +56,11 @@ const server = http.createServer((q, r) => {
   kontrola(/10 řádků z 8/.test(await p.textContent('[data-zbyva="zavady"]')) && /nevejdou/.test(await p.textContent("#co-chybi")), "závady nad 8 řádků: červené upozornění a nejde k podpisu");
   while (await p.locator('[data-smazat="zavady"]').count() > 1) await p.click('[data-smazat="zavady"] >> nth=0');
   await p.fill('textarea[data-radek="zavady"]', "");
+  // nesmyslné hodnoty zčervenají a nepustí k podpisu
+  await p.fill('[data-pole="vozidlo.rok"]', "1850");
+  await p.fill('[data-pole="zakaznik.email"]', "jan@");
+  kontrola(await p.evaluate(() => document.querySelector('[data-pole="vozidlo.rok"]').classList.contains("neplatne")) && /Rok výroby 1900/.test(await p.evaluate(() => [...document.querySelectorAll(".chyba-pole")].map(e => e.textContent).join(" "))) && /neplatný e-mail/.test(await p.textContent("#co-chybi")), "rok 1850 a e-mail „jan@“ zčervenají a jsou v seznamu „Chybí“");
+  await p.fill('[data-pole="vozidlo.rok"]', ""); await p.fill('[data-pole="zakaznik.email"]', "");
   await p.fill('[data-pole="zakaznik.jmeno"]', "Jan Novák");
   await p.fill('[data-pole="zakaznik.ulice"]', "Lipová 12");
   await p.fill('[data-pole="zakaznik.psc"]', "500 02");

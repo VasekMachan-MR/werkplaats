@@ -30,7 +30,36 @@
     return /^-?(\d+\.?\d*|\.\d+)$/.test(t) ? Number(t) : NaN;
   };
   // číselné pole ve formuláři: nesmysl zčervená a neuloží se
-  const ciselnyVstup = inp => { const v = cisloZ(inp.value), spatne = v != null && !Number.isFinite(v); inp.classList.toggle("chybi", spatne); return spatne ? undefined : v; };
+  const ciselnyVstup = (inp, { min = -Infinity, max = Infinity } = {}) => {
+    const v = cisloZ(inp.value), spatne = v != null && (!Number.isFinite(v) || v < min || v > max);
+    inp.classList.toggle("chybi", spatne); inp.title = spatne ? (Number.isFinite(v) ? `Povolený rozsah ${min === -Infinity ? "" : min} až ${max === Infinity ? "" : max}` : "Tohle není číslo") : "";
+    return spatne ? undefined : v;
+  };
+  // „blbuvzdorné“ kontroly polí: vrací text chyby, nebo "" (prázdné pole = bez chyby, povinnost hlídá jinde)
+  const ROK_TED = new Date().getFullYear();
+  const PRAVIDLA = {
+    vin: v => { const t = String(v || "").replace(/\s/g, "").toUpperCase(); if (!t) return "";
+      return !/^[A-Z0-9]+$/.test(t) ? "VIN smí obsahovat jen písmena a číslice" : t.length < 10 || t.length > 17 ? `VIN má 10–17 znaků (teď ${t.length})` : ""; },
+    rok: v => { if (!String(v ?? "").trim()) return ""; const n = cisloZ(v); return Number.isInteger(n) && n >= 1900 && n <= ROK_TED + 1 ? "" : `Rok výroby 1900–${ROK_TED + 1}`; },
+    km: v => { if (!String(v ?? "").trim()) return ""; const n = cisloZ(v); return Number.isFinite(n) && n >= 0 && n <= 2000000 ? "" : "Stav tachometru 0 – 2 000 000"; },
+    telefon: v => { const t = String(v || "").trim(); if (!t) return ""; return /^[+\d][\d\s/().-]*$/.test(t) && t.replace(/\D/g, "").length >= 9 ? "" : "Telefon – aspoň 9 číslic, např. +420 777 123 456"; },
+    email: v => { const t = String(v || "").trim(); return !t || /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(t) ? "" : "Neplatný e-mail"; },
+    psc: (v, zeme) => { const t = String(v || "").trim(); if (!t || (zeme && !/česk|czech|^cz$/i.test(zeme))) return ""; return /^\d{3}\s?\d{2}$/.test(t) ? "" : "PSČ má 5 číslic, např. 500 02"; },
+    castka: v => { if (!String(v ?? "").trim()) return ""; const n = cisloZ(v); return Number.isFinite(n) && n >= 0 ? "" : "Částka musí být kladné číslo"; },
+    datum: v => { if (!v) return ""; return v < "1950-01-01" || v > plusDni(dnes(), 366) ? "Zkontrolujte datum" : ""; }
+  };
+  const PRAVIDLO_POLE = { "vozidlo.vin": "vin", "vozidlo.rok": "rok", "zakazka.km_prijem": "km", "zakaznik.telefon": "telefon", "zakaznik.email": "email",
+    "zakaznik.psc": "psc", "zakazka.odhad_ceny": "castka", "zakazka.datum_prijmu": "datum", "zakazka.predpoklad_dokonceni": "datum",
+    vin: "vin", rok: "rok", km_posledni: "km", telefon: "telefon", email: "email", psc: "psc" };
+  // označí pole červeně a pod něj napíše proč; vrací text chyby
+  function oznacPole(inp, chyba) {
+    inp.classList.toggle("neplatne", !!chyba);
+    let el = inp.parentElement.querySelector(":scope > .chyba-pole");
+    if (chyba && !el) { el = document.createElement("span"); el.className = "chyba-pole"; inp.insertAdjacentElement("afterend", el); }
+    if (el) { el.textContent = chyba || ""; el.hidden = !chyba; }
+    return chyba;
+  }
+  const zkontrolujPole = (inp, klic, zeme) => { const r = PRAVIDLA[PRAVIDLO_POLE[klic]]; return oznacPole(inp, r ? r(inp.value, zeme) : ""); };
   const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : "x" + Date.now() + Math.random().toString(16).slice(2));
   const cekej = ms => new Promise(r => setTimeout(r, ms));
   function hlaska(text, chyba = false, ms = 3500) {
@@ -655,6 +684,12 @@
     if (!v.model.trim()) ch.push(["model", '[data-pole="vozidlo.model"]']);
     if (cisloZ(k.km_prijem) == null || isNaN(cisloZ(k.km_prijem))) ch.push(["stav tachometru", '[data-pole="zakazka.km_prijem"]']);
     if (!k.zavady.some(t => t.trim())) ch.push(["aspoň jedna závada", '#sekce-zavady textarea']);
+    for (const [cesta, pr] of Object.entries(PRAVIDLO_POLE)) {          // nesmyslné hodnoty (VIN, rok, km, telefon, e-mail, PSČ, data)
+      if (!cesta.includes(".")) continue;
+      const [o, kl] = cesta.split("."), chyba = PRAVIDLA[pr](P[o][kl], P.zakaznik.zeme);
+      if (chyba) ch.push([chyba.charAt(0).toLowerCase() + chyba.slice(1), `[data-pole="${cesta}"]`]);
+    }
+    if (k.predpoklad_dokonceni && k.datum_prijmu && k.predpoklad_dokonceni < k.datum_prijmu) ch.push(["dokončení je dřív než převzetí", '[data-pole="zakazka.predpoklad_dokonceni"]']);
     if (radkuNaListu(k.zavady) > 8) ch.push(["závady se nevejdou na list (max. 8 řádků) – zkraťte nebo slučte", "#sekce-zavady"]);
     if (radkuNaListu(k.stav_prijem) > 7) ch.push(["stav při převzetí se nevejde na list (max. 7 řádků)", "#sekce-stav"]);
     const tpSoubory = Object.values(P.tp || {}).filter(Boolean);
@@ -685,11 +720,13 @@
   function nastavHodnotu(cesta, hodnota) { const [o, k] = cesta.split("."); P[o][k] = hodnota; ulozKoncept(); }
 
   function vazbyFormulare() {
+    app.querySelectorAll("[data-pole]").forEach(inp => { if (inp.value) zkontrolujPole(inp, inp.dataset.pole, P.zakaznik.zeme); });
     app.querySelectorAll("[data-pole]").forEach(inp => {
       inp.addEventListener("input", () => {
         let h = inp.value;
         if (inp.dataset.pole === "vozidlo.vin") { h = h.toUpperCase(); }
         nastavHodnotu(inp.dataset.pole, h);
+        zkontrolujPole(inp, inp.dataset.pole, P.zakaznik.zeme);
         if (inp.dataset.pole === "zakaznik.telefon" || inp.dataset.pole === "zakaznik.email") {
           const z = P.zakaznik;
           app.querySelector('[data-pole="zakaznik.telefon"]').previousElementSibling.className = z.email.trim() ? "" : "povinne";
@@ -1745,7 +1782,7 @@
       const p = E.polozky[+r.dataset.i];
       r.querySelectorAll("[data-f]").forEach(inp => inp.addEventListener("input", () => {
         const f = inp.dataset.f;
-        if (["mnozstvi", "sazba", "castka"].includes(f)) { const v = ciselnyVstup(inp); if (v === undefined) return; p[f] = v; } else p[f] = inp.value;
+        if (["mnozstvi", "sazba", "castka"].includes(f)) { const v = ciselnyVstup(inp, f === "castka" ? {} : { min: 0, max: f === "mnozstvi" ? 10000 : 1000000 }); if (v === undefined) return; p[f] = v; } else p[f] = inp.value;
         const c = r.querySelector(".celkem-pol"); if (c) c.textContent = kc(cenaPrace(p));
         vykresliSouhrnZakazky(); ulozitPozdeji("prace");
       }));
@@ -1814,7 +1851,10 @@
       const d = E.dily[+r.dataset.i];
       r.querySelectorAll("[data-f]").forEach(inp => inp.addEventListener(inp.tagName === "SELECT" ? "change" : "input", () => {
         const f = inp.dataset.f;
-        if (["mnozstvi", "nakupni_cena", "kurz", "marze_pct", "prodejni_cena"].includes(f)) { const v = ciselnyVstup(inp); if (v === undefined) return; d[f] = v; } else d[f] = inp.value;
+        if (["mnozstvi", "nakupni_cena", "kurz", "marze_pct", "prodejni_cena"].includes(f)) {
+          const v = ciselnyVstup(inp, { mnozstvi: { min: 0, max: 10000 }, nakupni_cena: { min: 0, max: 10000000 }, kurz: { min: 0.01, max: 1000 }, marze_pct: { min: 0, max: 1000 }, prodejni_cena: { min: 0, max: 10000000 } }[f]);
+          if (v === undefined) return; d[f] = v;
+        } else d[f] = inp.value;
         if (f === "mena") { d.kurz = d.mena === "EUR" ? (d.kurz && d.kurz !== 1 ? d.kurz : 25) : 1; }
         if (f === "dodavatel_id" && d.dodavatel_id) d.puvod = puvodPodleDodavatele(d.dodavatel_id);   // MB (original) → original, ostatní → aftermarket
         if (["nakupni_cena", "kurz", "marze_pct", "mena"].includes(f)) {          // přepočítat prodejní cenu
@@ -2092,6 +2132,9 @@
       const rl = sablona === "zakazkovy-list.html" ? iframe.contentWindow?.__posledniVysledek?.radky : null;   // protokol: nic se nesmí oříznout
       if (rl?.zavady && rl.zavady.potreba > rl.zavady.max) ch.push(`kratší popis prací (max. ${rl.zavady.max} řádků)`);
       if (rl?.stav && rl.stav.potreba > rl.stav.max) ch.push(`kratší stav při předání (max. ${rl.stav.max} řádků)`);
+      if (f.vystaveno && PRAVIDLA.datum(f.vystaveno)) ch.push("datum vystavení");
+      if (f.splatnost && f.vystaveno && f.splatnost < f.vystaveno) ch.push(druh === "nabidka" ? "platnost nabídky je dřív než vystavení" : "splatnost je dřív než vystavení");
+      if (druh === "predavaci_protokol" && f.km != null && String(f.km).trim() && PRAVIDLA.km(f.km)) ch.push("stav tachometru (0 – 2 000 000)");
       if (!vyh && (!mujPad || mujPad.prazdny())) ch.push("váš podpis");
       if (podpisZakPovinny && (!pad || pad.prazdny())) ch.push("podpis zákazníka");
       if (druh === "zalohova") { if (!(cisloZ(f.castka) > 0)) ch.push("částka zálohy"); if (!String(f.popis || "").trim()) ch.push("text položky"); }
@@ -2320,8 +2363,11 @@
     const f = app.querySelector("#f"); let jeFirma = !!z.je_firma, jazyk = z.jazyk || "cs";
     const seg = (sel, fn) => app.querySelector(sel).onclick = e => { const b = e.target.closest("button"); if (!b) return; fn(JSON.parse(JSON.stringify(b.dataset.h))); app.querySelectorAll(sel + " button").forEach(x => x.setAttribute("aria-pressed", x === b)); };
     seg("#firma", h => (jeFirma = h === "true")); seg("#jazyk", h => (jazyk = h));
+    const kontrolaZak = () => [...f.querySelectorAll("input[name]")].map(i => zkontrolujPole(i, i.name, f.zeme?.value)).filter(Boolean);
+    f.addEventListener("input", e => { if (e.target.name) zkontrolujPole(e.target, e.target.name, f.zeme?.value); });
     f.onsubmit = async e => {
       e.preventDefault();
+      const chyby = kontrolaZak(); if (chyby.length) return hlaska("Opravte červená pole: " + chyby.join(", "), true);
       const d = Object.fromEntries(new FormData(f)); for (const k in d) { d[k] = d[k].trim(); if (!d[k] && k !== "jmeno") d[k] = null; }
       if (!d.jmeno) return hlaska("Vyplňte jméno.", true);
       d.je_firma = jeFirma; d.jazyk = jazyk;
@@ -2404,10 +2450,13 @@
     seg("#verze", h => { verze = h; if (h === "US" && jedn !== "mi") { jedn = "mi"; app.querySelectorAll("#jedn button").forEach(x => x.setAttribute("aria-pressed", x.dataset.h === "mi")); } });
     seg("#jedn", h => (jedn = h));
     const f = app.querySelector("#f");
+    f.addEventListener("input", e => { if (e.target.name) zkontrolujPole(e.target, e.target.name); });
     f.onsubmit = async e => {
       e.preventDefault();
       const d = Object.fromEntries(new FormData(f)); for (const k in d) { d[k] = d[k].trim(); if (!d[k]) d[k] = null; }
       if (!d.vin || d.vin.replace(/\s/g, "").length < 8) return hlaska("Vyplňte VIN.", true);
+      const chyby = [...f.querySelectorAll("input[name]")].map(i => zkontrolujPole(i, i.name)).filter(Boolean);
+      if (chyby.length) return hlaska("Opravte červená pole: " + chyby.join(", "), true);
       d.rok = d.rok ? parseInt(d.rok, 10) : null; d.km_posledni = cisloZ(d.km_posledni); d.verze = verze; d.jednotka_tachometru = jedn;
       try { await db.upravit("vozidla", id, d); app.querySelector("#stav").textContent = "✓ Uloženo"; hlaska("Změny uloženy."); }
       catch (err) { hlaska(/duplicate|unique/i.test(chybaText(err)) ? "Auto s tímto VIN už v systému je." : "Nepodařilo se uložit: " + chybaText(err), true); }
