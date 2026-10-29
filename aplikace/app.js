@@ -1208,6 +1208,7 @@
           <a class="tl" href="#/zakazka/${id}/zaloha">💰 Zálohová faktura</a>
           <a class="tl tl-hlavni" href="#/zakazka/${id}/faktura">💳 Faktura</a>
           <a class="tl tl-hlavni" href="#/zakazka/${id}/protokol">🔑 Předávací protokol</a>
+          ${v.vin ? `<a class="tl" href="${esc(odkazEservisky(v.vin))}" target="_blank" rel="noopener" id="odkaz-eservisky">📖 E-serviska ↗</a>` : ""}
           ${doklady.some(d => ["faktura", "zalohova"].includes(d.druh)) ? `<a class="tl" href="#/zakazka/${id}/opravny">↩︎ Opravný doklad</a>` : ""}
         </div>
         <p class="napoveda" style="margin:10px 0 0">Nabídka i faktura se vytvoří z prací a dílů níže. Každý vystavený doklad se uzamkne; nová verze dostane další číslo (např. 7377-2-2).</p>
@@ -1230,7 +1231,7 @@
            ["Tachometr při předání", z.km_predani != null ? `${Number(z.km_predani).toLocaleString("cs-CZ")} ${jedn}` : ""]]
           .filter(([, x]) => x != null && x !== "").map(([a, b]) => `<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join("")}</dl></section>
       <section class="karta"><h2>Dokumenty vozidla <span class="napoveda" style="font-weight:400">(v E-servisce ke stažení)</span></h2><div class="fotky" id="dokumenty-vozidla"><span class="mutted">Načítám…</span></div>
-        <p style="margin:10px 0 0"><a href="#/vozidlo/${z.vozidlo_id || v.id}">Upravit vozidlo a TP →</a> · <a href="#/zakaznik/${z.zakaznik_id || c.id}">Upravit zákazníka →</a>${v.vin ? ` · <a href="${esc(odkazEservisky(v.vin))}" target="_blank" rel="noopener" id="odkaz-eservisky">E-serviska ↗</a>` : ""}</p></section>
+        <p style="margin:10px 0 0"><a href="#/vozidlo/${z.vozidlo_id || v.id}">Upravit vozidlo a TP →</a> · <a href="#/zakaznik/${z.zakaznik_id || c.id}">Upravit zákazníka →</a></p></section>
       <section class="karta"><h2>Zákazník</h2><dl class="udaje">
         ${[["Jméno", esc(c.jmeno)], ["Kontaktní osoba", esc(c.kontaktni_osoba)], ["Telefon", telOdkaz(c.telefon)], ["E-mail", mailOdkaz(c.email)], ["Adresa", esc([c.ulice, [c.psc, c.mesto].filter(Boolean).join(" "), c.zeme].filter(Boolean).join(", "))], ["IČO", esc(c.ico)], ["DIČ", esc(c.dic)]]
           .filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${b}</dd></div>`).join("")}</dl></section>
