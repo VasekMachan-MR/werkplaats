@@ -186,7 +186,8 @@ function strana1(d, tx) {
 
   // závady
   h += T(72.5, 345.1, tx.zavady, { b: true });
-  h += odrazky(72.5, 361.7, d.zavady, 8).html;
+  const oz = odrazky(72.5, 361.7, d.zavady, 8); h += oz.html;
+  window.__radkyListu = { zavady: { potreba: oz.potreba, max: 8 } };
 
   // vozidlo
   const v = d.vozidlo;
@@ -202,7 +203,8 @@ function strana1(d, tx) {
 
   // stav při převzetí
   h += T(72.5, 476.4, tx.stav, { b: true });
-  h += odrazky(72.5, 489.1, d.stav, 7).html;
+  const os = odrazky(72.5, 489.1, d.stav, 7); h += os.html;
+  window.__radkyListu.stav = { potreba: os.potreba, max: 7 };
 
   // upozornění
   h += T(69.6, 591.6, tx.zarukaH, { b: true, size: 7.8 });
@@ -253,4 +255,5 @@ window.render = async function (data, lang = "cs") {
   await nactiPisma();
   const tx = { ...TEXTY[lang], ...(data.druh === "protokol" ? PROTOKOL[lang] : {}), lang };
   document.getElementById("doc").innerHTML = strana1(data, tx) + strana2(data, tx);
+  return { radky: window.__radkyListu };          // aplikace podle toho hlídá, aby se nic neořízlo
 };

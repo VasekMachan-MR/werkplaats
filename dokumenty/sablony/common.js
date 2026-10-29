@@ -53,17 +53,18 @@ function zalom(text, size, bold, maxW) {
 }
 /* Odrážkový seznam: dlouhé položky se zalomí, další řádek je odsazený pod text. Vrací {html, radku} */
 function odrazky(x, y, polozky, maxRadku, maxW = 278, krok = 12.75) {
-  let h = "", n = 0;
+  let h = "", n = 0, potreba = 0;
   const odsaz = sirka("● ", 9.8, false);
   for (const p of polozky || []) {
     const radky = zalom(p, 9.8, false, maxW - odsaz);
+    potreba += radky.length;
     radky.forEach((r, i) => {
       if (n >= maxRadku) return;
       h += i === 0 ? T(x, y + n * krok, `● ${r}`) : T(x + odsaz, y + n * krok, r);
       n++;
     });
   }
-  return { html: h, radku: n };
+  return { html: h, radku: n, potreba, oriznuto: potreba > maxRadku };   // potreba = kolik řádků by text potřeboval
 }
 /* Text na pozici x,y (pt). opts: size, b (tučně), serif, c (na střed x), r (zarovnat vpravo k x), ink (černá) */
 function T(x, y, text, opts = {}) {

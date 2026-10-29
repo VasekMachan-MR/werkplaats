@@ -50,6 +50,12 @@ const server = http.createServer((q, r) => {
   await p.click('[data-segment="vozidlo.verze"] >> text=EU');
   kontrola(await p.getAttribute('[data-segment="vozidlo.jednotka_tachometru"] button[aria-pressed="true"]', "data-hodnota") === '"km"', "EU verze vrátí km");
   kontrola(await p.isVisible("text=Stav při převzetí do opravy") && await p.isVisible("#sekce-odhad >> text=6") && await p.isVisible("#sekce-fotky >> text=7"), "pořadí: 6 Odhadovaná cena, 7 Fotky");
+  // zakázkový list: závady nad 8 řádků → nejde k podpisu (zákazník by podepsal neúplný list)
+  for (let i = 0; i < 9; i++) { await p.click('[data-pridat="zavady"]'); }
+  await p.evaluate(() => { document.querySelectorAll('textarea[data-radek="zavady"]').forEach((t, i) => { t.value = "Závada číslo " + (i + 1); t.dispatchEvent(new Event("input", { bubbles: true })); }); });
+  kontrola(/10 řádků z 8/.test(await p.textContent('[data-zbyva="zavady"]')) && /nevejdou/.test(await p.textContent("#co-chybi")), "závady nad 8 řádků: červené upozornění a nejde k podpisu");
+  while (await p.locator('[data-smazat="zavady"]').count() > 1) await p.click('[data-smazat="zavady"] >> nth=0');
+  await p.fill('textarea[data-radek="zavady"]', "");
   await p.fill('[data-pole="zakaznik.jmeno"]', "Jan Novák");
   await p.fill('[data-pole="zakaznik.ulice"]', "Lipová 12");
   await p.fill('[data-pole="zakaznik.psc"]', "500 02");

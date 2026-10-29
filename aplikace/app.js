@@ -516,6 +516,8 @@
     return `<div class="segment" data-segment="${cesta}">${moznosti.map(([hodnota, text]) =>
       `<button type="button" data-hodnota="${esc(JSON.stringify(hodnota))}" aria-pressed="${P[o][k] === hodnota}">${esc(text)}</button>`).join("")}</div>`;
   }
+  // odhad, kolik řádků zabere text na zakázkovém listu (cca 54 znaků na řádek); přesně to pak ověří náhled listu
+  const radkuNaListu = pole => (pole || []).filter(t => String(t).trim()).reduce((n, t) => n + Math.max(1, Math.ceil(String(t).trim().length / 54)), 0);
   function seznamRadku(klic, max) {
     return `<div class="seznam-radku" data-seznam="${klic}">${P.zakazka[klic].map((t, i) => `
       <div class="radek-polozky"><span class="tecka">●</span>
@@ -523,7 +525,7 @@
         <button type="button" class="tl smazat" data-smazat="${klic}" data-i="${i}" aria-label="Smazat řádek">×</button></div>`).join("")}
       </div>
       <div class="radek-tlacitek" style="margin-top:10px"><button type="button" class="tl tl-male" data-pridat="${klic}">＋ Přidat řádek</button>
-        <span class="napoveda">Na zakázkový list se vejde ${max} řádků (dlouhé položky se zalomí).</span></div>
+        <span class="napoveda" data-zbyva="${klic}" data-max="${max}">Na zakázkový list se vejde ${max} řádků (dlouhé položky se zalomí).</span></div>
       <div class="cipy">${RYCHLE[P.zakazka.jazyk][klic === "zavady" ? "zavady" : "stav"].map(t => `<button type="button" class="cip" data-cip="${klic}">${esc(t)}</button>`).join("")}</div>`;
   }
 
@@ -653,6 +655,8 @@
     if (!v.model.trim()) ch.push(["model", '[data-pole="vozidlo.model"]']);
     if (cisloZ(k.km_prijem) == null || isNaN(cisloZ(k.km_prijem))) ch.push(["stav tachometru", '[data-pole="zakazka.km_prijem"]']);
     if (!k.zavady.some(t => t.trim())) ch.push(["aspoň jedna závada", '#sekce-zavady textarea']);
+    if (radkuNaListu(k.zavady) > 8) ch.push(["závady se nevejdou na list (max. 8 řádků) – zkraťte nebo slučte", "#sekce-zavady"]);
+    if (radkuNaListu(k.stav_prijem) > 7) ch.push(["stav při převzetí se nevejde na list (max. 7 řádků)", "#sekce-stav"]);
     const tpSoubory = Object.values(P.tp || {}).filter(Boolean);
     const nahrava = P.fotky.filter(f => f.stav === "nahravam").length + tpSoubory.filter(f => f.stav === "nahravam").length;
     const chyba = P.fotky.filter(f => f.stav === "chyba").length + tpSoubory.filter(f => f.stav === "chyba").length;
@@ -663,6 +667,11 @@
   function kontrolaPripravenosti() {
     const b = document.getElementById("k-podpisu"), info = document.getElementById("co-chybi");
     if (!b || !P) return;
+    document.querySelectorAll("[data-zbyva]").forEach(el => {               // kolik řádků zakázkového listu je zabráno
+      const max = +el.dataset.max, n = radkuNaListu(P.zakazka[el.dataset.zbyva]);
+      el.textContent = n > max ? `Nevejde se: ${n} řádků z ${max} – zkraťte nebo slučte.` : `Na zakázkovém listu ${n} z ${max} řádků (dlouhé položky se zalomí).`;
+      el.style.color = n > max ? "var(--cervena)" : "";
+    });
     const ch = coChybi();
     b.disabled = ch.length > 0;
     info.hidden = !ch.length;
@@ -1109,9 +1118,13 @@
       app.querySelector("#smazat-muj-podpis").onclick = () => mujPad.smazat();
     }
     const podpisVyh = () => vyh || mujPad?.png() || null;
+    let pretece = "";                                      // text, který se na list nevejde (zákazník by podepsal neúplný list)
     const obnovNahled = async () => {
       try { await vykresliSablonu(iframe, "zakazkovy-list.html", dataZakazkovehoListu(odhadCisla, podpisVyh(), pad.png()), P.zakazka.jazyk); }
       catch (e) { hlaska("Náhled se nepodařil: " + chybaText(e), true); }
+      const r = iframe.contentWindow?.__posledniVysledek?.radky;
+      pretece = !r ? "" : r.zavady.potreba > r.zavady.max ? `Závady se nevejdou na list (${r.zavady.potreba} řádků z ${r.zavady.max})` : r.stav?.potreba > r.stav?.max ? `Stav při převzetí se nevejde na list (${r.stav.potreba} řádků z ${r.stav.max})` : "";
+      if (pretece) hlaska(pretece + " – vraťte se a zkraťte text.", true, 8000);
     };
     await obnovNahled();
     app.querySelector("#smazat-podpis").onclick = () => pad.smazat();
@@ -1128,6 +1141,7 @@
     app.querySelector("#ulozit").onclick = async e => {
       const b = e.currentTarget;
       if (b.dataset.bezi) return;                          // dvojí klepnutí nesmí založit dvě zakázky
+      if (pretece) return hlaska(pretece + " – vraťte se a zkraťte text.", true, 8000);
       b.dataset.bezi = "1"; b.disabled = true;
       try {
         if (!vyh && mujPad && !mujPad.prazdny()) {         // nový podpis přihlášeného → uložit do profilu
@@ -2072,6 +2086,9 @@
       : dataProtokolu({ z, cislo, f, podpisVyh: podpisVyh(), podpisZak: pad?.png() });
     const chybi = () => {
       const ch = [];
+      const rl = sablona === "zakazkovy-list.html" ? iframe.contentWindow?.__posledniVysledek?.radky : null;   // protokol: nic se nesmí oříznout
+      if (rl?.zavady && rl.zavady.potreba > rl.zavady.max) ch.push(`kratší popis prací (max. ${rl.zavady.max} řádků)`);
+      if (rl?.stav && rl.stav.potreba > rl.stav.max) ch.push(`kratší stav při předání (max. ${rl.stav.max} řádků)`);
       if (!vyh && (!mujPad || mujPad.prazdny())) ch.push("váš podpis");
       if (podpisZakPovinny && (!pad || pad.prazdny())) ch.push("podpis zákazníka");
       if (druh === "zalohova") { if (!(cisloZ(f.castka) > 0)) ch.push("částka zálohy"); if (!String(f.popis || "").trim()) ch.push("text položky"); }
