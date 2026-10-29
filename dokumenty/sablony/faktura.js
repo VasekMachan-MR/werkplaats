@@ -290,8 +290,22 @@ function strana1(d, tx) {
   if (d.podpisVyhotovil) h += IMG(podpisSrc(d.podpisVyhotovil), 63.0, 707.9, 220.4, 753.7);
   if (d.podpisZakaznik) h += `<img class="abs" src="${d.podpisZakaznik}" style="left:200pt;top:707pt;width:115pt;height:30pt;object-fit:contain">`;
 
+  // QR Platba (český standard SPD) – zákazník naskenuje v bankovní aplikaci, vyplní se účet, částka, VS i splatnost
+  if (!d.druh || d.druh === "zalohova") h += qrPlatba(d, celkem, 272.0, 295.0, 58.0);
+
   h += paticka(1, 2);
   return { html: `<section class="page">${h}</section>`, celkem };
+}
+
+function qrPlatba(d, castka, x, y, velikost) {
+  if (typeof qrcode !== "function" || !(castka > 0)) return "";
+  const vs = String(d.vs ?? d.cislo).replace(/\D/g, "").slice(0, 10);
+  const pole = [`ACC:${FIRMA.iban}`, `AM:${(Math.round(castka * 100) / 100).toFixed(2)}`, "CC:CZK", vs ? `X-VS:${vs}` : "",
+    d.splatnost ? `DT:${String(d.splatnost).replace(/-/g, "")}` : "", `MSG:${(d.druh === "zalohova" ? "ZALOHA " : "FAKTURA ") + d.cislo}`, "RN:MERCEDES RESTORATIONS"].filter(Boolean);
+  const q = qrcode(0, "M"); q.addData("SPD*1.0*" + pole.join("*")); q.make();
+  const n = q.getModuleCount(), m = velikost / n; let r = "";
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) if (q.isDark(i, j)) r += L(x + j * m, y + i * m, x + (j + 1) * m + 0.05, y + (i + 1) * m + 0.05, "#000");
+  return SVG(r);
 }
 
 function strana2(tx) {
