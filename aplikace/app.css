@@ -443,3 +443,14 @@ div.odkaz-radek { cursor: pointer; }
   .dlazdice-k b { font-size: 20px; }
   .dlazdice-k span { font-size: 12px; }
 }
+
+/* nic nesmí stránku roztáhnout do šířky (dlouhé názvy souborů bez mezer, VIN, e-maily) */
+html, body { overflow-x: clip; }
+.doklad > span:first-child, .udaje dd, .zakazka-radek .auto, .kontakty { min-width: 0; overflow-wrap: anywhere; }
+.doklad > .radek-tlacitek { flex: 0 0 auto; }
+@media (max-width: 600px) {
+  .doklad { flex-wrap: wrap; }
+  input[type="date"], input[type="time"], input[type="datetime-local"] { min-width: 0; max-width: 100%; }
+  .karta, .mrizka > *, .pole { min-width: 0; }
+  img, video, iframe, canvas { max-width: 100%; }
+}

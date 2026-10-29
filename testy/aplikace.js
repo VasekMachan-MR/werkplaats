@@ -402,6 +402,9 @@ const server = http.createServer((q, r) => {
     "archivní PDF se přiloží k zakázce (druh archiv, bez dokladu) a zobrazí v sekci Archiv");
   await p.click("#sekce-archiv [data-archiv-smazat]");
   await p.waitForSelector("#sekce-archiv >> text=Žádné archivní dokumenty");
+  // dlouhý název bez mezer (jako skutečné archivní PDF) – na iPhonu nesmí roztáhnout stránku
+  await p.setInputFiles("#archiv-nahrat", [{ name: "Zakázkový_list_W126_300SE_Petr_Chudíček_Cenová_nabídka_materiál.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF") }]);
+  await p.waitForSelector("#sekce-archiv [data-archiv-otevrit]", { timeout: 15000 });
   kontrola(await p.evaluate(() => !!window.__ULOZENO__.tabulky.soubory.find(f => f.druh === "archiv").smazano), "archivní PDF jde odebrat (jen do koše)");
   // smazat všechny díly (s potvrzením)
   await p.click("#smazat-dily");
@@ -543,6 +546,52 @@ const server = http.createServer((q, r) => {
   await p.click("#zrusit-zakazku"); await p.waitForFunction(() => document.querySelector("#stav-zakazky")?.value === "zruseno");
   kontrola(true, "zakázka s fakturou označena jako zrušená");
   odpovedPrompt = "2026-11-05";
+
+  // ---------- iPhone: žádná stránka se nesmí posouvat do stran ----------
+  {
+    const st = await p.evaluate(() => ({ z: window.__ULOZENO__.tabulky.zakazky.map(x => x.id), c: window.__ULOZENO__.tabulky.zakaznici.map(x => x.id), v: window.__ULOZENO__.tabulky.vozidla.map(x => x.id) }));
+    await p.setViewportSize({ width: 390, height: 844 });
+    const trasy = ["#/", "#/zakazky", "#/doklady", "#/zakaznici", "#/vozidla", "#/ucet", "#/lide", "#/zakaznik/novy",
+      ...st.z.flatMap(id => [`#/zakazka/${id}`, `#/zakazka/${id}/nabidka`, `#/zakazka/${id}/faktura`, `#/zakazka/${id}/protokol`, `#/zakazka/${id}/zaloha`, `#/zakazka/${id}/opravny`]),
+      ...st.c.map(id => `#/zakaznik/${id}`), ...st.v.map(id => `#/vozidlo/${id}`)];
+    const spatne = [];
+    for (const h of trasy) {
+      await p.evaluate(x => { location.hash = x; }, h); await p.waitForTimeout(900);
+      const r = await p.evaluate(() => {
+        const W = window.innerWidth; if (document.documentElement.scrollWidth <= W + 1) return null;
+        const pres = [...document.querySelectorAll("body *")].filter(e => { const b = e.getBoundingClientRect(); return b.width && b.right > W + 1 && getComputedStyle(e).position !== "fixed"; })
+          .filter(e => ![...e.children].some(ch => ch.getBoundingClientRect().right > W + 1))
+          .slice(0, 6).map(e => `${e.tagName.toLowerCase()}${e.id ? "#" + e.id : ""}.${String(e.className).split(" ").join(".")} → ${Math.round(e.getBoundingClientRect().right)}px`);
+        return { sw: document.documentElement.scrollWidth, pres };
+      });
+      if (r) spatne.push(h.replace(/[0-9a-f-]{36}/, "ID") + ` (${r.sw}px): ` + r.pres.join(" | "));
+    }
+    if (spatne.length) console.log("PRETEKA:\n" + [...new Set(spatne)].join("\n"));
+    kontrola(!spatne.length, "iPhone: žádná stránka se neposouvá do stran (" + trasy.length + " stránek)");
+    await p.setViewportSize({ width: 834, height: 1194 });
+  }
+
+  // ---------- iPhone: žádná stránka se nesmí posouvat do stran ----------
+  {
+    const st = await p.evaluate(() => ({ z: window.__ULOZENO__.tabulky.zakazky.map(x => x.id), c: window.__ULOZENO__.tabulky.zakaznici.map(x => x.id), v: window.__ULOZENO__.tabulky.vozidla.map(x => x.id) }));
+    await p.setViewportSize({ width: 390, height: 844 });
+    const trasy = ["#/", "#/zakazky", "#/doklady", "#/zakaznici", "#/vozidla", "#/ucet", "#/lide", ...st.z.map(id => `#/zakazka/${id}`), ...st.c.map(id => `#/zakaznik/${id}`), ...st.v.map(id => `#/vozidlo/${id}`)];
+    const spatne = [];
+    for (const h of trasy) {
+      await p.evaluate(x => { location.hash = x; }, h); await p.waitForTimeout(700);
+      const r = await p.evaluate(() => {
+        const W = window.innerWidth; if (document.documentElement.scrollWidth <= W + 1) return null;
+        const pres = [...document.querySelectorAll("body *")].filter(e => { const b = e.getBoundingClientRect(); return b.width && b.right > W + 1; })
+          .filter(e => ![...e.children].some(ch => ch.getBoundingClientRect().right > W + 1))
+          .slice(0, 6).map(e => `${e.tagName.toLowerCase()}${e.id ? "#" + e.id : ""}.${String(e.className).split(" ").join(".")} → ${Math.round(e.getBoundingClientRect().right)}px`);
+        return { sw: document.documentElement.scrollWidth, pres };
+      });
+      if (r) spatne.push(h.replace(/[0-9a-f-]{36}/, "ID") + ` (${r.sw}px): ` + r.pres.join(" | "));
+    }
+    if (spatne.length) console.log("PRETEKA:\n" + [...new Set(spatne)].join("\n"));
+    kontrola(!spatne.length, "iPhone: žádná stránka se neposouvá do stran (" + trasy.length + " stránek)");
+    await p.setViewportSize({ width: 834, height: 1194 });
+  }
 
   // ---------- iPhone ----------
   const ph = await b.newContext({ ...devices["iPhone 14"], locale: "cs-CZ" });
