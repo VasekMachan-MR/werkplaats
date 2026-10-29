@@ -416,7 +416,7 @@ const server = http.createServer((q, r) => {
   await p.click("#sekce-archiv [data-archiv-smazat]");
   await p.waitForSelector("#sekce-archiv >> text=Žádné archivní dokumenty");
   // dlouhý název bez mezer (jako skutečné archivní PDF) – na iPhonu nesmí roztáhnout stránku
-  await p.setInputFiles("#archiv-nahrat", [{ name: "Zakázkový_list_W126_300SE_Petr_Chudíček_Cenová_nabídka_materiál.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF") }]);
+  await p.setInputFiles("#archiv-nahrat", [{ name: "Zakázkový_list_W126_300SE_Jan_Novák_Cenová_nabídka_materiál.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF") }]);
   await p.waitForSelector("#sekce-archiv [data-archiv-otevrit]", { timeout: 15000 });
   kontrola(await p.evaluate(() => !!window.__ULOZENO__.tabulky.soubory.find(f => f.druh === "archiv").smazano), "archivní PDF jde odebrat (jen do koše)");
   // smazat všechny díly (s potvrzením)

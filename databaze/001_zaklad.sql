@@ -16,7 +16,7 @@ create table zakaznici (
   id uuid primary key default gen_random_uuid(),
   je_firma boolean not null default false,
   jmeno text not null,                         -- jméno a příjmení nebo název firmy
-  kontaktni_osoba text,                        -- např. Miguel u Farkasova International
+  kontaktni_osoba text,                        -- např. kontaktní osoba u firmy
   ico text, dic text,
   ulice text, mesto text, psc text, zeme text default 'Česká Republika',
   telefon text, email text,
