@@ -369,6 +369,15 @@ const server = http.createServer((q, r) => {
   kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.soubory.some(f => f.faze === "prubeh" && f.druh === "foto")) && /Během opravy/.test(await p.textContent("#sekce-fotky-detail")),
     "fotka přidaná během opravy se uloží do skupiny „Během opravy“");
   await foto("21-uprava-prijmu-fotky");
+  // archiv (legacy): původní PDF jen jako příloha zakázky
+  await p.setInputFiles("#archiv-nahrat", [{ name: "Zakazkovy_list_stary.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF") }]);
+  await p.waitForSelector("#sekce-archiv [data-archiv-otevrit]", { timeout: 15000 });
+  const ar = await p.evaluate(() => window.__ULOZENO__.tabulky.soubory.filter(f => f.druh === "archiv"));
+  kontrola(ar.length === 1 && /^archiv\/7378\/.+\.pdf$/.test(ar[0].klic) && ar[0].nazev === "Zakazkovy_list_stary.pdf" && !ar[0].doklad_id && /Zakazkovy_list_stary\.pdf/.test(await p.textContent("#sekce-archiv")),
+    "archivní PDF se přiloží k zakázce (druh archiv, bez dokladu) a zobrazí v sekci Archiv");
+  await p.click("#sekce-archiv [data-archiv-smazat]");
+  await p.waitForSelector("#sekce-archiv >> text=Žádné archivní dokumenty");
+  kontrola(await p.evaluate(() => !!window.__ULOZENO__.tabulky.soubory.find(f => f.druh === "archiv").smazano), "archivní PDF jde odebrat (jen do koše)");
   // smazat všechny díly (s potvrzením)
   await p.click("#smazat-dily");
   await p.waitForSelector("#stav-dilu >> text=✓ Uloženo");

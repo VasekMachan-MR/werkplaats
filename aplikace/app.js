@@ -1203,9 +1203,11 @@
         ${[["Jméno", esc(c.jmeno)], ["Kontaktní osoba", esc(c.kontaktni_osoba)], ["Telefon", telOdkaz(c.telefon)], ["E-mail", mailOdkaz(c.email)], ["Adresa", esc([c.ulice, [c.psc, c.mesto].filter(Boolean).join(" "), c.zeme].filter(Boolean).join(", "))], ["IČO", esc(c.ico)], ["DIČ", esc(c.dic)]]
           .filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${b}</dd></div>`).join("")}</dl></section>
       <section class="karta" id="sekce-prijem-detail"></section>
-      <section class="karta" id="sekce-fotky-detail"></section>`;
+      <section class="karta" id="sekce-fotky-detail"></section>
+      <section class="karta" id="sekce-archiv"></section>`;
     vykresliPrijemDetail(false);
     vykresliFotkyDetail();
+    vykresliArchiv();
     app.querySelector("#stav-zakazky").onchange = async e => {
       const novy = e.target.value, stary = E.z.stav;
       try { await db.upravit("zakazky", id, { stav: novy }); E.z.stav = novy; z.stav = novy;
@@ -1349,6 +1351,45 @@
         catch (e) { hlaska(chybaText(e), true); }
       });
     } catch (e) { el.insertAdjacentHTML("beforeend", `<div class="info chyba">${esc(chybaText(e))}</div>`); }
+  }
+  /* ---------- archiv (legacy): původní PDF ze starého systému (Excel), jen pro čtení, nic se z nich nedigitalizuje ---------- */
+  function vykresliArchiv() {
+    const el = document.getElementById("sekce-archiv"); if (!el || !E) return;
+    const arch = (E.z.soubory || []).filter(s => s.druh === "archiv" && !s.smazano).sort((a, b) => (a.nazev || "").localeCompare(b.nazev || "", "cs"));
+    el.innerHTML = `<h2>Archiv (legacy)${arch.length ? ` <span class="mutted" style="font-weight:400">${arch.length} PDF</span>` : ""}</h2>
+      <p class="napoveda" style="margin:0 0 10px">Původní doklady ze starého systému – jen k nahlédnutí, nečíslují se a nejsou v E-servisce.</p>
+      <div class="doklady">${arch.map(f => `<div class="doklad"><span>📄 ${esc(f.nazev || "dokument.pdf")}</span><span class="radek-tlacitek">
+        <button class="tl tl-male" data-archiv-otevrit="${esc(f.klic)}">Otevřít</button>
+        ${uzivatel.role === "majitel" ? `<button class="tl tl-male tl-kos" data-archiv-smazat="${f.id}" aria-label="Odebrat z archivu">🗑</button>` : ""}</span></div>`).join("")
+        || `<p class="mutted" style="margin:0">Žádné archivní dokumenty.</p>`}</div>
+      <div class="radek-tlacitek" style="margin-top:12px"><label class="tl">📎 Přidat archivní PDF<input type="file" accept="application/pdf" multiple hidden id="archiv-nahrat"></label></div>
+      <div id="archiv-stav"></div>`;
+    el.querySelectorAll("[data-archiv-otevrit]").forEach(b => b.onclick = async () => {
+      const okno = window.open("", "_blank");
+      try { const u = await db.odkaz(b.dataset.archivOtevrit, 600); if (okno) okno.location = u; else location.href = u; }
+      catch (e) { okno?.close(); hlaska(chybaText(e), true); }
+    });
+    el.querySelectorAll("[data-archiv-smazat]").forEach(b => b.onclick = async () => {
+      if (!confirm("Odebrat tento dokument z archivu zakázky?")) return;
+      try { const t = new Date().toISOString(); await db.upravit("soubory", b.dataset.archivSmazat, { smazano: t });
+        const s = E.z.soubory.find(x => x.id === b.dataset.archivSmazat); if (s) s.smazano = t; vykresliArchiv(); hlaska("Odebráno."); }
+      catch (e) { hlaska(chybaText(e), true); }
+    });
+    el.querySelector("#archiv-nahrat").onchange = async e => {
+      const soubory = [...e.target.files].filter(f => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name)); e.target.value = "";
+      if (!soubory.length) return;
+      const zak = E, box = el.querySelector("#archiv-stav"); let ok = 0;
+      for (const f of soubory) {
+        box.innerHTML = `<div class="info">Nahrávám ${esc(f.name)}…</div>`;
+        try {
+          const klic = `archiv/${zak.z.cislo}/${uuid()}.pdf`;
+          await db.nahrat(klic, f, "application/pdf", () => {});
+          const [rad] = await db.vlozit("soubory", [{ zakazka_id: zak.id, vozidlo_id: zak.z.vozidlo_id || zak.z.vozidla?.id, druh: "archiv", klic, nazev: f.name, velikost: f.size, mime: "application/pdf" }]);
+          (zak.z.soubory ||= []).push(rad || { druh: "archiv", klic, nazev: f.name }); ok++;
+        } catch (er) { hlaska(`${f.name}: ${chybaText(er)}`, true); }
+      }
+      if (E === zak) { vykresliArchiv(); if (ok) hlaska(`Do archivu přidáno ${ok} PDF.`); }
+    };
   }
   async function nahratFotkyKZakazce(soubory) {
     const zak = E, faze = E.fazeFotek || "prubeh", box = document.getElementById("nahravani-detail");
