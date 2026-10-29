@@ -395,3 +395,41 @@ div.odkaz-radek { cursor: pointer; }
 
 /* řádky opravného dokladu */
 .radek-opravy { display: grid; grid-template-columns: 1fr 130px 44px; gap: 8px; margin-bottom: 8px; }
+
+/* ---------- menu: ☰ jen na úzkém displeji (iPhone); Mac a iPad beze změny ---------- */
+.menu-tl, .jen-uzke { display: none; }
+.menu-odkazy { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 600px) {
+  .lista { padding-top: calc(8px + env(safe-area-inset-top)); padding-bottom: 8px; }
+  .znacka-mr { width: 34px; height: 34px; font-size: 14px; }
+  .menu-tl { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; font-size: 20px; padding: 0; }
+  .menu-odkazy {
+    display: none; position: absolute; left: 0; right: 0; top: 100%;
+    flex-direction: column; align-items: stretch; gap: 4px; background: var(--navy);
+    padding: 6px max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left));
+    box-shadow: 0 12px 24px rgba(9, 22, 40, .35); border-top: 1px solid rgba(255,255,255,.12);
+  }
+  .lista.menu-otevrene .menu-odkazy { display: flex; }
+  .lista .menu-odkazy .tl { justify-content: flex-start; min-height: 48px; font-size: 17px; padding: 10px 14px; border-color: transparent; }
+  .lista .menu-odkazy .tl[aria-current="page"] { background: rgba(255,255,255,.12); }
+  .lista .menu-odkazy .uzivatel-tl span { display: inline; max-width: none; }
+  .lista .menu-odkazy .uzivatel-tl { margin-top: 6px; border-top: 1px solid rgba(255,255,255,.12); border-radius: 0 0 10px 10px; }
+
+  /* spodní lišta (příjem, vystavení dokladu) na jeden řádek */
+  .akce-dole { padding-top: 8px; padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
+  .akce-dole .vnitrek { gap: 6px; }
+  .akce-dole .jen-siroke { display: none; }
+  .akce-dole .jen-uzke { display: inline; }
+  .akce-dole .co-chybi { flex: 1 1 auto; text-align: center; font-size: 0; padding: 4px 2px; }
+  .akce-dole .co-chybi::after { content: attr(data-kratce); font-size: 13px; text-decoration: underline; text-underline-offset: 2px; }
+  .akce-dole .tl-velke { min-height: 46px; font-size: 15px; padding: 8px 14px; white-space: nowrap; }
+  .akce-dole .tl { white-space: nowrap; }
+
+  /* o něco úspornější obsah */
+  main { padding-top: 14px; }
+  .hlavicka-prehledu { margin-bottom: 12px; }
+  .dlazdice { gap: 8px; }
+  .dlazdice-k { padding: 10px 12px; }
+  .dlazdice-k b { font-size: 20px; }
+  .dlazdice-k span { font-size: 12px; }
+}

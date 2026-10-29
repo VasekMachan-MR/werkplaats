@@ -546,6 +546,15 @@ const server = http.createServer((q, r) => {
   await q.screenshot({ path: path.join(OUT, "08-iphone.png"), fullPage: false });
   const sirka = await q.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
   kontrola(sirka, "na iPhonu se stránka nevodorovně neposouvá");
+  const vyskaListy = await q.evaluate(() => document.querySelector(".lista").getBoundingClientRect().height);
+  kontrola(vyskaListy < 80 && await q.isVisible(".menu-tl") && !(await q.isVisible('.menu-odkazy a[href="#/zakazky"]')), `iPhone: horní lišta jen s ☰ (${Math.round(vyskaListy)} px)`);
+  const vyskaDole = await q.evaluate(() => document.querySelector(".akce-dole").getBoundingClientRect().height);
+  kontrola(vyskaDole < 90 && /Chybí \d+ údaj/.test(await q.evaluate(() => getComputedStyle(document.querySelector("#co-chybi"), "::after").content)), `iPhone: spodní lišta příjmu na jeden řádek (${Math.round(vyskaDole)} px)`);
+  await q.click(".menu-tl"); await q.waitForSelector('.menu-odkazy a[href="#/zakazky"]', { state: "visible" });
+  await q.screenshot({ path: path.join(OUT, "08-iphone-menu.png"), fullPage: false });
+  await q.click('.menu-odkazy a[href="#/"]'); await q.waitForSelector(".dlazdice-k, .prazdne");
+  kontrola(!(await q.isVisible('.menu-odkazy a[href="#/zakazky"]')), "iPhone: menu se po výběru zavře");
+  await q.screenshot({ path: path.join(OUT, "08-iphone-prehled.png"), fullPage: false });
 
   // ---------- odkaz „zapomenuté heslo“ z e-mailu ----------
   const ob = await ph.newPage(); await ob.goto(URL0 + "#access_token=x&expires_in=3600&refresh_token=y&token_type=bearer&type=recovery");

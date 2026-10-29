@@ -213,6 +213,7 @@
     await dokoncitUkladani();
     if (!uzivatel || obnovaHesla) return;
     const h = location.hash || "#/";
+    zavriMenu(); oznacMenu();
     for (const [re, fn] of trasy) { const m = h.match(re); if (m) { window.scrollTo(0, 0); return fn(...m.slice(1)); } }
     location.hash = "#/";
   }
@@ -221,8 +222,24 @@
   function lista() {
     const el = document.getElementById("lista-vpravo");
     if (!uzivatel) { el.innerHTML = ""; return; }
-    el.innerHTML = `<a class="tl tl-male" href="#/">Přehled</a><a class="tl tl-male" href="#/zakazky">Zakázky</a><a class="tl tl-male" href="#/zakaznici">Zákazníci</a><a class="tl tl-male" href="#/vozidla">Vozidla</a><a class="tl tl-male" href="#/doklady">Doklady</a>
-      <a class="tl tl-male uzivatel-tl" href="#/ucet" title="Můj účet">👤 <span>${esc(uzivatel.jmeno)}</span></a>`;
+    // na iPhonu (úzký displej) se odkazy schovají pod ☰, na Macu a iPadu zůstávají v řadě
+    el.innerHTML = `<button type="button" class="tl tl-male menu-tl" aria-expanded="false" aria-label="Menu">☰</button>
+      <nav class="menu-odkazy"><a class="tl tl-male" href="#/">Přehled</a><a class="tl tl-male" href="#/zakazky">Zakázky</a><a class="tl tl-male" href="#/zakaznici">Zákazníci</a><a class="tl tl-male" href="#/vozidla">Vozidla</a><a class="tl tl-male" href="#/doklady">Doklady</a>
+      <a class="tl tl-male uzivatel-tl" href="#/ucet" title="Můj účet">👤 <span>${esc(uzivatel.jmeno)}</span></a></nav>`;
+    const hl = el.closest(".lista"), tl = el.querySelector(".menu-tl");
+    tl.onclick = () => { const o = hl.classList.toggle("menu-otevrene"); tl.setAttribute("aria-expanded", o); tl.textContent = o ? "✕" : "☰"; };
+    el.querySelector(".menu-odkazy").onclick = e => { if (e.target.closest("a")) zavriMenu(); };
+    oznacMenu();
+  }
+  function zavriMenu() {
+    const hl = document.querySelector(".lista"), tl = hl?.querySelector(".menu-tl");
+    if (!hl || !tl) return; hl.classList.remove("menu-otevrene"); tl.setAttribute("aria-expanded", "false"); tl.textContent = "☰";
+  }
+  function oznacMenu() {
+    const h = location.hash || "#/";
+    const cil = h === "#/" || h === "#" ? "#/" : /^#\/(zakazk|novy|hotovo)/.test(h) ? "#/zakazky" : /^#\/zakaznik/.test(h) ? "#/zakaznici"
+      : /^#\/vozidl/.test(h) ? "#/vozidla" : /^#\/doklady/.test(h) ? "#/doklady" : /^#\/(ucet|lide)/.test(h) ? "#/ucet" : "";
+    document.querySelectorAll(".menu-odkazy a").forEach(a => a.getAttribute("href") === cil ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
   }
 
   /* ================= přihlášení ================= */
@@ -567,10 +584,10 @@
       </section>
 
       <div class="akce-dole"><div class="vnitrek">
-        <button type="button" class="tl tl-text tl-nebezpecne" id="zahodit">Zahodit příjem</button>
+        <button type="button" class="tl tl-text tl-nebezpecne" id="zahodit">Zahodit<span class="jen-siroke"> příjem</span></button>
         <span class="stav-ulozeni" id="stav-ulozeni"></span>
         <button type="button" class="co-chybi" id="co-chybi" hidden></button>
-        <button type="button" class="tl tl-hlavni tl-velke" id="k-podpisu" disabled>Náhled a podpis →</button>
+        <button type="button" class="tl tl-hlavni tl-velke" id="k-podpisu" disabled><span class="jen-siroke">Náhled a podpis</span><span class="jen-uzke">Podpis</span> →</button>
       </div></div>`;
 
     vazbyFormulare();
@@ -603,6 +620,7 @@
     info.hidden = !ch.length;
     const su = document.getElementById("stav-ulozeni"); if (su) su.hidden = ch.length > 0;
     info.textContent = ch.length ? "Chybí: " + ch.map(c => c[0]).join(", ") : "";
+    info.dataset.kratce = ch.length ? `Chybí ${ch.length} ${ch.length === 1 ? "údaj" : ch.length < 5 ? "údaje" : "údajů"}` : "";
     app.querySelectorAll(".chybi").forEach(e => e.classList.remove("chybi"));
     if (kontrolaPripravenosti.ukazat) ch.forEach(([, sel]) => app.querySelector(sel)?.classList.add("chybi"));
   }
@@ -1991,7 +2009,8 @@
     const kontrola = () => {
       const ku = app.querySelector("#k-uhrade"); if (ku) ku.textContent = kc(druh === "opravny" ? celkemOpravy() : s.celkem + odecty().reduce((a, o) => a + o.castka, 0));
       const ch = chybi(), b = app.querySelector("#vystavit"), i = app.querySelector("#co-chybi");
-      b.disabled = ch.length > 0; i.hidden = !ch.length; i.textContent = ch.length ? "Chybí: " + ch.join(", ") : ""; };
+      b.disabled = ch.length > 0; i.hidden = !ch.length; i.textContent = ch.length ? "Chybí: " + ch.join(", ") : "";
+      i.dataset.kratce = ch.length ? `Chybí ${ch.length} ${ch.length === 1 ? "údaj" : ch.length < 5 ? "údaje" : "údajů"}` : ""; };
     let cekani = null;
     const obnov = () => { clearTimeout(cekani); cekani = setTimeout(async () => { try { await vykresliSablonu(iframe, sablona, data(), jazyk); } catch (e) { hlaska("Náhled se nepodařil: " + chybaText(e), true); } kontrola(); }, 250); };
 
