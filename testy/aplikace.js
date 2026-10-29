@@ -451,10 +451,11 @@ const server = http.createServer((q, r) => {
     if (sel === "#podpis") kontrola(await m.isDisabled("#ulozit"), "jen s podpisem zákazníka ještě nejde uložit");
   }
   kontrola(!(await m.isDisabled("#ulozit")), "s oběma podpisy jde uložit");
-  await m.click("#ulozit");
+  await m.evaluate(() => { const b = document.querySelector("#ulozit"); b.click(); b.click(); });   // dvojí klepnutí
   await m.waitForSelector("text=Zakázkový list uložen");
   const um = await m.evaluate(() => ({ lide: window.__ULOZENO__.lide, podpisy: window.__ULOZENO__.tabulky.podpisy, pdf: Object.entries(window.__ULOZENO__.soubory).filter(([k]) => k.endsWith(".pdf")).map(([, v]) => Array.from(v)) }));
   kontrola(/^data:image\/png/.test(um.lide.find(u => u.id === "u2").podpis_obrazek), "podpis mechanika uložen do jeho profilu");
+  kontrola(await m.evaluate(() => window.__ULOZENO__.tabulky.zakazky.length) === 1, "dvojí klepnutí na Podepsat a uložit založí jen jednu zakázku");
   kontrola(um.podpisy.some(x => x.role === "vyhotovil" && x.jmeno === "Petr Mechanik" && x.uzivatel_id === "u2" && x.zpusob === "ipad"), "podpis Vyhotovil = Petr Mechanik");
   fs.writeFileSync(path.join(OUT, "mechanik.pdf"), Buffer.from(um.pdf[0]));
   const txt = require("child_process").execFileSync("pdftotext", ["-l", "1", path.join(OUT, "mechanik.pdf"), "-"]).toString();

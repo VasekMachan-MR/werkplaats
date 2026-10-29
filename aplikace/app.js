@@ -1099,12 +1099,17 @@
       if (P.vysledek) return hlaska("Zakázka už je založená – údaje upravíte v detailu zakázky.", true);
       P.krok = "formular"; ulozKoncept(); vykresliFormular();
     };
-    app.querySelector("#ulozit").onclick = async () => {
-      if (!vyh && mujPad && !mujPad.prazdny()) {           // nový podpis přihlášeného → uložit do profilu
-        try { const png = mujPad.png(); await db.ulozitMujPodpis(uzivatel.id, png); uzivatel.podpis_obrazek = png; }
-        catch (e) { return hlaska("Váš podpis se nepodařilo uložit: " + chybaText(e), true); }
-      }
-      ulozitPrijem(iframe, podpisVyh(), pad.png(), !vyh);
+    app.querySelector("#ulozit").onclick = async e => {
+      const b = e.currentTarget;
+      if (b.dataset.bezi) return;                          // dvojí klepnutí nesmí založit dvě zakázky
+      b.dataset.bezi = "1"; b.disabled = true;
+      try {
+        if (!vyh && mujPad && !mujPad.prazdny()) {         // nový podpis přihlášeného → uložit do profilu
+          try { const png = mujPad.png(); await db.ulozitMujPodpis(uzivatel.id, png); uzivatel.podpis_obrazek = png; }
+          catch (e) { return hlaska("Váš podpis se nepodařilo uložit: " + chybaText(e), true); }
+        }
+        await ulozitPrijem(iframe, podpisVyh(), pad.png(), !vyh);
+      } finally { if (b.isConnected) { delete b.dataset.bezi; b.disabled = false; } }
     };
     uklid = () => { window.removeEventListener("resize", meritko); pad.zrus(); mujPad?.zrus(); };
   }
@@ -2260,10 +2265,13 @@
       const d = Object.fromEntries(new FormData(f)); for (const k in d) { d[k] = d[k].trim(); if (!d[k] && k !== "jmeno") d[k] = null; }
       if (!d.jmeno) return hlaska("Vyplňte jméno.", true);
       d.je_firma = jeFirma; d.jazyk = jazyk;
+      if (f.dataset.bezi) return;                          // dvojí odeslání nesmí založit dva zákazníky
+      const tl = f.querySelector('[type="submit"]'); f.dataset.bezi = "1"; if (tl) tl.disabled = true;
       try {
         if (novy) { const nid = await db.ulozitZakaznika(d); hlaska("Zákazník uložen."); location.hash = `#/zakaznik/${nid}`; }
         else { await db.upravit("zakaznici", id, d); app.querySelector("#stav").textContent = "✓ Uloženo"; hlaska("Změny uloženy."); }
       } catch (err) { hlaska("Nepodařilo se uložit: " + chybaText(err), true); }
+      finally { delete f.dataset.bezi; if (tl) tl.disabled = false; }
     };
   }
 
