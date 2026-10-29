@@ -561,6 +561,17 @@ const server = http.createServer((q, r) => {
   kontrola(true, "zakázka s fakturou označena jako zrušená");
   odpovedPrompt = "2026-11-05";
 
+  // ---------- nová verze aplikace: uprostřed práce jen lišta, obnoví se až v klidu ----------
+  {
+    const zid = await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky[0].id);
+    await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid); await p.waitForSelector("#sekce-fotky-detail");
+    await p.evaluate(() => { window.__OBNOVENO__ = 0; window.__OBNOVIT__ = () => { window.__OBNOVENO__++; }; window.__TEST_NOVA_VERZE__(); });
+    kontrola(await p.isVisible("#nova-verze >> text=Je k dispozici nová verze") && await p.evaluate(() => window.__OBNOVENO__) === 0, "nová verze uprostřed práce: jen lišta „Obnovit“, stránka se sama neobnoví");
+    await p.evaluate(() => { location.hash = "#/"; }); await p.waitForTimeout(500);
+    kontrola(await p.evaluate(() => window.__OBNOVENO__) === 1, "po návratu na Přehled se nová verze načte sama");
+    await p.evaluate(() => document.getElementById("nova-verze")?.remove());
+  }
+
   // ---------- nabídka nad 13 řádků nejde vystavit (jinak by PDF řádky i částku ořízlo) ----------
   {
     const zid = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const z = T.zakazky.find(x => x.stav !== "zruseno") || T.zakazky[0];

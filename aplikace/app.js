@@ -209,7 +209,8 @@
     };
   }
   const db = window.__WERK_DB__ || vytvorDb();
-  let uzivatel = null;      // {id, jmeno, role, email, aktivni, podpis_obrazek}
+  let uzivatel = null;
+  let novaVerze = false;    // na serveru je novější verze aplikace (service worker ji už převzal)      // {id, jmeno, role, email, aktivni, podpis_obrazek}
 
   /* ================= směrování ================= */
   const trasy = [
@@ -234,6 +235,7 @@
     if (!uzivatel || obnovaHesla) return;
     const h = location.hash || "#/";
     zavriMenu(); oznacMenu();
+    if (novaVerze) obnovitKdyzLzeTo();
     for (const [re, fn] of trasy) { const m = h.match(re); if (m) { window.scrollTo(0, 0); return fn(...m.slice(1)); } }
     location.hash = "#/";
   }
@@ -2511,10 +2513,26 @@
     lista();
     navigace();
   }
+  /* ================= nová verze aplikace ================= */
+  // obnovit jen když se zrovna nic nedělá (přehled, seznamy); uprostřed příjmu, faktury nebo podpisu ukázat lištu „Obnovit“
+  let obnoveno = false;
+  function obnovitKdyzLzeTo() {
+    if (!novaVerze || obnoveno) return;
+    const klid = ["", "#", "#/", "#/zakazky", "#/zakaznici", "#/vozidla", "#/doklady"].includes(location.hash)
+      && !document.querySelector(".prekryv") && !Object.keys(cekajiciUlozeni).length;
+    if (klid) { obnoveno = true; window.__OBNOVIT__ ? window.__OBNOVIT__() : location.reload(); return; }
+    if (document.getElementById("nova-verze")) return;
+    document.body.insertAdjacentHTML("beforeend", `<div class="nova-verze" id="nova-verze" role="status"><span>Je k dispozici nová verze aplikace.</span>
+      <button type="button" class="tl tl-male tl-hlavni" id="nova-verze-obnovit">Obnovit</button><button type="button" class="tl tl-male" id="nova-verze-pozdeji" aria-label="Později">✕</button></div>`);
+    document.getElementById("nova-verze-obnovit").onclick = async () => { await dokoncitUkladani(); obnoveno = true; window.__OBNOVIT__ ? window.__OBNOVIT__() : location.reload(); };
+    document.getElementById("nova-verze-pozdeji").onclick = () => document.getElementById("nova-verze")?.remove();
+  }
+  window.__TEST_NOVA_VERZE__ = () => { novaVerze = true; obnovitKdyzLzeTo(); };   // jen pro automatické testy
+
   if ("serviceWorker" in navigator && location.protocol === "https:") {
     // nová verze aplikace převezme stránku → jednou obnovit, ať se hned načte nový kód
-    const mel = !!navigator.serviceWorker.controller; let obnoveno = false;
-    navigator.serviceWorker.addEventListener("controllerchange", () => { if (mel && !obnoveno) { obnoveno = true; location.reload(); } });
+    const mel = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener("controllerchange", () => { if (mel) { novaVerze = true; obnovitKdyzLzeTo(); } });
     navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(r => {
       document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") r.update().catch(() => {}); });
     }).catch(() => {});
