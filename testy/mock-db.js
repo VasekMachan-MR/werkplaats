@@ -84,6 +84,7 @@ window.__WERK_DB__ = (() => {
       if (T.doklady.some(x => x.zakazka_id === d.zakazka_id && x.druh === d.druh && x.verze > d.verze)) throw new Error("Smazat jde jen poslední verzi");
       if (d.zaplaceno) throw new Error(`Doklad ${d.cislo} je označený jako zaplacený – nejdřív zrušte úhradu`);
       if (d.druh === "zalohova" && T.doklady.some(x => x.zakazka_id === d.zakazka_id && x.druh === "faktura")) throw new Error(`Záloha ${d.cislo} je odečtená v konečné faktuře – nejdřív smažte fakturu`);
+      if (["faktura", "zalohova"].includes(d.druh) && T.doklady.some(x => x.zakazka_id === d.zakazka_id && x.druh === "opravny")) throw new Error(`K zakázce existuje opravný doklad – doklad ${d.cislo} už nejde smazat`);
       T.doklady = T.doklady.filter(x => x.id !== did); T.soubory = T.soubory.filter(x => x.doklad_id !== did && x.id !== d.pdf_soubor_id);
       const z = T.zakazky.find(x => x.id === d.zakazka_id);
       if (!T.doklady.some(x => x.zakazka_id === d.zakazka_id && x.druh === d.druh)) {

@@ -1132,6 +1132,8 @@
   function lzeSmazatDoklad(d, vsechny) {
     if (uzivatel?.role !== "majitel" || !MAZATELNE_DOKLADY.includes(d.druh) || d.zaplaceno || d.odeslano_uol) return false;
     if (!vsechny || d.verze == null) return true;
+    // faktura / záloha, ke které je opravný doklad, se už nemaže (opravný doklad na ni odkazuje číslem)
+    if (["faktura", "zalohova"].includes(d.druh) && vsechny.some(x => x.druh === "opravny" && x.zakazka_id === d.zakazka_id)) return false;
     return !vsechny.some(x => x.druh === d.druh && x.zakazka_id === d.zakazka_id && (x.verze || 0) > d.verze);
   }
   async function smazatDokladDotaz(d, potom) {

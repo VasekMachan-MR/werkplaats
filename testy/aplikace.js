@@ -270,6 +270,16 @@ const server = http.createServer((q, r) => {
   const txtOp = require("child_process").execFileSync("pdftotext", ["-layout", path.join(OUT, "7377-6.pdf"), "-"]).toString();
   kontrola(/OPRAVNÝ DOKLAD/.test(txtOp) && /Oprava faktury 7377-3 ze dne/.test(txtOp) && /Důvod: Sleva dohodnutá se zákazníkem/.test(txtOp) && /-1 000,00 Kč/.test(txtOp), "PDF opravného dokladu: odkaz na fakturu 7377-3, důvod, −1 000,00 Kč");
 
+  // faktura / záloha s opravným dokladem už nejde smazat (ani když se zruší úhrada)
+  {
+    await p.evaluate(() => window.__ULOZENO__.tabulky.doklady.filter(d => ["7377-3", "7377-5"].includes(d.cislo)).forEach(d => { d._zapl = d.zaplaceno; d.zaplaceno = null; }));
+    await p.evaluate(() => { location.hash = "#/doklady"; }); await p.waitForSelector(".doklad >> text=7377-6");
+    kontrola(!(await p.isVisible('.doklad:has(b:text-is("7377-3")) [data-smazat-doklad]')) && !(await p.isVisible('.doklad:has(b:text-is("7377-5")) [data-smazat-doklad]')), "faktura i záloha s opravným dokladem nemají koš");
+    const chyba = await p.evaluate(async () => { const d = window.__ULOZENO__.tabulky.doklady.find(x => x.cislo === "7377-3"); try { await window.__WERK_DB__.smazatDoklad(d.id); return ""; } catch (e) { return e.message; } });
+    kontrola(/opravný doklad/.test(chyba), "server odmítne smazat fakturu s opravným dokladem");
+    await p.evaluate(() => window.__ULOZENO__.tabulky.doklady.forEach(d => { if ("_zapl" in d) { d.zaplaceno = d._zapl; delete d._zapl; } }));
+  }
+
   // ---------- příjem 2: stejné auto, stávající zákazník přes hledání ----------
   await p.goto(URL0 + "#/novy");
   await p.fill("#hledat", "nov");
