@@ -2041,7 +2041,7 @@
         if (!f.radky.some(r => String(r.popis).trim() && cisloZ(r.castka))) ch.push("položka s popisem a částkou");
         if (f.radky.length + 2 > MAX_POLOZEK) ch.push(`méně řádků (max. ${MAX_POLOZEK - 2})`);
       }
-      if (druh === "faktura" || druh === "zalohova") { if (polozkyCelkem() > MAX_POLOZEK) ch.push(`méně řádků (max. ${MAX_POLOZEK})`); }
+      if (druh === "faktura" || druh === "zalohova" || druh === "nabidka") { if (polozkyCelkem() > MAX_POLOZEK) ch.push(`méně řádků (max. ${MAX_POLOZEK})`); }
       if (druh === "predavaci_protokol") {
         if (cisloZ(f.km) == null || isNaN(cisloZ(f.km))) ch.push("stav tachometru");
         if (!f.stav.some(t => t.trim())) ch.push("stav při předání");

@@ -548,6 +548,16 @@ const server = http.createServer((q, r) => {
   kontrola(true, "zakázka s fakturou označena jako zrušená");
   odpovedPrompt = "2026-11-05";
 
+  // ---------- nabídka nad 13 řádků nejde vystavit (jinak by PDF řádky i částku ořízlo) ----------
+  {
+    const zid = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const z = T.zakazky.find(x => x.stav !== "zruseno") || T.zakazky[0];
+      window.__ZALOHA_POL__ = T.polozky; T.polozky = T.polozky.filter(x => x.zakazka_id !== z.id).concat(Array.from({ length: 14 }, (_, i) => ({ zakazka_id: z.id, poradi: i + 1, typ: "prace", popis: "Práce " + (i + 1), mnozstvi: 1, jednotka: "h", sazba: 1500, castka: 1500 }))); return z.id; });
+    await p.evaluate(id => { location.hash = `#/zakazka/${id}/nabidka`; }, zid);
+    await p.waitForSelector("#vystavit"); await p.waitForTimeout(1200);
+    kontrola(await p.isDisabled("#vystavit") && /méně řádků/.test(await p.textContent("#co-chybi")), "nabídka se 14 řádky nejde vystavit (max. 13)");
+    await p.evaluate(() => { window.__ULOZENO__.tabulky.polozky = window.__ZALOHA_POL__; });
+  }
+
   // ---------- iPhone: žádná stránka se nesmí posouvat do stran ----------
   {
     const st = await p.evaluate(() => ({ z: window.__ULOZENO__.tabulky.zakazky.map(x => x.id), c: window.__ULOZENO__.tabulky.zakaznici.map(x => x.id), v: window.__ULOZENO__.tabulky.vozidla.map(x => x.id) }));
