@@ -2067,7 +2067,7 @@
       : druh === "opravny" ? { vystaveno: dnes(), splatnost: plusDni(dnes(), 14), opravuje: opravitelne[0].cislo, duvod: "", radky: [{ popis: "", castka: "" }] }
       : druh === "zalohova" ? { vystaveno: dnes(), splatnost: plusDni(dnes(), 7), castka: s.material || "",
           popis: en ? `Advance payment for parts${nabidkaCislo ? ` according to quotation ${nabidkaCislo}` : ""}` : `Záloha na materiál${nabidkaCislo ? ` dle cenové nabídky ${nabidkaCislo}` : ""}` }
-      : { vystaveno: dnes(), prevzeti: dnes(), km: z.km_predani ?? "", nadrz: z.nadrz_predani || z.nadrz_prijem || "1/2", tp: z.tp_prilozen ?? true,
+      : { vystaveno: dnes(), prevzeti: dnes(), km: z.km_predani ?? z.km_prijem ?? "", nadrz: z.nadrz_predani || z.nadrz_prijem || "1/2", tp: z.tp_prilozen ?? true,
           foto: false, jizda: true, kola: false, stav: z.stav_predani?.length ? [...z.stav_predani] : [""] };
     const podpisZakPovinny = druh === "predavaci_protokol";
     const titulek = `${NAZEV_DOKLADU.cs[druh]} ${cislo}`;
@@ -2106,7 +2106,7 @@
           <div class="pole s2"><span>VS ${vs}</span><div class="napoveda" style="padding-top:12px">Předvyplněno: materiál ze zakázky ${kc(s.material)}</div></div>` : ""}
         ${druh === "predavaci_protokol" ? `
           <label class="pole s2">Datum předání<input type="date" data-d="prevzeti" value="${f.prevzeti}"></label>
-          <label class="pole s2"><span class="povinne">Stav tachometru (${(z.vozidla?.jednotka_tachometru) === "mi" ? "míle" : "km"})</span><input data-d="km" inputmode="numeric" value="${esc(f.km)}" placeholder="${z.km_prijem ?? ""}"></label>
+          <label class="pole s2"><span>Stav tachometru (${(z.vozidla?.jednotka_tachometru) === "mi" ? "míle" : "km"}) – nepovinné, předvyplněno z příjmu</span><input data-d="km" inputmode="numeric" value="${esc(f.km)}" placeholder="${z.km_prijem ?? ""}"></label>
           <div class="s2"><label class="pole">TP předán</label><div class="segment" data-seg="tp"><button type="button" data-h="true" aria-pressed="${!!f.tp}">Ano</button><button type="button" data-h="false" aria-pressed="${!f.tp}">Ne</button></div></div>
           <div class="s4"><label class="pole">Stav nádrže</label><div class="segment" data-seg="nadrz">${NADRZ.map(n => `<button type="button" data-h='"${n}"' aria-pressed="${f.nadrz === n}">${n}</button>`).join("")}</div></div>
           <div class="s2"><label class="pole">Fotodokumentace při předání</label><div class="segment" data-seg="foto"><button type="button" data-h="true" aria-pressed="${!!f.foto}">Ano</button><button type="button" data-h="false" aria-pressed="${!f.foto}">Ne</button></div></div>
@@ -2172,7 +2172,6 @@
       }
       if (druh === "faktura" || druh === "zalohova" || druh === "nabidka") { if (polozkyCelkem() > MAX_POLOZEK) ch.push(`méně řádků (max. ${MAX_POLOZEK})`); }
       if (druh === "predavaci_protokol") {
-        if (cisloZ(f.km) == null || isNaN(cisloZ(f.km))) ch.push("stav tachometru");
         if (!f.stav.some(t => t.trim())) ch.push("stav při předání");
       }
       return ch;

@@ -255,7 +255,7 @@ const server = http.createServer((q, r) => {
   await p.waitForSelector('.doklad:has(b:text-is("7377-3")) [data-nezaplaceno]');
   await p.click("text=🔑 Předávací protokol");
   await p.waitForSelector("#co-chybi:not([hidden])");
-  kontrola(/stav tachometru/.test(await p.textContent("#co-chybi")) && /podpis zákazníka/.test(await p.textContent("#co-chybi")), "protokol chce km a podpis zákazníka");
+  kontrola(!/stav tachometru/.test(await p.textContent("#co-chybi")) && /podpis zákazníka/.test(await p.textContent("#co-chybi")) && await p.inputValue('[data-d="km"]') === "123456", "protokol: km předvyplněné z příjmu a nepovinné, chce podpis zákazníka");
   await p.fill('[data-d="km"]', "123890");
   await p.click("[data-cip-stav] >> nth=0");
   await p.click('[data-seg="kola"] >> text=Ano');
