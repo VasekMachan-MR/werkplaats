@@ -222,10 +222,7 @@
     const el = document.getElementById("lista-vpravo");
     if (!uzivatel) { el.innerHTML = ""; return; }
     el.innerHTML = `<a class="tl tl-male" href="#/">Přehled</a><a class="tl tl-male" href="#/zakazky">Zakázky</a><a class="tl tl-male" href="#/zakaznici">Zákazníci</a><a class="tl tl-male" href="#/vozidla">Vozidla</a><a class="tl tl-male" href="#/doklady">Doklady</a>
-      ${uzivatel.role === "majitel" ? `<a class="tl tl-male" href="#/lide">Lidé</a>` : ""}
-      <a class="tl tl-male uzivatel-tl" href="#/ucet" title="Můj účet">👤 <span>${esc(uzivatel.jmeno)}</span></a>
-      <button class="tl tl-male" id="odhlasit">Odhlásit</button>`;
-    el.querySelector("#odhlasit").onclick = async () => { await db.odhlasit(); uzivatel = null; prihlaseni(); };
+      <a class="tl tl-male uzivatel-tl" href="#/ucet" title="Můj účet">👤 <span>${esc(uzivatel.jmeno)}</span></a>`;
   }
 
   /* ================= přihlášení ================= */
@@ -2323,9 +2320,16 @@
   }
 
   /* ================= můj účet ================= */
+  // Můj účet: profil + (pro majitele) Lidé jako podzáložka, odhlášení
+  const hlavickaUctu = akt => `
+      <div class="hlavicka-prehledu"><h1>Můj účet</h1><button class="tl" id="odhlasit" type="button">Odhlásit</button></div>
+      ${uzivatel.role === "majitel" ? `<div class="segment" style="max-width:380px;margin-bottom:16px;background:#e4e9ef"><button type="button" data-zal="#/ucet" aria-pressed="${akt === "ucet"}">Profil</button><button type="button" data-zal="#/lide" aria-pressed="${akt === "lide"}">Lidé</button></div>` : ""}`;
+  function navazUcet() {
+    app.querySelectorAll("[data-zal]").forEach(b => b.onclick = () => { location.hash = b.dataset.zal; });
+    app.querySelector("#odhlasit").onclick = async () => { await db.odhlasit(); uzivatel = null; prihlaseni(); };
+  }
   async function ucet() {
-    app.innerHTML = `
-      <h1>Můj účet</h1>
+    app.innerHTML = `${hlavickaUctu("ucet")}
       <section class="karta"><h2>Údaje</h2>
         <div class="mrizka">
           <label class="pole s3">Jméno (tiskne se na doklady jako „Vyhotovil“)<input id="jmeno" value="${esc(uzivatel.jmeno)}"></label>
@@ -2347,6 +2351,7 @@
           <div class="s6"><button class="tl" type="submit">Změnit heslo</button></div>
         </form>
       </section>`;
+    navazUcet();
     const pad = new PodpisPad(app.querySelector("#novy-podpis"), { onZmena: ma => (app.querySelector("#ulozit-podpis").disabled = !ma) });
     uklid = () => pad.zrus();
     app.querySelector("#smazat").onclick = () => pad.smazat();
@@ -2369,8 +2374,7 @@
   /* ================= lidé v dílně (jen majitel) ================= */
   async function lide() {
     if (uzivatel.role !== "majitel") { location.hash = "#/"; return; }
-    app.innerHTML = `
-      <h1>Lidé v dílně</h1>
+    app.innerHTML = `${hlavickaUctu("lide")}
       <section class="karta"><h2>Kdo má přístup</h2><div class="doklady" id="seznam-lidi"><div class="nacitani">Načítám…</div></div></section>
       <section class="karta"><h2>Přidat člověka</h2>
         <p class="popis">Zadejte jeho e-mail a dočasné heslo, které mu sdělíte. Po prvním přihlášení si ho změní v „Můj účet“.</p>
@@ -2382,6 +2386,7 @@
           <div class="s6"><button class="tl tl-hlavni" type="submit">Přidat</button></div>
         </form>
       </section>`;
+    navazUcet();
     const vykresli = async () => {
       const el = app.querySelector("#seznam-lidi");
       try {

@@ -405,8 +405,11 @@ const server = http.createServer((q, r) => {
     "„Smazat všechny díly“ po potvrzení vymaže seznam dílů zakázky");
 
   // ---------- Lidé v dílně (majitel) ----------
-  await p.evaluate(() => { location.hash = "#/lide"; });
+  kontrola(await p.locator('.lista-vpravo a[href="#/lide"]').count() === 0, "Lidé už nejsou v horním menu");
+  await p.click(".lista-vpravo .uzivatel-tl"); await p.waitForSelector('[data-zal="#/lide"]');
+  await p.click('[data-zal="#/lide"]');
   await p.waitForSelector("#seznam-lidi >> text=Petr Mechanik");
+  kontrola(true, "Lidé jsou podzáložka v Můj účet");
   await p.fill('#pridat [name="jmeno"]', "Jan Učeň"); await p.fill('#pridat [name="email"]', "ucen@example.cz"); await p.fill('#pridat [name="heslo"]', "docasne-heslo-123");
   await p.click('#pridat button[type="submit"]');
   await p.waitForSelector("#seznam-lidi >> text=Jan Učeň");
@@ -451,6 +454,7 @@ const server = http.createServer((q, r) => {
   await m.evaluate(() => { location.hash = "#/ucet"; });
   await m.waitForSelector('#podpis-nahled img');
   kontrola(true, "Můj účet ukazuje uložený podpis");
+  kontrola(await m.isVisible("#odhlasit") && await m.locator('[data-zal="#/lide"]').count() === 0, "mechanik: Odhlásit v Můj účet, bez záložky Lidé");
   await m.screenshot({ path: path.join(OUT, "10-muj-ucet.png"), fullPage: true });
 
   // ---------- uložit zákazníka a vozidlo samostatně (bez příjmu), TP ----------
