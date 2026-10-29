@@ -174,6 +174,7 @@
           .eq("vin", vin.toUpperCase().replace(/\s/g, "")).maybeSingle());
       },
       async zalozitZakazku(p) { return ok(await sb.rpc("zalozit_zakazku", { p })); },
+      async zmenitMajitele(vid, zid) { return ok(await sb.rpc("zapsat_vlastnictvi", { p_vozidlo: vid, p_zakaznik: zid, p_zmena: true })); },
       async vystavitDoklad(p) { return ok(await sb.rpc("vystavit_doklad", { p })); },
       async smazatZakazku(id) { return ok(await sb.rpc("smazat_zakazku", { p_id: id })); },
       async smazatDoklad(id) { return ok(await sb.rpc("smazat_doklad", { p_id: id })); },
@@ -620,6 +621,7 @@
           <div class="s2"><label class="pole">Tachometr</label>${segment("vozidlo.jednotka_tachometru", [["km", "km"], ["mi", "míle"]])}</div>
         </div>
         <div id="info-vin"></div>
+        <div id="zmena-majitele"></div>
         <div class="radek-tlacitek ulozit-sekci"><button type="button" class="tl" id="ulozit-vozidlo">💾 Uložit vozidlo</button>
           <span class="napoveda">Uloží auto (i s fotkami TP)${z.id ? ` a přiřadí ho zákazníkovi ${esc(z.jmeno)}` : ""} bez zakládání zakázky.</span></div>
       </section>
@@ -707,6 +709,7 @@
       if (chyba) ch.push([chyba.charAt(0).toLowerCase() + chyba.slice(1), `[data-pole="${cesta}"]`]);
     }
     if (k.predpoklad_dokonceni && k.datum_prijmu && k.predpoklad_dokonceni < k.datum_prijmu) ch.push(["dokončení je dřív než převzetí", '[data-pole="zakazka.predpoklad_dokonceni"]']);
+    if (jinyNezMajitel() && P.zmenaMajitele == null) ch.push(["změnilo auto majitele?", "#zmena-majitele"]);
     if (radkuNaListu(k.zavady) > 8) ch.push(["závady se nevejdou na list (max. 8 řádků) – zkraťte nebo slučte", "#sekce-zavady"]);
     if (radkuNaListu(k.stav_prijem) > 7) ch.push(["stav při převzetí se nevejde na list (max. 7 řádků)", "#sekce-stav"]);
     const tpSoubory = Object.values(P.tp || {}).filter(Boolean);
@@ -719,6 +722,7 @@
   function kontrolaPripravenosti() {
     const b = document.getElementById("k-podpisu"), info = document.getElementById("co-chybi");
     if (!b || !P) return;
+    vykresliZmenuMajitele();
     document.querySelectorAll("[data-zbyva]").forEach(el => {               // kolik řádků zakázkového listu je zabráno
       const max = +el.dataset.max, n = radkuNaListu(P.zakazka[el.dataset.zbyva]);
       el.textContent = n > max ? `Nevejde se: ${n} řádků z ${max} – zkraťte nebo slučte.` : `Na zakázkovém listu ${n} z ${max} řádků (dlouhé položky se zalomí).`;
@@ -918,15 +922,30 @@
     for (const k of Object.keys(n)) P.vozidlo[k] = a[k] == null ? n[k] : String(a[k]);
     ulozKoncept(); vykresliFormularZachovatPozici(); zkontrolujVin(false);
   }
+  // C1/D3: přijel někdo jiný než majitel, kterého máme v systému → zeptat se, jestli auto změnilo majitele
+  const jinyNezMajitel = () => !!(P?.majiteleVozu?.length && !P.majiteleVozu.some(m => m.id && m.id === P.zakaznik.id) && (P.zakaznik.id || P.zakaznik.jmeno.trim()));
+  function vykresliZmenuMajitele() {
+    const el = document.getElementById("zmena-majitele"); if (!el || !P) return;
+    if (!jinyNezMajitel()) { el.innerHTML = ""; return; }
+    const stary = P.majiteleVozu.map(m => m.jmeno).join(", "), novy = P.zakaznik.jmeno.trim() || "nový zákazník";
+    if (el.dataset.stav === `${stary}|${novy}|${P.zmenaMajitele}`) return;
+    el.dataset.stav = `${stary}|${novy}|${P.zmenaMajitele}`;
+    el.innerHTML = `<div class="info pozor" style="margin-top:10px"><b>Auto změnilo majitele?</b> V systému je majitelem <b>${esc(stary)}</b>.
+      <div class="segment" style="margin-top:8px"><button type="button" data-zmena="1" aria-pressed="${P.zmenaMajitele === true}">Ano – nový majitel je ${esc(novy)}</button>
+      <button type="button" data-zmena="0" aria-pressed="${P.zmenaMajitele === false}">Ne – auto jen přivezl/a, majitel zůstává</button></div>
+      <p class="napoveda" style="margin:6px 0 0">Při změně majitele se předchozímu ukončí vlastnictví k dnešku, historie oprav zůstane u auta a vznikne nový odkaz na E-servisku (předchozí majitel ji už neuvidí).</p></div>`;
+    el.querySelectorAll("[data-zmena]").forEach(b => b.onclick = () => { P.zmenaMajitele = b.dataset.zmena === "1"; ulozKoncept(); });
+  }
   async function zkontrolujVin(doplnit) {
     const vin = P.vozidlo.vin.replace(/\s/g, ""); const el = app.querySelector("#info-vin"); if (!el || vin.length < 8) return;
     const r = rozlustitVin(vin);
     if (r && !P.vozidlo.typ) { P.vozidlo.typ = r.typ; const t = app.querySelector('[data-pole="vozidlo.typ"]'); if (t) t.value = r.typ; ulozKoncept(); }
     try {
       const a = await db.vozidloPodleVin(vin);
-      if (!a) { el.innerHTML = `<div class="info">Nové auto – v systému ho zatím nemáme.</div>`; return; }
+      if (!a) { P.majiteleVozu = []; ulozKoncept(); el.innerHTML = `<div class="info">Nové auto – v systému ho zatím nemáme.</div>`; return; }
       if (doplnit) for (const k of ["typ", "model", "rok", "spz", "barva", "verze", "jednotka_tachometru"]) if (a[k] != null && !String(P.vozidlo[k] || "").trim()) P.vozidlo[k] = String(a[k]);
       const majitele = (a.vlastnictvi || []).filter(x => !x.vlastni_do && x.zakaznici).map(x => x.zakaznici);
+      P.majiteleVozu = majitele.map(m => ({ id: m.id, jmeno: m.jmeno })); ulozKoncept();
       const posledni = (a.zakazky || []).sort((x, y) => y.cislo - x.cislo)[0];
       el.innerHTML = `<div class="info ok">Auto známe${posledni ? ` – naposledy zakázka #${posledni.cislo} (${datumCz(posledni.datum_prijmu)}${posledni.km_prijem ? `, ${posledni.km_prijem.toLocaleString("cs-CZ")} ${a.jednotka_tachometru}` : ""})` : ""}.
         ${majitele.length ? `Majitel: <b>${esc(majitele.map(m => m.jmeno).join(", "))}</b>.` : ""}
@@ -1300,7 +1319,7 @@
         const k = { ...P.zakazka, zavady: P.zakazka.zavady.map(s => s.trim()).filter(Boolean), stav_prijem: P.zakazka.stav_prijem.map(s => s.trim()).filter(Boolean),
           km_prijem: cisloZ(P.zakazka.km_prijem), odhad_ceny: cisloZ(P.zakazka.odhad_ceny), foto_prijem: P.fotky.length > 0,
           predpoklad_dokonceni: P.zakazka.predpoklad_dokonceni || null };
-        P.vysledek = await db.zalozitZakazku({ zakaznik: z, vozidlo: v, zakazka: k });
+        P.vysledek = await db.zalozitZakazku({ zakaznik: z, vozidlo: v, zakazka: k, zmena_majitele: jinyNezMajitel() && P.zmenaMajitele === true });
         ulozKoncept();
       }
       const { zakazka_id, vozidlo_id, cislo } = P.vysledek;
@@ -2521,8 +2540,7 @@
           const z = r[+b.dataset.i];
           if (!confirm(`Nastavit ${z.jmeno} jako nového majitele? Dosavadnímu majiteli se vlastnictví ukončí k dnešku.`)) return;
           try {
-            for (const x of majitele.filter(x => !x.vlastni_do && x.zakaznici.id !== z.id)) await db.upravit("vlastnictvi", x.id, { vlastni_do: dnes() });
-            if (!majitele.some(x => !x.vlastni_do && x.zakaznici.id === z.id)) await db.vlozit("vlastnictvi", [{ vozidlo_id: id, zakaznik_id: z.id, vlastni_od: dnes() }]);
+            await db.zmenitMajitele(id, z.id);            // ukončí dosavadní vlastnictví k dnešku a vytvoří nový odkaz na E-servisku
             hlaska("Majitel změněn."); vozidloDetail(id);
           } catch (err) { hlaska(chybaText(err), true); }
         });

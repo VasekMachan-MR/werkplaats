@@ -50,6 +50,15 @@ window.__WERK_DB__ = (() => {
       return kopie({ ...a, vlastnictvi: T.vlastnictvi.filter(v => v.vozidlo_id === a.id).map(v => ({ ...v, zakaznici: T.zakaznici.find(c => c.id === v.zakaznik_id) })),
         zakazky: T.zakazky.filter(z => z.vozidlo_id === a.id) });
     },
+    async zmenitMajitele(vid, zid) { await cekej(); return this.zapsatVlastnictvi(vid, zid, true); },
+    async zapsatVlastnictvi(vid, zid, zmena) {         // jako zapsat_vlastnictvi v databázi
+      if (!zid || T.vlastnictvi.some(x => x.vozidlo_id === vid && x.zakaznik_id === zid && !x.vlastni_do)) return;
+      const dnes = new Date().toISOString().slice(0, 10);
+      if (zmena) { T.vlastnictvi.filter(x => x.vozidlo_id === vid && !x.vlastni_do).forEach(x => { x.vlastni_do = dnes; });
+        T.vlastnictvi.push({ id: id(), vozidlo_id: vid, zakaznik_id: zid, vlastni_od: dnes, vlastni_do: null });
+        const a = T.vozidla.find(x => x.id === vid); if (a) a.eserviska_kod = id().replace(/-/g, "").slice(0, 20); }
+      else if (!T.vlastnictvi.some(x => x.vozidlo_id === vid && !x.vlastni_do)) T.vlastnictvi.push({ id: id(), vozidlo_id: vid, zakaznik_id: zid, vlastni_od: dnes, vlastni_do: null });
+    },
     async zalozitZakazku(p) {
       await cekej();
       const z = p.zakaznik, v = p.vozidlo, k = p.zakazka;
@@ -59,8 +68,8 @@ window.__WERK_DB__ = (() => {
       const vin = v.vin.toUpperCase().replace(/\s/g, "");
       let a = T.vozidla.find(x => x.vin === vin);
       if (a) { for (const key in v) if (v[key] != null) a[key] = v[key]; if (k.km_prijem != null) a.km_posledni = k.km_prijem; }
-      else { a = { ...v, vin, id: id(), km_posledni: k.km_prijem }; T.vozidla.push(a); }
-      if (!T.vlastnictvi.some(x => x.vozidlo_id === a.id && x.zakaznik_id === zid && !x.vlastni_do)) T.vlastnictvi.push({ id: id(), vozidlo_id: a.id, zakaznik_id: zid, vlastni_od: k.datum_prijmu, vlastni_do: null });
+      else { a = { ...v, vin, id: id(), km_posledni: k.km_prijem, eserviska_kod: id().replace(/-/g, "").slice(0, 20) }; T.vozidla.push(a); }
+      await this.zapsatVlastnictvi(a.id, zid, p.zmena_majitele);
       const cislo = ++window.__ULOZENO__.citac;
       const zk = { id: id(), cislo, vozidlo_id: a.id, zakaznik_id: zid, stav: "prijato", ...k };
       T.zakazky.push(zk);
@@ -104,8 +113,8 @@ window.__WERK_DB__ = (() => {
       await cekej(); const vin = v.vin.toUpperCase().replace(/\s/g, "");
       let a = T.vozidla.find(x => x.vin === vin);
       if (a) { for (const k in v) if (v[k] != null && k !== "km") a[k] = v[k]; if (v.km != null) a.km_posledni = v.km; }
-      else { a = { ...v, vin, id: id(), km_posledni: v.km ?? null }; delete a.km; T.vozidla.push(a); }
-      if (zid && !T.vlastnictvi.some(x => x.vozidlo_id === a.id && x.zakaznik_id === zid && !x.vlastni_do)) T.vlastnictvi.push({ id: id(), vozidlo_id: a.id, zakaznik_id: zid, vlastni_od: "2026-10-28", vlastni_do: null });
+      else { a = { ...v, vin, id: id(), km_posledni: v.km ?? null, eserviska_kod: id().replace(/-/g, "").slice(0, 20) }; delete a.km; T.vozidla.push(a); }
+      if (zid) await this.zapsatVlastnictvi(a.id, zid, v.zmena_majitele);
       return a.id;
     },
     async dokumentyVozidla(vid) { return kopie(T.soubory.filter(s => s.vozidlo_id === vid && s.druh === "tp")); },

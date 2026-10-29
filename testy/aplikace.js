@@ -577,6 +577,7 @@ const server = http.createServer((q, r) => {
   await p.fill("#hledat-majitele", "nov"); await p.waitForSelector("#vysledky-majitel >> text=Jan Novák");
   await p.click("#vysledky-majitel >> text=Jan Novák");
   await p.waitForSelector("text=současný");
+  await p.waitForFunction(() => { const T = window.__ULOZENO__.tabulky; const v = T.vozidla.find(x => x.vin === "WDB1070481A000003"); return T.vlastnictvi.filter(x => x.vozidlo_id === v.id).length === 2; }, null, { timeout: 5000 });
   const vl = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const v = T.vozidla.find(x => x.vin === "WDB1070481A000003");
     return T.vlastnictvi.filter(x => x.vozidlo_id === v.id).map(x => [T.zakaznici.find(c => c.id === x.zakaznik_id).jmeno, !!x.vlastni_do]); });
   kontrola(vl.length === 2 && vl.some(([j, konec]) => j === "Karel Samostatný" && konec) && vl.some(([j, konec]) => j === "Jan Novák" && !konec) , "změna majitele: Karel ukončen, Jan Novák současný; SPZ uložena");
@@ -604,6 +605,18 @@ const server = http.createServer((q, r) => {
   await p.click("#zrusit-zakazku"); await p.waitForFunction(() => document.querySelector("#stav-zakazky")?.value === "zruseno");
   kontrola(true, "zakázka s fakturou označena jako zrušená");
   odpovedPrompt = "2026-11-05";
+
+  // ---------- C1/D3: přijel nový majitel známého auta → aplikace se zeptá „Auto změnilo majitele?“ ----------
+  {
+    await p.evaluate(() => { location.hash = "#/novy"; }); await p.waitForSelector('[data-pole="zakaznik.jmeno"]');
+    await p.fill('[data-pole="zakaznik.jmeno"]', "Petr Nový");
+    await p.fill('[data-pole="vozidlo.vin"]', "WDB1260241A000001");
+    await p.waitForSelector("#zmena-majitele >> text=Auto změnilo majitele?");
+    kontrola(/Jan Novák/.test(await p.textContent("#zmena-majitele")) && /změnilo auto majitele/.test(await p.textContent("#co-chybi")), "známé auto, jiný zákazník: otázka „Auto změnilo majitele?“ a bez odpovědi nejde dál");
+    await p.click('#zmena-majitele [data-zmena="1"]');
+    kontrola(await p.evaluate(() => JSON.parse(localStorage.getItem("werk-koncept-prijmu")).zmenaMajitele === true) && !/změnilo auto majitele/.test(await p.textContent("#co-chybi")), "„Ano – nový majitel“ se zapamatuje");
+    await p.evaluate(() => localStorage.removeItem("werk-koncept-prijmu"));
+  }
 
   // ---------- nová verze aplikace: uprostřed práce jen lišta, obnoví se až v klidu ----------
   {
