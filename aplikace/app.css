@@ -397,7 +397,7 @@ div.odkaz-radek { cursor: pointer; }
 .radek-opravy { display: grid; grid-template-columns: 1fr 130px 44px; gap: 8px; margin-bottom: 8px; }
 
 /* ---------- menu: ☰ jen na úzkém displeji (iPhone); Mac a iPad beze změny ---------- */
-.menu-tl, .jen-uzke { display: none; }
+.menu-tl, .jen-uzke, .jen-telefon { display: none; }
 .menu-odkazy { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 @media (max-width: 600px) {
   .lista { padding-top: calc(8px + env(safe-area-inset-top)); padding-bottom: 8px; }
@@ -409,7 +409,17 @@ div.odkaz-radek { cursor: pointer; }
     padding: 6px max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left));
     box-shadow: 0 12px 24px rgba(9, 22, 40, .35); border-top: 1px solid rgba(255,255,255,.12);
   }
-  .lista.menu-otevrene .menu-odkazy { display: flex; }
+  .lista.menu-otevrene .menu-odkazy { display: flex; max-height: calc(100vh - 70px); overflow-y: auto; }
+  .jen-telefon { display: block; }
+  .menu-hledat { padding: 6px 0 8px; }
+  .menu-hledat .vstup { width: 100%; background: #fff; color: var(--text); font-size: 16px; }
+  .menu-vysledky:not(:empty) { margin-top: 6px; background: rgba(255,255,255,.06); border-radius: 10px; overflow: hidden; }
+  .menu-vysledek { display: block; padding: 10px 14px; color: #fff; text-decoration: none; border-bottom: 1px solid rgba(255,255,255,.08); font-size: 15px; }
+  .menu-vysledek small { display: block; color: rgba(255,255,255,.65); font-size: 13px; }
+  .menu-vysledek.menu-nic { color: rgba(255,255,255,.65); }
+  .rychle-foto.jen-telefon { display: flex; gap: 8px; margin-bottom: 14px; }
+  .rychle-foto .tl-velke { min-height: 52px; font-size: 16px; padding: 8px 14px; }
+  .rychle-foto .tl-hlavni { flex: 1 1 auto; }
   .lista .menu-odkazy .tl { justify-content: flex-start; min-height: 48px; font-size: 17px; padding: 10px 14px; border-color: transparent; }
   .lista .menu-odkazy .tl[aria-current="page"] { background: rgba(255,255,255,.12); }
   .lista .menu-odkazy .uzivatel-tl span { display: inline; max-width: none; }

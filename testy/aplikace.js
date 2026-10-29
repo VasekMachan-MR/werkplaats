@@ -317,6 +317,11 @@ const server = http.createServer((q, r) => {
   await p.selectOption("#f-stav", ""); await p.selectOption("#f-razeni", "cislo-");
   await foto("07-prehled");
 
+  await p.click(".zakazka-radek >> text=7378"); await p.waitForSelector(".kontakt-tlacitka");
+  kontrola(await p.getAttribute('.kontakt-tlacitka a[href^="https://wa.me/"]', "href") === "https://wa.me/420600111222" && await p.isVisible('.kontakt-tlacitka >> text=Zavolat'), "zákazník v zakázce: Zavolat a WhatsApp (+420 600 111 222)");
+  kontrola(!(await p.isVisible(".rychle-foto")), "iPad: rychlé focení nahoře se neukazuje (jen iPhone)");
+  await p.evaluate(() => { location.hash = "#/zakazky"; }); await p.waitForSelector("#seznam .zakazka-radek");
+
   // ---------- import dílů z e-mailu dodavatele ----------
   await p.click(".zakazka-radek >> text=7378");
   await p.waitForSelector("#import-dilu");
@@ -552,6 +557,8 @@ const server = http.createServer((q, r) => {
   kontrola(vyskaDole < 90 && /Chybí \d+ údaj/.test(await q.evaluate(() => getComputedStyle(document.querySelector("#co-chybi"), "::after").content)), `iPhone: spodní lišta příjmu na jeden řádek (${Math.round(vyskaDole)} px)`);
   await q.click(".menu-tl"); await q.waitForSelector('.menu-odkazy a[href="#/zakazky"]', { state: "visible" });
   await q.screenshot({ path: path.join(OUT, "08-iphone-menu.png"), fullPage: false });
+  await q.fill("#menu-hledat", "xyz123"); await q.waitForSelector("#menu-vysledky >> text=Nic nenalezeno");
+  kontrola(true, "iPhone: hledání v menu");
   await q.click('.menu-odkazy a[href="#/"]'); await q.waitForSelector(".dlazdice-k, .prazdne");
   kontrola(!(await q.isVisible('.menu-odkazy a[href="#/zakazky"]')), "iPhone: menu se po výběru zavře");
   await q.screenshot({ path: path.join(OUT, "08-iphone-prehled.png"), fullPage: false });

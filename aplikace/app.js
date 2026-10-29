@@ -42,6 +42,16 @@
     return n.replace(/\D/g, "").length >= 6 ? `<a class="kontakt-odkaz" href="tel:${esc(n)}">📞 ${esc(s)}</a>` : esc(s); };
   const mailOdkaz = m => { const s = String(m || "").trim(); if (!s) return "";
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) ? `<a class="kontakt-odkaz" href="mailto:${esc(s)}">✉️ ${esc(s)}</a>` : esc(s); };
+  // tlačítka Zavolat / WhatsApp / E-mail (číslo bez předvolby = české +420)
+  function kontaktTlacitka(c) {
+    if (!c) return "";
+    const s = String(c.telefon || "").trim(); let n = s.replace(/[^\d+]/g, "").replace(/^00/, "+");
+    if (!n.startsWith("+") && n.replace(/\D/g, "").length === 9) n = "+420" + n;
+    const cisla = n.replace(/\D/g, ""), b = [];
+    if (cisla.length >= 9) b.push(`<a class="tl tl-male" href="tel:${esc(n)}">📞 Zavolat</a>`, `<a class="tl tl-male" href="https://wa.me/${cisla}" target="_blank" rel="noopener">💬 WhatsApp</a>`);
+    const m = String(c.email || "").trim(); if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m)) b.push(`<a class="tl tl-male" href="mailto:${esc(m)}">✉️ E-mail</a>`);
+    return b.length ? `<div class="radek-tlacitek kontakt-tlacitka">${b.join("")}</div>` : "";
+  }
   const chybaText = e => (e && (e.message || e.error_description || e.msg)) || String(e);
 
   const STAVY = {
@@ -224,16 +234,34 @@
     if (!uzivatel) { el.innerHTML = ""; return; }
     // na iPhonu (úzký displej) se odkazy schovají pod ☰, na Macu a iPadu zůstávají v řadě
     el.innerHTML = `<button type="button" class="tl tl-male menu-tl" aria-expanded="false" aria-label="Menu">☰</button>
-      <nav class="menu-odkazy"><a class="tl tl-male" href="#/">Přehled</a><a class="tl tl-male" href="#/zakazky">Zakázky</a><a class="tl tl-male" href="#/zakaznici">Zákazníci</a><a class="tl tl-male" href="#/vozidla">Vozidla</a><a class="tl tl-male" href="#/doklady">Doklady</a>
+      <nav class="menu-odkazy"><div class="menu-hledat jen-telefon"><input type="search" class="vstup" id="menu-hledat" placeholder="Hledat: zakázka, SPZ, VIN, zákazník" autocomplete="off" enterkeyhint="search"><div class="menu-vysledky" id="menu-vysledky"></div></div><a class="tl tl-male" href="#/">Přehled</a><a class="tl tl-male" href="#/zakazky">Zakázky</a><a class="tl tl-male" href="#/zakaznici">Zákazníci</a><a class="tl tl-male" href="#/vozidla">Vozidla</a><a class="tl tl-male" href="#/doklady">Doklady</a>
       <a class="tl tl-male uzivatel-tl" href="#/ucet" title="Můj účet">👤 <span>${esc(uzivatel.jmeno)}</span></a></nav>`;
     const hl = el.closest(".lista"), tl = el.querySelector(".menu-tl");
     tl.onclick = () => { const o = hl.classList.toggle("menu-otevrene"); tl.setAttribute("aria-expanded", o); tl.textContent = o ? "✕" : "☰"; };
     el.querySelector(".menu-odkazy").onclick = e => { if (e.target.closest("a")) zavriMenu(); };
+    // hledání v menu (iPhone): zakázky (číslo, SPZ, VIN, model, zákazník, telefon) a zákazníci
+    const hq = el.querySelector("#menu-hledat"), hv = el.querySelector("#menu-vysledky");
+    let dataHledani = null;
+    const nactiHledani = async () => dataHledani ||= await Promise.all([db.zakazky(), db.seznamZakazniku().catch(() => [])]).catch(() => [[], []]);
+    hq.addEventListener("focus", () => { dataHledani = null; nactiHledani(); });
+    hq.addEventListener("input", async () => {
+      const t = hq.value.trim().toLowerCase(), t2 = t.replace(/\s/g, "");
+      if (t.length < 2) { hv.innerHTML = ""; return; }
+      const [zak, lid] = await nactiHledani();
+      if (hq.value.trim().toLowerCase() !== t) return;
+      const shoda = (...x) => x.some(v => { const s = String(v ?? "").toLowerCase(); return s.includes(t) || (t2.length > 2 && s.replace(/\s/g, "").includes(t2)); });
+      const rz = zak.filter(z => shoda(z.cislo, z.vozidla?.spz, z.vozidla?.vin, z.vozidla?.model, z.vozidla?.typ, z.zakaznici?.jmeno, z.zakaznici?.telefon)).slice(0, 6);
+      const rl = lid.filter(c => shoda(c.jmeno, c.telefon, c.email, c.kontaktni_osoba)).slice(0, 4);
+      hv.innerHTML = rz.map(z => `<a class="menu-vysledek" href="#/zakazka/${z.id}"><b>#${z.cislo}</b> ${esc([z.vozidla?.typ, z.vozidla?.model].filter(Boolean).join(" "))}<small>${esc([z.zakaznici?.jmeno, z.vozidla?.spz, STAVY[z.stav]].filter(Boolean).join(" · "))}</small></a>`).join("")
+        + rl.map(c => `<a class="menu-vysledek" href="#/zakaznik/${c.id}">👤 ${esc(c.jmeno)}<small>${esc([c.telefon, c.mesto].filter(Boolean).join(" · "))}</small></a>`).join("")
+        || `<div class="menu-vysledek menu-nic">Nic nenalezeno.</div>`;
+    });
     oznacMenu();
   }
   function zavriMenu() {
     const hl = document.querySelector(".lista"), tl = hl?.querySelector(".menu-tl");
-    if (!hl || !tl) return; hl.classList.remove("menu-otevrene"); tl.setAttribute("aria-expanded", "false"); tl.textContent = "☰";
+    if (!hl || !tl) return; hl.classList.remove("menu-otevrene");
+    const hq = hl.querySelector("#menu-hledat"); if (hq) { hq.value = ""; hl.querySelector("#menu-vysledky").innerHTML = ""; } tl.setAttribute("aria-expanded", "false"); tl.textContent = "☰";
   }
   function oznacMenu() {
     const h = location.hash || "#/";
@@ -1297,6 +1325,11 @@
             : `<button class="tl tl-male tl-smazat" id="smazat-zakazku">🗑 Smazat</button>`) : ""}</span>
       </div>
 
+      <div class="rychle-foto jen-telefon">
+        <label class="tl tl-hlavni tl-velke">📷 Přidat fotky<input type="file" accept="image/*" capture="environment" multiple hidden data-rychle-foto></label>
+        <label class="tl tl-velke">🎥 Video<input type="file" accept="video/*" capture="environment" hidden data-rychle-foto></label>
+        <label class="tl tl-velke" aria-label="Vybrat z galerie">🖼<input type="file" accept="image/*,video/*" multiple hidden data-rychle-foto></label>
+      </div>
       <section class="karta"><h2>Doklady</h2>
         <div class="doklady">${doklady.map(d => `
           <div class="doklad"><span><b>${esc(d.cislo)}</b> · ${DRUHY[d.druh] || d.druh}${d.celkem != null ? ` · <b>${kc(d.celkem)}</b>` : ""}<br>
@@ -1340,11 +1373,16 @@
         <p style="margin:10px 0 0"><a href="#/vozidlo/${z.vozidlo_id || v.id}">Upravit vozidlo a TP →</a> · <a href="#/zakaznik/${z.zakaznik_id || c.id}">Upravit zákazníka →</a></p></section>
       <section class="karta"><h2>Zákazník</h2><dl class="udaje">
         ${[["Jméno", esc(c.jmeno)], ["Kontaktní osoba", esc(c.kontaktni_osoba)], ["Telefon", telOdkaz(c.telefon)], ["E-mail", mailOdkaz(c.email)], ["Adresa", esc([c.ulice, [c.psc, c.mesto].filter(Boolean).join(" "), c.zeme].filter(Boolean).join(", "))], ["IČO", esc(c.ico)], ["DIČ", esc(c.dic)]]
-          .filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${b}</dd></div>`).join("")}</dl></section>
+          .filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${b}</dd></div>`).join("")}</dl>${kontaktTlacitka(c)}</section>
       <section class="karta" id="sekce-prijem-detail"></section>
       <section class="karta" id="sekce-archiv"></section>
       <section class="karta" id="sekce-fotky-detail"></section>`;
     vykresliPrijemDetail(false);
+    app.querySelectorAll("[data-rychle-foto]").forEach(inp => inp.addEventListener("change", e => {
+      const f = [...e.target.files]; e.target.value = ""; if (!f.length) return;
+      document.getElementById("sekce-fotky-detail")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      nahratFotkyKZakazce(f);
+    }));
     vykresliFotkyDetail();
     vykresliArchiv();
     app.querySelector("#stav-zakazky").onchange = async e => {
@@ -2193,6 +2231,7 @@
     app.innerHTML = `
       <div class="mutted"><a href="#/zakaznici">← Zákazníci</a></div>
       <h1>${novy ? "Nový zákazník" : esc(z.jmeno)}</h1>
+      ${novy ? "" : kontaktTlacitka(z)}
       <section class="karta"><h2>Údaje</h2>
         <form id="f" class="mrizka" autocomplete="off">
           <div class="s6"><div class="segment" id="firma"><button type="button" data-h="false" aria-pressed="${!z.je_firma}">Osoba</button><button type="button" data-h="true" aria-pressed="${!!z.je_firma}">Firma</button></div></div>
