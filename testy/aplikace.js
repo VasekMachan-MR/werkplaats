@@ -603,6 +603,11 @@ const server = http.createServer((q, r) => {
     }
     if (spatne.length) console.log("PRETEKA:\n" + [...new Set(spatne)].join("\n"));
     kontrola(!spatne.length, "iPhone: žádná stránka se neposouvá do stran (" + trasy.length + " stránek)");
+    await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, st.z[0]); await p.waitForSelector("#stav-zakazky");
+    const male = await p.evaluate(() => [...document.querySelectorAll("input:not([type=checkbox]):not([type=radio]):not([type=file]):not([hidden]), select, textarea")]
+      .filter(e => e.offsetParent && parseFloat(getComputedStyle(e).fontSize) < 16).map(e => (e.id || e.name || e.dataset.f || e.className) + " " + getComputedStyle(e).fontSize));
+    if (male.length) console.log("MALE PISMO:", male.join(", "));
+    kontrola(!male.length, "iPhone: v detailu zakázky žádné pole pod 16 px (iPhone by přibližoval)");
     await p.setViewportSize({ width: 834, height: 1194 });
   }
 
@@ -625,6 +630,11 @@ const server = http.createServer((q, r) => {
     }
     if (spatne.length) console.log("PRETEKA:\n" + [...new Set(spatne)].join("\n"));
     kontrola(!spatne.length, "iPhone: žádná stránka se neposouvá do stran (" + trasy.length + " stránek)");
+    await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, st.z[0]); await p.waitForSelector("#stav-zakazky");
+    const male = await p.evaluate(() => [...document.querySelectorAll("input:not([type=checkbox]):not([type=radio]):not([type=file]):not([hidden]), select, textarea")]
+      .filter(e => e.offsetParent && parseFloat(getComputedStyle(e).fontSize) < 16).map(e => (e.id || e.name || e.dataset.f || e.className) + " " + getComputedStyle(e).fontSize));
+    if (male.length) console.log("MALE PISMO:", male.join(", "));
+    kontrola(!male.length, "iPhone: v detailu zakázky žádné pole pod 16 px (iPhone by přibližoval)");
     await p.setViewportSize({ width: 834, height: 1194 });
   }
 

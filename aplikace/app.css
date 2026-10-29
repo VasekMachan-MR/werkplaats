@@ -462,3 +462,8 @@ html, body { overflow-x: clip; }
 .nova-verze span { flex: 1 1 auto; }
 .nova-verze .tl { color: #fff; border-color: rgba(255,255,255,.35); background: transparent; white-space: nowrap; }
 .nova-verze .tl-hlavni { background: #fff; color: var(--navy); border-color: #fff; }
+
+/* iPhone přibližuje stránku při klepnutí do pole s písmem menším než 16 px – na telefonu proto 16 px */
+@media (max-width: 600px) {
+  .vyber-stavu select, .import-dilu textarea, .import-tabulka input.vstup, .menu-hledat .vstup { font-size: 16px; }
+}
