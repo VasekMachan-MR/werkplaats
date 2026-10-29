@@ -26,4 +26,7 @@ let verze = new Date().toISOString();
 try { verze = execSync("git rev-parse --short HEAD", { cwd: __dirname }).toString().trim() + "-" + Date.now(); } catch (e) { /* bez gitu */ }
 const sw = path.join(DIST, "sw.js");
 fs.writeFileSync(sw, fs.readFileSync(sw, "utf8").replace("__VERZE__", "werkplaats-" + verze));
+// každé nasazení = nové adresy skriptů a stylů → iPad/iPhone nikdy nepoužije starou verzi z mezipaměti
+const ix = path.join(DIST, "index.html"), v = encodeURIComponent(verze);
+fs.writeFileSync(ix, fs.readFileSync(ix, "utf8").replace(/(src|href)="((?:vendor\/)?[\w.-]+\.(?:js|css))"/g, `$1="$2?v=${v}"`));
 console.log("Hotovo: dist/ (verze " + verze + ")");

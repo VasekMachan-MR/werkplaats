@@ -2279,6 +2279,13 @@
     lista();
     navigace();
   }
-  if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+  if ("serviceWorker" in navigator && location.protocol === "https:") {
+    // nová verze aplikace převezme stránku → jednou obnovit, ať se hned načte nový kód
+    const mel = !!navigator.serviceWorker.controller; let obnoveno = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => { if (mel && !obnoveno) { obnoveno = true; location.reload(); } });
+    navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(r => {
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") r.update().catch(() => {}); });
+    }).catch(() => {});
+  }
   start();
 })();
