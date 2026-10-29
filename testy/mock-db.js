@@ -130,6 +130,19 @@ window.__WERK_DB__ = (() => {
     async odkaz(klic) { return URL.createObjectURL(new Blob([S[klic]], { type: klic.endsWith(".pdf") ? "application/pdf" : "image/jpeg" })); },
     async odkazy(klice) { return Promise.all(klice.map(async k => ({ path: k, signedUrl: await this.odkaz(k) }))); },
     async stahnout(klic) { return new Blob([S[klic]]); },
+    async vystavitDoklad(p) {                       // jako vystavit_doklad v databázi: všechno najednou, nebo nic
+      await cekej(); if (window.__OFFLINE_DOKLAD__) throw new Error("Failed to fetch");
+      const uz = T.doklady.find(x => x.cislo === p.cislo); if (uz) return { ...kopie(uz), uz_existoval: true };
+      const ted = new Date().toISOString(), sb = p.soubory.map(x => ({ id: id(), vytvoreno: ted, zakazka_id: p.zakazka_id, vozidlo_id: p.vozidlo_id, druh: x.druh, klic: x.klic, nazev: x.nazev, velikost: x.velikost, mime: x.mime, verejne: false, _role: x.role }));
+      const pdf = sb.find(x => x._role === "pdf"), podpis = sb.find(x => x._role === "podpis");
+      const d = { id: id(), vytvoreno: ted, zakazka_id: p.zakazka_id, nabidka_id: p.nabidka_id || null, druh: p.druh, verze: p.verze, cislo: p.cislo, variabilni_symbol: p.variabilni_symbol,
+        jazyk: p.jazyk, vystaveno: p.vystaveno, splatnost: p.splatnost, data: p.data, pdf_soubor_id: pdf?.id || null, zamceno: true, celkem: p.celkem ?? null, zaplaceno: null, odeslano_uol: null };
+      for (const x of sb) { if (x._role === "pdf" || x._role === "priloha") x.doklad_id = d.id; delete x._role; }
+      T.soubory.push(...sb); T.doklady.push(d);
+      T.podpisy.push(...p.podpisy.map(x => ({ id: id(), doklad_id: d.id, ...x, obrazek_soubor_id: x.role === "zakaznik" ? podpis?.id : null })));
+      if (window.__PO_VYSTAVENI_CHYBA__) { window.__PO_VYSTAVENI_CHYBA__ = false; throw new Error("Failed to fetch"); }   // odpověď se ztratila, doklad ale vznikl
+      return kopie(d);
+    },
     async vlozit(tab, radky) {
       const out = radky.map(r => ({ id: id(), vytvoreno: new Date().toISOString(), ...r }));
       if (tab === "doklady") for (const d of out) if (T.doklady.some(x => x.cislo === d.cislo)) throw new Error("duplicate key value violates unique constraint");

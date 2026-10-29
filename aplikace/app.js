@@ -143,6 +143,7 @@
           .eq("vin", vin.toUpperCase().replace(/\s/g, "")).maybeSingle());
       },
       async zalozitZakazku(p) { return ok(await sb.rpc("zalozit_zakazku", { p })); },
+      async vystavitDoklad(p) { return ok(await sb.rpc("vystavit_doklad", { p })); },
       async smazatZakazku(id) { return ok(await sb.rpc("smazat_zakazku", { p_id: id })); },
       async smazatDoklad(id) { return ok(await sb.rpc("smazat_doklad", { p_id: id })); },
       async smazatZakaznika(id) { return ok(await sb.rpc("smazat_zakaznika", { p_id: id })); },
@@ -1078,7 +1079,7 @@
         <div class="radek-tlacitek" style="margin-top:10px"><button type="button" class="tl tl-male" id="smazat-muj-podpis">Smazat</button></div>
       </section>
       <div class="akce-dole"><div class="vnitrek">
-        <button type="button" class="tl" id="zpet">← Upravit údaje</button>
+        <button type="button" class="tl" id="zpet">${P.vysledek ? "Ukončit příjem" : "← Upravit údaje"}</button>
         <span class="stav-ulozeni" id="stav-ulozeni">${P.vysledek ? `Zakázka #${P.vysledek.cislo} je založená – dokončete uložení listu.` : ""}</span>
         <button type="button" class="tl tl-hlavni tl-velke" id="ulozit" disabled>Podepsat a uložit</button>
       </div></div>`;
@@ -1114,8 +1115,14 @@
     };
     await obnovNahled();
     app.querySelector("#smazat-podpis").onclick = () => pad.smazat();
-    app.querySelector("#zpet").onclick = () => {
-      if (P.vysledek) return hlaska("Zakázka už je založená – údaje upravíte v detailu zakázky.", true);
+    app.querySelector("#zpet").onclick = async () => {
+      if (P.vysledek) {                                    // zakázka už existuje, jen list se nepodařilo uložit → nezaseknout se v příjmu
+        if (!confirm(`Zakázka #${P.vysledek.cislo} už je založená, jen se nepodařilo uložit zakázkový list.\n\nUkončit příjem? Zakázka i fotky z příjmu zůstanou, zakázkový list vystavíte později.`)) return;
+        const { zakazka_id: zid, vozidlo_id: vid } = P.vysledek, f = P.fotky.filter(x => x.klic && x.stav === "nahrano");
+        try { if (f.length) await db.vlozit("soubory", f.map(x => ({ zakazka_id: zid, vozidlo_id: vid, druh: x.video ? "video" : "foto", faze: "prijem", klic: x.klic, nazev: x.nazev || null, mime: x.mime || "image/jpeg" }))); }
+        catch (e) { return hlaska("Fotky se nepodařilo přiřadit: " + chybaText(e) + " – zkuste to znovu, až bude signál.", true, 8000); }
+        uloz(KONCEPT, null); P = null; location.hash = `#/zakazka/${zid}`; return;
+      }
       P.krok = "formular"; ulozKoncept(); vykresliFormular();
     };
     app.querySelector("#ulozit").onclick = async e => {
@@ -1180,34 +1187,28 @@
     const slozka = `zakazky/${cisloZakazky}/${Date.now().toString(36)}`;
     const klicPdf = `${slozka}/${cislo}-${SOUBOR_DOKLADU[druh][jazyk === "en" ? 1 : 0]}.pdf`;
     await ignorujDuplicitu(() => db.nahrat(klicPdf, new Blob([bytes], { type: "application/pdf" }), "application/pdf"));
-    const soubory = [{ zakazka_id, vozidlo_id, druh: "pdf", klic: klicPdf, nazev: `${cislo}.pdf`, velikost: bytes.length, mime: "application/pdf" }];
-    let klicPodpisu = null;
+    // nejdřív všechny soubory do úložiště, pak doklad + záznamy souborů + podpisy jedním krokem v databázi (všechno, nebo nic)
+    const soubory = [{ role: "pdf", druh: "pdf", klic: klicPdf, nazev: `${cislo}.pdf`, velikost: bytes.length, mime: "application/pdf" }];
     if (podpisZak) {
-      klicPodpisu = `${slozka}/podpis-zakaznika-${cislo}.png`;
+      const klicPodpisu = `${slozka}/podpis-zakaznika-${cislo}.png`;
       await ignorujDuplicitu(() => db.nahrat(klicPodpisu, dataUrlNaBlob(podpisZak), "image/png"));
-      soubory.push({ zakazka_id, vozidlo_id, druh: "podpis", klic: klicPodpisu, nazev: "podpis zákazníka", mime: "image/png" });
+      soubory.push({ role: "podpis", druh: "podpis", klic: klicPodpisu, nazev: "podpis zákazníka", mime: "image/png" });
     }
-    const [pdfSoubor, podpisSoubor] = await db.vlozit("soubory", soubory);
-    const ulozenaData = { ...data }; delete ulozenaData.podpisVyhotovil; delete ulozenaData.podpisZakaznik;
-    const [doklad] = await db.vlozit("doklady", [{
-      zakazka_id, nabidka_id, druh, verze, cislo, variabilni_symbol: vsDokladu(cisloZakazky, druh, verze), jazyk,
-      vystaveno: vystaveno || dnes(), splatnost: splatnost || null, data: ulozenaData, pdf_soubor_id: pdfSoubor.id, zamceno: true,
-      celkem: vysledek.celkem ?? null
-    }]);
-    await db.upravit("soubory", pdfSoubor.id, { doklad_id: doklad.id });
-    // přílohy (parts list) – samostatná PDF navázaná na doklad
     const hotovePrilohy = [];
-    for (const pr of prilohy) {
+    for (const pr of prilohy) {                          // přílohy (parts list) – samostatná PDF navázaná na doklad
       prubeh(`Vytvářím ${pr.nazev}…`);
       const pb = await pdfZeSablony(pr.sablona, pr.data, jazyk, { nazev: `${pr.nazev} ${cislo}` });
       const kl = `${slozka}/${cislo}-${pr.slug}.pdf`;
       await ignorujDuplicitu(() => db.nahrat(kl, new Blob([pb], { type: "application/pdf" }), "application/pdf"));
-      await db.vlozit("soubory", [{ zakazka_id, vozidlo_id, doklad_id: doklad.id, druh: "pdf", klic: kl, nazev: `${cislo} ${pr.nazev}`, velikost: pb.length, mime: "application/pdf" }]);
+      soubory.push({ role: "priloha", druh: "pdf", klic: kl, nazev: `${cislo} ${pr.nazev}`, velikost: pb.length, mime: "application/pdf" });
       hotovePrilohy.push({ bytes: pb, nazev: `${cislo}-${pr.slug}.pdf` });
     }
-    const podpisy = [{ doklad_id: doklad.id, role: "vyhotovil", jmeno: uzivatel.jmeno, uzivatel_id: uzivatel.id, zpusob: vyhPodepsalNaIpadu ? "ipad" : "ulozeny", otisk_dokumentu: otisk }];
-    if (podpisZak) podpisy.unshift({ doklad_id: doklad.id, role: "zakaznik", jmeno: jmenoZakaznika, zpusob: "ipad", otisk_dokumentu: otisk, obrazek_soubor_id: podpisSoubor.id });
-    await db.vlozit("podpisy", podpisy);
+    const ulozenaData = { ...data }; delete ulozenaData.podpisVyhotovil; delete ulozenaData.podpisZakaznik;
+    const podpisy = [{ role: "vyhotovil", jmeno: uzivatel.jmeno, uzivatel_id: uzivatel.id, zpusob: vyhPodepsalNaIpadu ? "ipad" : "ulozeny", otisk_dokumentu: otisk }];
+    if (podpisZak) podpisy.unshift({ role: "zakaznik", jmeno: jmenoZakaznika, zpusob: "ipad", otisk_dokumentu: otisk });
+    prubeh("Ukládám doklad…");
+    const doklad = await db.vystavitDoklad({ zakazka_id, vozidlo_id, nabidka_id, druh, verze, cislo, variabilni_symbol: vsDokladu(cisloZakazky, druh, verze), jazyk,
+      vystaveno: vystaveno || dnes(), splatnost: splatnost || null, data: ulozenaData, celkem: vysledek.celkem ?? null, soubory, podpisy });
     posledniPdf = { zakazka_id, cislo, bytes, nazev: `${cislo}.pdf`, druh, jazyk, prilohy: hotovePrilohy };
     return { doklad, bytes, cislo };
   }
@@ -2143,6 +2144,7 @@
     uklid = () => { window.removeEventListener("resize", meritko); pad?.zrus(); mujPad?.zrus(); };
     await vykresliSablonu(iframe, sablona, data(), jazyk); kontrola();
 
+    let nabidkaVystaveni = null;
     app.querySelector("#vystavit").onclick = async () => {
       if (chybi().length) return;
       const kUhrade = druh === "zalohova" ? cisloZ(f.castka) : druh === "opravny" ? celkemOpravy() : s.celkem + odecty().reduce((a, o) => a + o.castka, 0);
@@ -2151,8 +2153,8 @@
       const p = prekryv("Ukládám…");
       try {
         if (!vyh && mujPad && !mujPad.prazdny()) { const png = mujPad.png(); await db.ulozitMujPodpis(uzivatel.id, png); uzivatel.podpis_obrazek = png; }
-        let nabidka_id = null;
-        if (druh === "nabidka") { const [n] = await db.vlozit("nabidky", [{ zakazka_id: id, verze, stav: "odeslano", platnost: f.platnost }]); nabidka_id = n.id; }
+        if (druh === "nabidka" && !nabidkaVystaveni) { const [n] = await db.vlozit("nabidky", [{ zakazka_id: id, verze, stav: "odeslano", platnost: f.platnost }]); nabidkaVystaveni = n.id; }
+        const nabidka_id = druh === "nabidka" ? nabidkaVystaveni : null;     // při opakovaném pokusu stejná nabídka
         const pl = dataPartsListu(z, dily, true, { druh, cislo });
         const prilohy = (druh === "nabidka" || druh === "faktura") && pl.dily.length ? [{ sablona: "parts-list.html", data: pl, nazev: "parts list", slug: "parts-list" }] : [];
         await ulozitDoklad({ iframe, sablona, data: data(), jazyk, zakazka_id: id, vozidlo_id: z.vozidlo_id || z.vozidla?.id, cisloZakazky: z.cislo, druh, verze, prilohy,

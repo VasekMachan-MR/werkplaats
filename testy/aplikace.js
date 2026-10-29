@@ -182,8 +182,12 @@ const server = http.createServer((q, r) => {
   await p.click("text=📝 Cenová nabídka");
   await p.waitForSelector("#vystavit:not([disabled])");
   kontrola((await p.textContent("#vystavit")).includes("7377-2"), "nabídka dostane číslo 7377-2");
+  // výpadek signálu: doklad v databázi vznikl, ale odpověď se ztratila → druhý pokus nesmí vytvořit druhou nabídku
+  await p.evaluate(() => { window.__PO_VYSTAVENI_CHYBA__ = true; });
+  await p.click("#vystavit"); await p.waitForSelector("#hlaska >> text=Vystavení se nepovedlo");
   await p.click("#vystavit");
   await p.waitForSelector(".velke-cislo >> text=7377-2", { timeout: 8000 }).catch(async e => { console.log("HLÁŠKA:", await p.textContent("#hlaska"), chyby, p.url()); await p.screenshot({ path: path.join(OUT, "chyba.png") }); throw e; });
+  kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.doklady.filter(d => d.cislo.startsWith("7377-2")).length) === 1, "výpadek při vystavení: po opakování jen jedna nabídka 7377-2 (žádná 7377-2-2)");
   await p.click("text=Detail zakázky");
   await p.waitForSelector("text=📝 Cenová nabídka");
   // zálohová faktura na materiál (předvyplněno 13 325 Kč, text s číslem nabídky) → zaplaceno
