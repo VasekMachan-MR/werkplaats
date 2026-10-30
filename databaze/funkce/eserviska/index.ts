@@ -103,7 +103,7 @@ Deno.serve(async req => {
       prace: (pol || []).filter(p => p.zakazka_id === z.id && p.popis).map(p => ({ typ: p.typ, popis: p.popis })),
       poznamky: String(z.poznamky || "").trim() || null,   // poznámky k zakázce = záznam v servisní knížce, vidí je i další majitelé
       dily: !vlastni ? [] : (dily || []).filter(d => d.zakazka_id === z.id).map(d => ({ nazev: d.nazev, cislo_mb: d.cislo_mb, vyrobce: d.vyrobce, mnozstvi: d.mnozstvi, jednotka: d.jednotka })),
-      fotky: (soub || []).filter(f => f.zakazka_id === z.id && (f.druh === "foto" || f.druh === "video") && f.verejne !== false && url[f.klic]).map(f => ({ url: url[f.klic], video: f.druh === "video", faze: f.faze })),
+      fotky: (soub || []).filter(f => f.zakazka_id === z.id && (f.druh === "foto" || f.druh === "video") && f.faze !== "profil" && f.verejne !== false && url[f.klic]).map(f => ({ url: url[f.klic], video: f.druh === "video", faze: f.faze })),
       dokumenty
     };
   });
@@ -142,6 +142,8 @@ Deno.serve(async req => {
     vuz,
     zakaznik: aktualni?.zakaznici || null,
     tp: tpVidi.filter((f: any) => url[f.klic]).map(f => ({ nazev: f.nazev, url: url[f.klic], pdf: f.mime === "application/pdf" })),
+    // profilové fotky auta (nahoře vpravo) – jen fotky označené ⭐, nejnovější první; servisní fotky jsou jen u návštěv
+    profil: (soub || []).filter(f => f.druh === "foto" && f.faze === "profil" && f.verejne !== false && url[f.klic]).reverse().map(f => url[f.klic]),
     navstevy, podpis,
     servis, servis_skupina: sk, motor, palivo,
     platnost_odkazu_s: PLATNOST

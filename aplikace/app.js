@@ -1928,7 +1928,8 @@
   }
 
   /* ---------- fotky a videa zakázky: při příjmu, během opravy, při předání ---------- */
-  const FAZE_FOTEK = [["prijem", "Při příjmu"], ["prubeh", "Během opravy"], ["predani", "Při předání"]];
+  // „profil“ = fotky auta do E-servisky nahoru vpravo; ostatní jsou servisní (E-serviska je ukáže ve „Fotky z návštěvy“)
+  const FAZE_FOTEK = [["profil", "⭐ Profilové (E-serviska nahoře)"], ["prijem", "Při příjmu"], ["prubeh", "Během opravy"], ["predani", "Při předání"]];
   // fotky zákazníkovi: iPhone/iPad otevře nabídku Sdílet (WhatsApp, Zprávy…) přímo s fotkami; jinde WhatsApp s odkazem na E-servisku
   async function poslatFotky(vybrane) {
     const v = E.z.vozidla || {}, c = E.z.zakaznici || {}, en = E.z.jazyk === "en", odkaz = v.vin ? odkazEservisky(v) : "";
@@ -1983,7 +1984,7 @@
       ${E.vyber ? `<div class="info vyber-fotek"><span>Klepnutím vyberte fotky (<b id="pocet-vybranych">${E.vyber.size}</b>).</span>
         <span class="radek-tlacitek"><button type="button" class="tl tl-male" id="vybrat-vse" title="Vybere všechny kromě skrytých (🚫)">Vybrat vše</button>
         <button type="button" class="tl tl-hlavni" id="odeslat-fotky" ${E.vyber.size ? "" : "disabled"}>📤 Poslat (WhatsApp…)</button></span></div>` : ""}
-      ${FAZE_FOTEK.map(([k, t]) => { const f = fotky.filter(x => (x.faze || "prijem") === k); return f.length ? `<p class="faze-nadpis"><b>${t}</b> <span class="mutted">${popisPoctu(f)}</span></p><div class="fotky" data-faze="${k}">${f.map(x => `<div class="fotka" data-klic="${esc(x.klic)}"><span class="mutted" style="font-size:12px">Načítám…</span></div>`).join("")}</div>` : ""; }).join("")}
+      ${FAZE_FOTEK.map(([k, t]) => { const f = fotky.filter(x => (x.faze || "prijem") === k); return f.length ? `<p class="faze-nadpis"><b>${t}</b> <span class="mutted">${popisPoctu(f)}${k === "profil" ? " · v E-servisce nahoře vpravo" : ""}</span></p><div class="fotky" data-faze="${k}">${f.map(x => `<div class="fotka" data-klic="${esc(x.klic)}"><span class="mutted" style="font-size:12px">Načítám…</span></div>`).join("")}</div>` : ""; }).join("")}
       ${fotky.length ? "" : `<p class="mutted" style="margin:12px 0 0">Zatím žádné fotky.</p>`}`;
     el.querySelector("#faze-fotek").onchange = e => { E.fazeFotek = e.target.value; };
     const pf = el.querySelector("#poslat-fotky");
@@ -1999,6 +2000,7 @@
           : `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="" loading="lazy"></a>`)
           + (uzivatel.role === "majitel" ? `<button type="button" class="odebrat" data-smazat-fotku="${f.id}" aria-label="Smazat">×</button>` : "")
           + `<button type="button" class="viditelnost" data-verejne="${f.id}" aria-pressed="${f.verejne !== false}" title="${f.verejne === false ? "Skryto v E-servisce – klepnutím zobrazit" : "Vidí zákazník v E-servisce – klepnutím skrýt"}">${f.verejne === false ? "🚫" : "👁"}</button>`;
+        if (!f.video) box.insertAdjacentHTML("beforeend", `<button type="button" class="profil-tl" data-profil="${f.id}" aria-pressed="${f.faze === "profil"}" title="${f.faze === "profil" ? "Profilová fotka (E-serviska nahoře) – klepnutím přesunout mezi servisní" : "Servisní fotka – klepnutím udělat profilovou (E-serviska nahoře)"}" aria-label="Profilová fotka">${f.faze === "profil" ? "⭐" : "☆"}</button>`);
         box.classList.toggle("skryto", f.verejne === false);
         (E.urlFotek ||= {})[f.id] = u;
         if (E.vyber) { box.classList.add("vybiram"); box.classList.toggle("vybrana", E.vyber.has(f.id)); box.dataset.vybrat = f.id;
@@ -2014,6 +2016,12 @@
         el.querySelector("#vybrat-vse").onclick = () => { fotky.filter(f => f.verejne !== false).forEach(f => E.vyber.add(f.id)); vykresliFotkyDetail(); };   // skryté (🚫) nikdy hromadně
         el.querySelector("#odeslat-fotky").onclick = () => poslatFotky(fotky.filter(f => E.vyber.has(f.id)));
       }
+      el.querySelectorAll("[data-profil]").forEach(b => b.onclick = async () => {        // profilová ⭐ / servisní fotka
+        const s = E.z.soubory.find(x => x.id === b.dataset.profil); if (!s) return;
+        const nova = s.faze === "profil" ? "prubeh" : "profil";
+        try { await db.upravit("soubory", s.id, { faze: nova }); s.faze = nova; vykresliFotkyDetail(); hlaska(nova === "profil" ? "Profilová fotka – v E-servisce bude nahoře vpravo." : "Fotka přesunuta mezi servisní (Během opravy)."); }
+        catch (e) { hlaska(chybaText(e), true); }
+      });
       el.querySelectorAll("[data-verejne]").forEach(b => b.onclick = async () => {      // E2: fotka v E-servisce ano / ne
         const s = E.z.soubory.find(x => x.id === b.dataset.verejne); if (!s) return;
         const nove = s.verejne === false;

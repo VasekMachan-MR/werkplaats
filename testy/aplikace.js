@@ -460,6 +460,11 @@ const server = http.createServer((q, r) => {
   kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.soubory.some(f => f.faze === "prubeh" && f.druh === "foto")) && /Během opravy/.test(await p.textContent("#sekce-fotky-detail")),
     "fotka přidaná během opravy se uloží do skupiny „Během opravy“");
   await foto("21-uprava-prijmu-fotky");
+  await p.click('#sekce-fotky-detail [data-profil]');
+  await p.waitForFunction(() => window.__ULOZENO__.tabulky.soubory.some(f => f.druh === "foto" && f.faze === "profil"));
+  await p.waitForSelector('#sekce-fotky-detail [data-faze="profil"] .fotka img', { timeout: 15000 });
+  kontrola(/Profilové/.test(await p.textContent("#sekce-fotky-detail")) && await p.locator('#faze-fotek option[value="profil"]').count() === 1,
+    "fotka jde označit ⭐ jako profilová (E-serviska nahoře) a jde rovnou nahrát jako profilová");
   kontrola(/mercedesrestorations\.cz\/e-serviska\?k=[0-9a-f]{20}$/.test(await p.getAttribute("#odkaz-eservisky", "href")), "detail zakázky má tajný odkaz do E-servisky (VIN sám nestačí)");
   await p.evaluate(() => { navigator.share = async d => { window.__SDILENO__ = d.url; }; });
   await p.click("#sdilet-eservisku");
