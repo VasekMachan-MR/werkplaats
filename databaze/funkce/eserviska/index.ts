@@ -88,7 +88,8 @@ Deno.serve(async req => {
     const posledni: Record<string, any> = {};
     (dok || []).filter(d => d.zakazka_id === z.id).forEach(d => { if (!posledni[d.druh]) posledni[d.druh] = d; });
     const dokumenty = vlastni ? Object.values(posledni).map((d: any) => ({ druh: d.druh, cislo: d.cislo, vystaveno: d.vystaveno, url: url[d.soubory?.klic] || null })).filter(d => d.url) : [];
-    if (vlastni) (soub || []).filter(f => f.zakazka_id === z.id && f.druh === "pdf" && /parts.list/i.test(f.nazev || "") && Object.values(posledni).some((d: any) => d.id === f.doklad_id))
+    // parts list až s vystavenou fakturou (u nabídky ani během prací ne) – Vašek 30.10.2026
+    if (vlastni && posledni.faktura) (soub || []).filter(f => f.zakazka_id === z.id && f.druh === "pdf" && /parts.list/i.test(f.nazev || "") && f.doklad_id === posledni.faktura.id)
       .forEach(f => dokumenty.push({ druh: "parts_list", cislo: f.nazev, vystaveno: null, url: url[f.klic] || null }));
     // E5: původní doklady ze starého systému (archiv) – jen ty, které jsou označené 👁
     // původní PDF, ke kterému už existuje podepsaná kopie (…_signed.pdf), se nezobrazuje – místo něj je podepsaná
