@@ -18,7 +18,18 @@ Ověřeno **30. 10. 2026**: obsah tohoto repozitáře odpovídá tomu, co běž�
 - Kód v hlavičce i patičce stránky `/e-serviska` se shoduje s webem bajt po bajtu (SHA-256).
 - Soubory `web/e-serviska-head.html` a `web/e-serviska-footer.html`.
 
-Záloha kódu se dělá značkou (tagem) `zaloha-RRRR-MM-DD` na GitHubu a souborem `werkplaats-kod-RRRR-MM-DD.bundle`, který obsahuje celou historii (`git clone soubor.bundle werkplaats`).
+Záloha kódu: soubor `werkplaats-kod-RRRR-MM-DD.bundle` s celou historií (`git clone soubor.bundle werkplaats`) a větev `zaloha-RRRR-MM-DD` na GitHubu.
+
+## Denní záloha (každý den ve 2:00, od 31. 10. 2026)
+
+Plánovaná úloha Clauda každou noc uloží do iCloudu `Mercedes Restorations/Zálohy Werkplaats/RRRR-MM-DD/` celý balíček (kód, data, `obnova-dat.sql`, návody).
+
+1. Vygeneruje se náhodný jednorázový klíč (`python3 -c "import secrets;print(secrets.token_hex(32))"`).
+2. Jeho otisk SHA-256 se zapíše do databáze: `insert into soukrome.zalohovaci_klice (otisk) values ('<otisk>')`. Platí 15 minut.
+3. `ZALOHA_KLIC=<klíč> zaloha/denni-zaloha.sh` stáhne data přes funkci `zaloha` (klíč se tím spotřebuje) a sestaví balíček v `/mnt/user-data/outputs/zaloha-RRRR-MM-DD/`.
+4. Soubory se zapíšou na Mac do iCloudu.
+
+Nikde není uložené trvalé heslo ani klíč.
 
 ## Co kde běží
 
@@ -48,7 +59,7 @@ Další údaje:
 3. **Serverové funkce:** nasadit každou složku z `databaze/funkce/` pod stejným názvem.
    - `eserviska` s `verify_jwt = false`.
    - Ostatní funkce s `verify_jwt = true`.
-   - `import-archivu` a `zaloha` jsou jednorázové a mohou zůstat vypnuté.
+   - `import-archivu` je jednorázová a může zůstat vypnutá; `zaloha` je denní záloha (pouští jen s jednorázovým klíčem, migrace 035).
 
 4. **Nastavení Supabase, které není v kódu (nastavit ručně):**
    - Authentication → MFA: zapnout TOTP (aplikace vyžaduje druhý krok přihlášení).
