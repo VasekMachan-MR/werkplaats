@@ -61,7 +61,7 @@ Deno.serve(async req => {
   const platne = new Set((ukony || []).filter(u => (!u.jen_palivo || u.jen_palivo === palivo) && (!u.jen_serizovani_ventilu || mInfo?.serizovani_ventilu)).map(u => u.ukon));
   const aktualni = (vl || []).find(x => !x.vlastni_do) || null;
   // TP je u auta, ale je na něm jméno majitele → jen současnému majiteli a jen nahraný za jeho vlastnictví
-  const tpVidi = (tp || []).filter((f: any) => aktualni && (!aktualni.vlastni_od || String(f.vytvoreno || "").slice(0, 10) >= String(aktualni.vlastni_od)));      // bez současného majitele žádné údaje zákazníka ani doklady
+  const tpVidi = (tp || []).filter((f: any) => aktualni && (!aktualni.vlastni_od || String(f.vytvoreno || "").slice(0, 10) >= String(aktualni.vlastni_od)));
   const ids = (zak || []).map(z => z.id);
 
   const [{ data: pol }, { data: dily }, { data: dok }, { data: soub }] = ids.length ? await Promise.all([
@@ -73,7 +73,7 @@ Deno.serve(async req => {
 
   // podepsané odkazy najednou
   const klice = new Set<string>();
-  (tp || []).filter((f: any) => aktualni && (!aktualni.vlastni_od || String(f.vytvoreno || "").slice(0, 10) >= String(aktualni.vlastni_od))).forEach((f: any) => klice.add(f.klic));
+  tpVidi.forEach((f: any) => klice.add(f.klic));
   (soub || []).forEach(f => { if (f.druh === "pdf" || f.verejne !== false) klice.add(f.klic); });
   (dok || []).forEach(d => (d as any).soubory?.klic && klice.add((d as any).soubory.klic));
   const url: Record<string, string> = {};
