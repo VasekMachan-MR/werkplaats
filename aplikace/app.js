@@ -2713,11 +2713,16 @@
     const podpisZakPovinny = druh === "predavaci_protokol";
     // faktura / zálohová: zákazník spěchá nebo auto předává někdo jiný → podepíše z domu v E-servisce (Vašek 30.10.2026)
     const lzePozdeji = (druh === "faktura" || druh === "zalohova") && !!z.vozidla?.vin;
+    // faktura: upozornit, když nejsou odkliknuté všechny práce (postup na 100 %) – Vašek 30.10.2026
+    const ukolyZak = (Array.isArray(z.ukoly) ? z.ukoly : []).filter(x => String(x?.t || "").trim()), ukolyHotovo = ukolyZak.filter(x => x.h).length;
+    const praceNedokoncene = druh === "faktura" && ukolyZak.length > ukolyHotovo
+      ? `Práce na zakázce nejsou dokončené – hotovo ${ukolyHotovo} z ${ukolyZak.length} (${Math.round(ukolyHotovo / ukolyZak.length * 100)} %).` : "";
     const titulek = `${NAZEV_DOKLADU.cs[druh]} ${cislo}`;
 
     app.innerHTML = `
       <div class="hlavicka-prehledu"><div><div class="mutted"><a href="#/zakazka/${id}">← Zakázka #${z.cislo}</a></div><h1 style="margin:0">${esc(titulek)}</h1></div></div>
       ${verze > 1 ? `<div class="info" style="margin:0 0 14px">K zakázce už ${druh === "nabidka" ? "nabídka existuje" : druh === "faktura" ? "faktura existuje" : "protokol existuje"} – tahle bude verze ${verze} (${esc(cislo)}). Předchozí zůstává beze změny.</div>` : ""}
+      ${praceNedokoncene ? `<div class="info pozor" id="prace-nedokoncene" style="margin:0 0 14px">⚠️ ${esc(praceNedokoncene)} Odklikněte je v zakázce v sekci <a href="#/zakazka/${id}"><b>🔧 Práce</b></a>, nebo fakturu vystavte i tak.</div>` : ""}
       <section class="karta"><h2>Údaje dokladu</h2><div class="mrizka" id="pole-dokladu">
         ${druh === "nabidka" ? `
           <label class="pole s2">Datum vystavení<input type="date" data-d="vystaveno" value="${f.vystaveno}"></label>
@@ -2884,6 +2889,7 @@
       if (chybi().length || bezi) return;
       if (pozdeji && !pad.prazdny()) return hlaska("Zákazník už se podepsal – použijte „Vystavit“ (nebo podpis smažte).", true);
       const kUhrade = druh === "zalohova" ? cisloZ(f.castka) : druh === "opravny" ? celkemOpravy() : s.celkem + odecty().reduce((a, o) => a + o.castka, 0);
+      if (praceNedokoncene && !confirm(`⚠️ ${praceNedokoncene}\n\nOpravdu vystavit fakturu, i když nejsou všechny práce odkliknuté?`)) return;
       if ((druh === "faktura" || druh === "zalohova") && !confirm(`Vystavit ${druh === "zalohova" ? "zálohovou fakturu" : "fakturu"} ${cislo} na ${kc(kUhrade)}${pozdeji ? " bez podpisu zákazníka" : ""}? Vydaná faktura se už nedá změnit (oprava jen opravným dokladem).${pozdeji ? "\n\nZákazník ji podepíše z domu v E-servisce (pošlete mu odkaz). Podpis se pak do faktury doplní sám." : ""}`)) return;
       bezi = true;
       if (druh === "opravny" && !confirm(`Vystavit opravný doklad ${cislo} k dokladu ${f.opravuje} na ${kc(kUhrade)}? Vydaný opravný doklad se už nedá změnit ani smazat.`)) return;

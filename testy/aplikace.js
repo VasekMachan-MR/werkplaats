@@ -734,6 +734,10 @@ const server = http.createServer((q, r) => {
     await p.press('textarea[data-ukol="3"]', "Backspace");
     kontrola(await p.locator(".ukol").count() === 3 && (await p.textContent("#ukoly .postup b")).trim() === "67 %", "Práce: Backspace na prázdném řádku ho smaže (2 ze 3 = 67 %)");
     await p.screenshot({ path: "testy/vystup-app/prace-postup.png", fullPage: false });
+    await p.waitForTimeout(1500); await p.waitForSelector("[data-stav-ukolu] >> text=✓ Uloženo");
+    await p.click("text=💳 Faktura"); await p.waitForSelector("#vystavit");
+    kontrola(/hotovo 2 z 3 \(67 %\)/.test(await p.textContent("#prace-nedokoncene")), "faktura: upozornění, že práce nejsou odkliknuté (2 z 3, 67 %)");
+    await p.goBack(); await p.waitForSelector("details.postup-prace");
   }
 
   // ---------- Dopodepsání zakázkového listu z E-servisky ----------
