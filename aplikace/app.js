@@ -1429,6 +1429,23 @@
   let kurzCnb = null, kurzCnbNacitam = null;
   const kurzEur = () => kurzCnb?.kurz ? Math.round(kurzCnb.kurz * 100) / 100 : 25;
   const nactiKurzEur = () => kurzCnbNacitam ||= (db.kurzEur ? db.kurzEur() : Promise.reject()).then(k => (kurzCnb = k)).catch(() => { kurzCnbNacitam = null; });
+  // F5: poznámky (k zakázce a k autu) – sbalené, ukládají se samy
+  const nahledPoznamky = t => { const r = String(t || "").trim().split("\n")[0]; return r ? esc(r.length > 60 ? r.slice(0, 60) + "…" : r) : '<span class="mutted">žádné</span>'; };
+  function blokPoznamek(pole) {
+    const n = pole.filter(x => String(x.hodnota || "").trim()).length;
+    return `<details class="karta poznamky"${n ? "" : ""}><summary><b>📝 Poznámky</b> <span class="mutted">${n ? pole.filter(x => String(x.hodnota || "").trim()).map(x => nahledPoznamky(x.hodnota)).join(" · ") : "žádné"}</span></summary>
+      ${pole.map(x => `<label class="pole" style="margin-top:12px">${x.popis}<textarea class="vstup" rows="3" data-poznamka="${x.tabulka}" data-id="${x.id}" placeholder="${x.napoveda || ""}">${esc(x.hodnota || "")}</textarea></label>`).join("")}
+      <span class="napoveda" data-stav-poznamek></span></details>`;
+  }
+  function navazPoznamky(root, potom) {
+    root.querySelectorAll("textarea[data-poznamka]").forEach(t => {
+      const st = root.querySelector("[data-stav-poznamek]");
+      t.addEventListener("input", () => { clearTimeout(t._u); st.textContent = "Ukládám…"; t._u = setTimeout(async () => {
+        try { await db.upravit(t.dataset.poznamka, t.dataset.id, { poznamky: t.value.trim() || null }); st.textContent = "✓ Uloženo"; potom?.(t.dataset.poznamka, t.value); }
+        catch (e) { st.innerHTML = `<span style="color:var(--cervena)">Neuloženo – ${esc(chybaText(e))}</span>`; }
+      }, 800); });
+    });
+  }
   async function detail(id) {
     const n0 = navId;
     await dokoncitUkladani();                            // překreslení zakázky nesmí předběhnout rozdělané uložení
@@ -1491,6 +1508,8 @@
         <div id="dily"></div>
       </section>
       <section class="karta" id="sekce-servis"></section>
+      ${blokPoznamek([{ tabulka: "zakazky", id: z.id, hodnota: z.poznamky, popis: "K této zakázce", napoveda: "Co je potřeba udělat, co jsme zjistili, domluva se zákazníkem…" },
+        { tabulka: "vozidla", id: z.vozidlo_id || v.id, hodnota: v.poznamky, popis: "K autu (zůstanou u auta i pro další návštěvy)", napoveda: "Zvláštnosti auta, historie, co hlídat příště…" }])}
 
       <section class="karta souhrn-zakazky" id="souhrn"></section>
 
@@ -1547,6 +1566,7 @@
       try { await db.upravit("zakazky", id, { stav: "zruseno" }); hlaska("Zakázka zrušena."); detail(id); } catch (e) { hlaska(chybaText(e), true); }
     };
     vykresliPrace(); vykresliDily(); vykresliSouhrnZakazky(); vykresliServisniUkony();
+    navazPoznamky(app, (tab, h) => { if (tab === "zakazky") z.poznamky = h; else v.poznamky = h; });
     vykresliDokumentyVozidla(z.vozidlo_id || v.id, app.querySelector("#dokumenty-vozidla"));
     app.querySelectorAll("[data-pdf]").forEach(b => b.onclick = async () => {
       const okno = window.open("", "_blank");
@@ -2503,6 +2523,7 @@
     app.innerHTML = `
       <div class="mutted"><a href="#/vozidla">← Vozidla</a></div>
       <h1>${esc([v.typ, v.model].filter(Boolean).join(" ") || "Mercedes-Benz")}${v.rok ? ` (${v.rok})` : ""}</h1>
+      ${blokPoznamek([{ tabulka: "vozidla", id: v.id, hodnota: v.poznamky, popis: "Poznámky k autu", napoveda: "Zvláštnosti auta, historie, co hlídat příště…" }])}
       <section class="karta"><h2>Údaje</h2>
         <form id="f" class="mrizka" autocomplete="off">
           ${VP.map(([k, t, w]) => `<label class="pole ${w}">${t}<input name="${k}" value="${esc(v[k] ?? "")}" ${["rok", "km_posledni"].includes(k) ? 'inputmode="numeric"' : ""} ${k === "vin" ? 'class="vin" autocapitalize="characters" spellcheck="false"' : ""}>${k === "vin" && vin ? `<span class="napoveda">Typ ${vin.typ}, kód modelu ${vin.kod}</span>` : ""}</label>`).join("")}
@@ -2536,6 +2557,7 @@
       try { await db.smazatVozidlo(id); hlaska("Vozidlo smazáno."); location.hash = "#/vozidla"; } catch (e) { hlaska("Smazat nejde: " + chybaText(e), true, 7000); }
     };
     let verze = v.verze || "EU", jedn = v.jednotka_tachometru || "km";
+    navazPoznamky(app, (tab, h) => { v.poznamky = h; });
     const seg = (sel, fn) => app.querySelector(sel).onclick = e => { const b = e.target.closest("button"); if (!b) return; fn(b.dataset.h); app.querySelectorAll(sel + " button").forEach(x => x.setAttribute("aria-pressed", x === b)); };
     seg("#verze", h => { verze = h; if (h === "US" && jedn !== "mi") { jedn = "mi"; app.querySelectorAll("#jedn button").forEach(x => x.setAttribute("aria-pressed", x.dataset.h === "mi")); } });
     seg("#jedn", h => (jedn = h));

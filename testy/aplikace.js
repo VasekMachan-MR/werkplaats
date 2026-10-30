@@ -609,6 +609,17 @@ const server = http.createServer((q, r) => {
   kontrola(true, "zakázka s fakturou označena jako zrušená");
   odpovedPrompt = "2026-11-05";
 
+  // ---------- F5: poznámky k zakázce a k autu (sbalené, ukládají se samy) ----------
+  {
+    const zid = await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky[0].id);
+    await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid); await p.waitForSelector("details.poznamky");
+    kontrola(!(await p.isVisible('textarea[data-poznamka="zakazky"]')), "poznámky jsou sbalené (nezabírají místo)");
+    await p.click("details.poznamky > summary");
+    await p.fill('textarea[data-poznamka="vozidla"]', "Pozor: zadní levé kolo – zrezlý šroub");
+    await p.waitForSelector("[data-stav-poznamek] >> text=✓ Uloženo");
+    kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.vozidla.some(v => v.poznamky === "Pozor: zadní levé kolo – zrezlý šroub")), "poznámka k autu se uloží k autu");
+  }
+
   // ---------- E2 + D1: fotku jde skrýt v E-servisce; smazaná fotka zmizí i z úložiště ----------
   {
     const zf = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const f = T.soubory.find(x => x.druh === "foto" && x.zakazka_id && !x.smazano); return f && { z: f.zakazka_id, id: f.id, klic: f.klic }; });
