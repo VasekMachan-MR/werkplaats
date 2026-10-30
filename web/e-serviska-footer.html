@@ -116,7 +116,7 @@ function view(){
   h+='<div class="sec"><div class="h2">'+esc(t.hVisits)+'</div>';
   if(!D.navstevy.length)h+='<div class="info">'+esc(t.noVisits)+'</div>';
   D.navstevy.forEach(function(n,i){var o=!!S.open[i],kmN=n.km_predani||n.km_prijem,hot=HOT.indexOf(n.stav)>-1;
-   h+='<div class="vis"><button class="b vh" data-a="visit" data-i="'+i+'" aria-expanded="'+o+'"><span class="vd">'+esc(fdate(n.datum_predani||n.datum_prijmu,lang))+'</span><span class="vt">'+(n.predchozi_majitel?'<small style="font-weight:400;color:#4a4f55">'+esc(t.predchozi)+'</small>':'')+'</span><span class="vk">'+(kmN?esc(kmTxt(kmN,lang,unit)):'#'+esc(n.cislo))+'</span>'+I_CHEV(o)+'</button>';
+   h+='<div class="vis"><button class="b vh" data-a="visit" data-i="'+i+'" aria-expanded="'+o+'"><span class="vd">'+esc(fdate(n.datum_predani||n.datum_prijmu,lang))+'</span><span class="vt">'+(n.predchozi_majitel?'<small style="font-weight:400;color:#4a4f55">'+esc(t.predchozi)+'</small>':'')+'</span><span class="vk">'+(kmN?esc(kmTxt(kmN,lang,unit)):'')+'</span>'+I_CHEV(o)+'</button>';
    if(o){h+='<div class="vp"><p style="margin:0;color:#4a4f55">'+esc(t.recv+' '+fdate(n.datum_prijmu,lang))+(n.datum_predani?esc(' · '+t.hand+' '+fdate(n.datum_predani,lang)):'')+' · #'+esc(n.cislo)+(hot?'':'<br><b style="color:#333">'+esc(t.inprog)+'</b>')+'</p>';
     if(n.postup&&!hot)h+='<div><div class="sub">'+esc(t.postupL)+'</div>'+lista(n.postup)+'</div>';
     var work=n.prace.length?n.prace:n.zavady.map(function(z){return{typ:'prace',popis:z}});
