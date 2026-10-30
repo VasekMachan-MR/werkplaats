@@ -138,9 +138,9 @@ function view(){
      if(!d&&k===3&&maFakturu)return;   // faktura bez dílů → parts list není
      var nazev=esc(t.vd[k])+(d&&d.druh!=='parts_list'&&d.cislo?' '+esc(d.cislo):'')+(d&&d.puvodni?' <small style="font-weight:400;color:#4a4f55">('+esc(t.puvodni)+')</small>':'');
      // parts list se v E-servisce ukáže až s fakturou (Vašek 30.10.2026)
-     h+=d?docRadek('<span style="font-weight:600">'+nazev+'</span>',d.url,t.vd[k]+(d.druh!=='parts_list'&&d.cislo?' '+d.cislo:d.druh==='parts_list'?' '+n.cislo:'')):'<div class="doc"><span style="font-weight:600">'+nazev+'</span><span class="m"><span>'+esc(k===3?t.nevyst:t.pend)+'</span></span></div>'});
+     h+=d?docRadek('<span style="font-weight:600">'+nazev+'</span>',d.url,t.vd[k]+' '+(d.druh!=='parts_list'&&d.cislo?d.cislo:n.cislo)):'<div class="doc"><span style="font-weight:600">'+nazev+'</span><span class="m"><span>'+esc(k===3?t.nevyst:t.pend)+'</span></span></div>'});
     n.dokumenty.forEach(function(d){if(pouzite.indexOf(d)>-1||!d.puvodni)return;   // další původní doklady (např. sken)
-     h+=docRadek('<span style="font-weight:600">'+esc(t.puvodniDoklad)+' <small style="font-weight:400;color:#4a4f55">'+esc(d.nazev||'')+'</small></span>',d.url,d.nazev||t.puvodniDoklad)});
+     h+=docRadek('<span style="font-weight:600">'+esc(t.puvodniDoklad)+' <small style="font-weight:400;color:#4a4f55">'+esc(d.nazev||'')+'</small></span>',d.url,(d.nazev||t.puvodniDoklad)+(String(d.nazev||'').indexOf(String(n.cislo))<0?' '+n.cislo:''))});
     h+='</div></div>'}h+='</div>'}
    h+='</div>'});
   h+='</div>';
