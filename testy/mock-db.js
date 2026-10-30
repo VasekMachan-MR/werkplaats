@@ -1,6 +1,6 @@
 /* Zkušební databáze v paměti prohlížeče – stejné funkce jako skutečné napojení na Supabase (app.js → vytvorDb).
    Používá se jen v testech, do aplikace se nedostane. */
-window.__ULOZENO__ = { soubory: {}, tabulky: { zakaznici: [], vozidla: [], vlastnictvi: [], zakazky: [], soubory: [], doklady: [], podpisy: [], polozky: [], dily: [], nabidky: [] }, citac: 7376 };
+window.__ULOZENO__ = { soubory: {}, tabulky: { zakaznici: [], vozidla: [], vlastnictvi: [], zakazky: [], soubory: [], doklady: [], podpisy: [], polozky: [], dily: [], nabidky: [], kalendar: [] }, citac: 7376 };
 window.__WERK_DB__ = (() => {
   const T = window.__ULOZENO__.tabulky, S = window.__ULOZENO__.soubory;
   const id = () => crypto.randomUUID();
@@ -33,6 +33,8 @@ window.__WERK_DB__ = (() => {
           .map(([ukon, nazev, jen_palivo = null, jen_serizovani_ventilu = false], i) => ({ ukon, nazev, poradi: i + 1, jen_palivo, jen_serizovani_ventilu })) };
     },
     async dalsiCisloOdhad() { return window.__ULOZENO__.citac + 1; },
+    async kalendar(od, doo) { await cekej(); return kopie(T.kalendar.filter(k => k.datum >= od && k.datum <= doo)); },
+    async smazatRadek(tab, rid) { await cekej(); T[tab] = T[tab].filter(x => x.id !== rid); window.__ULOZENO__.tabulky[tab] = T[tab]; return [{ id: rid }]; },
     async zakazky() {
       await cekej();
       return kopie(T.zakazky.map(z => ({ ...z, vozidla: T.vozidla.find(v => v.id === z.vozidlo_id), zakaznici: T.zakaznici.find(c => c.id === z.zakaznik_id) }))

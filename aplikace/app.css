@@ -515,3 +515,28 @@ details.postup-prace[open] > summary .postup { display: none; }
 .fotka .znacka-vyberu { position: absolute; left: 6px; top: 6px; width: 28px; height: 28px; border-radius: 50%; border: 2px solid #fff; background: rgba(0,0,0,.35); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
 .fotka.vybrana { outline: 3px solid var(--navy); outline-offset: 2px; }
 .fotka.vybrana .znacka-vyberu { background: var(--navy); }
+
+/* kalendář v Přehledu */
+.kalendar { margin-bottom: 16px; }
+.kal-hlava { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.kal-mesic { min-width: 8.5em; text-align: center; text-transform: capitalize; }
+.kal-mrizka { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.kal-dn { text-align: center; font-size: 12px; color: var(--sedy); padding-bottom: 2px; }
+.kal-den { min-height: 52px; border: 1px solid #e3e6ea; border-radius: 8px; background: #fff; font: inherit; color: inherit; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 4px; padding: 6px 2px; cursor: pointer; }
+.kal-den.jiny { opacity: .45; }
+.kal-den.dnes > span:first-child { background: var(--navy); color: #fff; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; }
+.kal-den.vybrany { border-color: var(--navy); box-shadow: inset 0 0 0 1px var(--navy); }
+.kal-tecky { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; }
+.kalendar i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.kal-prijem { background: #2f6fd6; } .kal-termin { background: #d97706; } .kal-predani { background: #1e7a4c; } .kal-vlastni { background: #092a4f; }
+.kal-legenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--sedy); margin: 10px 0 0; }
+.kal-legenda span { display: inline-flex; align-items: center; gap: 6px; }
+.kal-detail { margin-top: 14px; padding-top: 12px; border-top: 1px solid #e3e6ea; }
+.kal-detail > b:first-child { display: inline-block; } .kal-detail > b:first-child::first-letter { text-transform: uppercase; }
+.kal-udalosti { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.kal-udalost { display: flex; align-items: center; gap: 10px; }
+.kal-udalost > a, .kal-udalost > span { flex: 1 1 auto; min-width: 0; }
+.kal-novy { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 12px; }
+.kal-novy input[name=text] { grid-column: 1 / -1; }
+@media (min-width: 760px) { .kal-novy { grid-template-columns: 1fr 120px 220px auto; } .kal-novy input[name=text] { grid-column: auto; } }
+@media (max-width: 420px) { .kal-den { min-height: 44px; padding: 4px 0; } .kal-novy select { grid-column: 1 / -1; } }

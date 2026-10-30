@@ -648,6 +648,25 @@ const server = http.createServer((q, r) => {
     await p.screenshot({ path: "testy/vystup-app/prace-postup.png", fullPage: false });
   }
 
+  // ---------- Kalendář v Přehledu ----------
+  {
+    await p.evaluate(() => { location.hash = "#/"; }); await p.waitForSelector("#kalendar .kal-den");
+    kontrola(await p.locator("#kalendar .kal-den.dnes .kal-prijem").count() === 0, "kalendář: zrušená zakázka se v kalendáři neukazuje");
+    await p.evaluate(() => { const z = window.__ULOZENO__.tabulky.zakazky[0]; z.stav = "v_praci"; z.predpoklad_dokonceni = z.datum_prijmu; location.hash = "#/zakazky"; });
+    await p.evaluate(() => { location.hash = "#/"; }); await p.waitForSelector("#kalendar .kal-den.dnes .kal-prijem");
+    kontrola(await p.locator("#kalendar .kal-den.dnes .kal-termin").count() === 1 && await p.locator(".kal-udalost >> text=Příjem #").count() === 1, "kalendář: příjem a termín dokončení zakázky jsou v kalendáři");
+    await p.evaluate(() => { window.__ULOZENO__.tabulky.zakazky[0].stav = "zruseno"; });
+    await p.fill("#kal-novy input[name=text]", "Přivezou 280 SL na prohlídku"); await p.fill("#kal-novy input[name=cas]", "09:30");
+    await p.click("#kal-novy button"); await p.waitForSelector(".kal-udalost >> text=Přivezou 280 SL");
+    kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.kalendar.some(k => k.text === "Přivezou 280 SL na prohlídku" && k.cas === "09:30")), "kalendář: vlastní termín s časem se uloží");
+    await p.click("#kalendar [data-kal='1']"); await p.waitForSelector("#kalendar [data-kal='0']");
+    kontrola(true, "kalendář: jde listovat po měsících");
+    await p.click("#kalendar [data-kal='0']"); await p.waitForSelector(".kal-udalost >> text=Přivezou 280 SL");
+    await p.screenshot({ path: "testy/vystup-app/kalendar.png", fullPage: true });
+    await p.click("[data-kal-smazat]"); await p.waitForFunction(() => !window.__ULOZENO__.tabulky.kalendar.length);
+    kontrola(true, "kalendář: vlastní termín jde smazat");
+  }
+
   // ---------- Fotky zákazníkovi: výběr a odeslání přes Sdílet (WhatsApp) ----------
   {
     const zf = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const f = T.soubory.find(x => x.druh === "foto" && x.zakazka_id && !x.smazano); return f && f.zakazka_id; });

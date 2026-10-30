@@ -156,7 +156,7 @@
       async dalsiCisloOdhad() { const r = ok(await sb.from("ciselne_rady").select("posledni").eq("rada", "zakazky").maybeSingle()); return r ? r.posledni + 1 : null; },
       async zakazky() {
         return ok(await sb.from("zakazky")
-          .select("id,cislo,stav,datum_prijmu,predpoklad_dokonceni,vozidla(typ,model,vin,spz,rok),zakaznici(jmeno,telefon)")
+          .select("id,cislo,stav,datum_prijmu,predpoklad_dokonceni,datum_predani,ukoly,vozidla(typ,model,vin,spz,rok),zakaznici(jmeno,telefon)")
           .order("cislo", { ascending: false }).limit(300));
       },
       async hledatZakazniky(q) {
@@ -202,6 +202,8 @@
       async dily(zid) { return ok(await sb.from("dily").select("*").eq("zakazka_id", zid).order("poradi")); },
       async ulozitDily(zid, dily) { return ok(await sb.rpc("ulozit_dily", { p_zakazka: zid, p_dily: dily })); },
       async dodavatele() { return ok(await sb.from("dodavatele").select("id,nazev,web,mena").order("nazev")); },
+      async kalendar(od, doo) { return ok(await sb.from("kalendar").select("id,datum,cas,text,zakazka_id").gte("datum", od).lte("datum", doo).order("datum").order("cas", { nullsFirst: true })); },
+      async smazatRadek(tabulka, id) { return ok(await sb.from(tabulka).delete().eq("id", id).select("id")); },
       async vsechnyDoklady() {
         return ok(await sb.from("doklady")
           .select("id,zakazka_id,druh,verze,cislo,vystaveno,splatnost,celkem,zaplaceno,odeslano_uol,jazyk,zakazky(id,cislo,zakaznici(jmeno),vozidla(typ,model)),soubory!doklady_pdf_soubor_id_fkey(klic)")
@@ -435,7 +437,7 @@
     const radek = (z, extra = "") => `
       <a class="zakazka-radek" href="#/zakazka/${z.id}">
         <span class="c">${z.cislo}</span>
-        <span class="auto"><b>${auto(z)}</b><small>${esc(z.zakaznici?.jmeno || "")}${extra}</small></span>
+        <span class="auto"><b>${auto(z)}</b><small>${esc(z.zakaznici?.jmeno || "")}${extra}</small>${(z.ukoly || []).some(x => String(x.t || "").trim()) && !HOTOVE_STAVY.includes(z.stav) ? listaPostupu(z.ukoly, true) : ""}</span>
         <span class="stitek ${["zaplaceno", "hotovo"].includes(z.stav) ? "hotovo" : ""}">${STAVY[z.stav] || z.stav}</span>
       </a>`;
     const MAX = 6, vice = (n, href, text) => n > MAX ? `<p style="margin:10px 0 0"><a href="${href}">${text} (${n}) →</a></p>` : "";
@@ -447,6 +449,7 @@
         <div class="dlazdice-k ${poSpl.length ? "cervena" : ""}"><small>Nezaplaceno</small><b>${kc(suma(nezapl))}</b><span>${nezapl.length} ks${poSpl.length ? ` · ${poSpl.length} po splatnosti` : ""}</span></div>
         <div class="dlazdice-k"><small>Fakturováno – ${esc(nazevMesice(mesic))}</small><b>${kc(suma(faMesic))}</b><span>${faMesic.length} ks</span></div>
       </div>
+      <section class="karta kalendar" id="kalendar"></section>
       <div class="uvod-mrizka">
         <section class="karta"><h2>V dílně</h2>
           ${vDilne.length ? `<div class="zakazky">${vDilne.slice(0, MAX).map(z => radek(z, termin(z))).join("")}</div>${vice(vDilne.length, "#/zakazky", "Všechny rozpracované").replace("<a ", '<a data-filtr="otevrene" ')}` : `<p class="mutted" style="margin:0">Teď v dílně nic není.</p>`}
@@ -463,6 +466,67 @@
               ${d.celkem != null && jeFa(d) ? `<b>${kc(d.celkem)}</b>` : ""}</a>`).join("")}</div></section>` : ""}
         </div>
       </div>`;
+    if (!prazdno) vykresliKalendar(zak);
+  }
+  /* ---------- kalendář: příjmy, termíny dokončení, předání + vlastní termíny ---------- */
+  const MESICE = ["leden", "únor", "březen", "duben", "květen", "červen", "červenec", "srpen", "září", "říjen", "listopad", "prosinec"];
+  const isoDen = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  let K_STAV = null;
+  async function vykresliKalendar(zak) {
+    const el = document.getElementById("kalendar"); if (!el) return;
+    const D = dnes();
+    K_STAV ||= { mesic: D.slice(0, 7), den: D };
+    const [r, m] = K_STAV.mesic.split("-").map(Number), prvni = new Date(r, m - 1, 1), posledni = new Date(r, m, 0);
+    const start = new Date(prvni); start.setDate(1 - ((prvni.getDay() + 6) % 7));            // pondělí
+    const konec = new Date(posledni); konec.setDate(posledni.getDate() + (7 - ((posledni.getDay() + 6) % 7)) - 1);
+    let vlastni = [];
+    try { vlastni = await db.kalendar(isoDen(start), isoDen(konec)); } catch (e) { /* bez tabulky jen zakázky */ }
+    if (!document.body.contains(el)) return;
+    const U = {};                                     // datum → události
+    const pridej = (d, u) => { if (d) (U[d] ||= []).push(u); };
+    const nazev = z => `#${z.cislo} ${[z.vozidla?.typ, z.vozidla?.model].filter(Boolean).join(" ")}`;
+    zak.filter(z => z.stav !== "zruseno").forEach(z => {
+      pridej(z.datum_prijmu, { druh: "prijem", text: `Příjem ${nazev(z)}`, pod: z.zakaznici?.jmeno, href: `#/zakazka/${z.id}` });
+      if (!HOTOVE_STAVY.includes(z.stav) && z.stav !== "poptavka") pridej(z.predpoklad_dokonceni, { druh: "termin", text: `Termín dokončení ${nazev(z)}`, pod: z.zakaznici?.jmeno, href: `#/zakazka/${z.id}` });
+      if (z.datum_predani) pridej(z.datum_predani, { druh: "predani", text: `Předání ${nazev(z)}`, pod: z.zakaznici?.jmeno, href: `#/zakazka/${z.id}` });
+    });
+    vlastni.forEach(k => { const z = zak.find(x => x.id === k.zakazka_id); pridej(k.datum, { druh: "vlastni", id: k.id, cas: k.cas ? String(k.cas).slice(0, 5) : "", text: k.text, pod: z ? nazev(z) : "", href: z ? `#/zakazka/${z.id}` : "" }); });
+    const dny = []; for (let d = new Date(start); d <= konec; d.setDate(d.getDate() + 1)) dny.push(isoDen(d));
+    const vyb = U[K_STAV.den] || [], denObj = new Date(K_STAV.den + "T12:00:00");
+    el.innerHTML = `<div class="kal-hlava"><h2 style="margin:0">Kalendář</h2>
+        <span class="radek-tlacitek"><button type="button" class="tl tl-male tl-ikona" data-kal="-1" aria-label="Předchozí měsíc">‹</button>
+        <b class="kal-mesic">${MESICE[m - 1]} ${r}</b>
+        <button type="button" class="tl tl-male tl-ikona" data-kal="1" aria-label="Další měsíc">›</button>
+        ${K_STAV.mesic !== D.slice(0, 7) ? `<button type="button" class="tl tl-male" data-kal="0">Dnes</button>` : ""}</span></div>
+      <div class="kal-mrizka">${["po", "út", "st", "čt", "pá", "so", "ne"].map(x => `<div class="kal-dn">${x}</div>`).join("")}
+        ${dny.map(d => { const u = U[d] || []; const druhy = [...new Set(u.map(x => x.druh))];
+          return `<button type="button" class="kal-den${d.slice(0, 7) !== K_STAV.mesic ? " jiny" : ""}${d === D ? " dnes" : ""}${d === K_STAV.den ? " vybrany" : ""}" data-den="${d}" aria-label="${datumCz(d)}${u.length ? `, ${u.length} událostí` : ""}">
+            <span>${+d.slice(8)}</span><span class="kal-tecky">${druhy.map(x => `<i class="kal-${x}"></i>`).join("")}</span></button>`; }).join("")}</div>
+      <div class="kal-legenda"><span><i class="kal-prijem"></i>příjem</span><span><i class="kal-termin"></i>termín dokončení</span><span><i class="kal-predani"></i>předání</span><span><i class="kal-vlastni"></i>vlastní</span></div>
+      <div class="kal-detail"><b>${denObj.toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long" })}</b>
+        ${vyb.length ? `<div class="kal-udalosti">${vyb.sort((a, b) => String(a.cas || "").localeCompare(String(b.cas || ""))).map(u => `<div class="kal-udalost"><i class="kal-${u.druh}"></i>
+          ${u.href ? `<a href="${u.href}">` : "<span>"}${u.cas ? `<b>${esc(u.cas)}</b> ` : ""}${esc(u.text)}${u.pod ? `<small class="mutted"> · ${esc(u.pod)}</small>` : ""}${u.href ? "</a>" : "</span>"}
+          ${u.id ? `<button type="button" class="tl tl-male tl-kos" data-kal-smazat="${u.id}" aria-label="Smazat termín">🗑</button>` : ""}</div>`).join("")}</div>`
+          : `<p class="mutted" style="margin:6px 0 0">Nic naplánováno.</p>`}
+        <form class="kal-novy" id="kal-novy">
+          <input class="vstup" name="text" placeholder="Nový termín – např. přivezou 280 SL" required maxlength="200">
+          <input class="vstup" name="cas" type="time" aria-label="Čas (nepovinné)">
+          <select class="vstup" name="zakazka" aria-label="K zakázce (nepovinné)"><option value="">bez zakázky</option>${zak.filter(z => z.stav !== "zruseno").slice(0, 60).map(z => `<option value="${z.id}">${esc(nazev(z))}</option>`).join("")}</select>
+          <button class="tl tl-hlavni">＋ Přidat</button></form></div>`;
+    el.querySelectorAll("[data-kal]").forEach(b => b.onclick = () => {
+      const k = +b.dataset.kal; if (!k) { K_STAV = { mesic: D.slice(0, 7), den: D }; }
+      else { const n = new Date(r, m - 1 + k, 1); K_STAV.mesic = isoDen(n).slice(0, 7); K_STAV.den = isoDen(n); }
+      vykresliKalendar(zak); });
+    el.querySelectorAll("[data-den]").forEach(b => b.onclick = () => { K_STAV.den = b.dataset.den; if (b.dataset.den.slice(0, 7) !== K_STAV.mesic) K_STAV.mesic = b.dataset.den.slice(0, 7); vykresliKalendar(zak); });
+    el.querySelectorAll("[data-kal-smazat]").forEach(b => b.onclick = async () => {
+      if (!confirm("Smazat tento termín?")) return;
+      try { await db.smazatRadek("kalendar", b.dataset.kalSmazat); vykresliKalendar(zak); } catch (e) { hlaska(chybaText(e), true); } });
+    el.querySelector("#kal-novy").onsubmit = async e => {
+      e.preventDefault(); const f = e.target, t = f.text.value.trim(); if (!t) return;
+      f.querySelector("button").disabled = true;
+      try { await db.vlozit("kalendar", [{ datum: K_STAV.den, cas: f.cas.value || null, text: t, zakazka_id: f.zakazka.value || null }]); hlaska("Termín přidán."); vykresliKalendar(zak); }
+      catch (err) { f.querySelector("button").disabled = false; hlaska(chybaText(err), true); }
+    };
   }
 
   async function prehled() {
