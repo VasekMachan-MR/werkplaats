@@ -752,7 +752,7 @@ const server = http.createServer((q, r) => {
     await p.click(".editor-poznamek [data-zavrit]");
     await p.waitForFunction(() => window.__ULOZENO__.tabulky.vozidla.some(v => v.poznamky === "Celá obrazovka:\n☐ úkol 1\n    ☑ podúkol"), null, { timeout: 5000 });
     kontrola(await p.inputValue('textarea[data-poznamka="vozidla"]') === "Celá obrazovka:\n☐ úkol 1\n    ☑ podúkol", "Poznámky: text z editoru je v poli a uloží se (i s odsazením)");
-    kontrola(await p.evaluate(() => document.querySelector('textarea[data-poznamka="vozidla"]').rows >= 12), "Poznámky: pole je velké (aspoň 12 řádků)");
+    kontrola(await p.evaluate(() => document.querySelector('textarea[data-poznamka="vozidla"]').rows === 3), "Poznámky: pole má původní velikost (3 řádky), celá obrazovka zvlášť");
     // VIN se dá jedním klepnutím zkopírovat
     await p.evaluate(() => { const s = document.getElementById("sekce-udaje"); if (s) s.open = true; });
     kontrola(await p.locator('#sekce-udaje [data-kopirovat]').count() === 1, "Zakázka: u VIN je tlačítko Kopírovat");

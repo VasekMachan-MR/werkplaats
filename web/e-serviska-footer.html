@@ -56,6 +56,7 @@ function fdate(s,l){if(!s)return'';var p=String(s).split('-'),D=+p[2],M=+p[1],Y=
 function num(n,l){return Number(n).toLocaleString(l==='cs'?'cs-CZ':l==='nl'?'nl-NL':'en-GB')}
 // stav tachometru; u mílí i přepočet na km („180 955 mi (≈ 291 200 km)“)
 function kmTxt(n,l,unit){return num(n,l)+' '+unit+(unit==='mi'?' (≈ '+num(Math.round(n*1.609344/100)*100,l)+' km)':'')}
+function kodModelu(vin,typ){var v=String(vin||'').toUpperCase().replace(/\s/g,''),m=v.match(/^WD[BDC](\d{3})(\d{3})/)||v.match(/^(\d{3})(\d{3})\d{2,}/),n=String(typ||'').match(/\d{3}/);return m&&(!n||n[0]===m[1])?m[1]+'.'+m[2]:''}
 function typKod(t){t=String(t||'').toUpperCase().replace(/\s+/g,'');var m=t.match(/^([WRC])?(\d{3})/);if(!m)return t;return (m[1]||(m[2]==='107'?'R':m[2]==='124'&&/C$/.test(t)?'C':'W'))+m[2]}
 function kody(k){if(!k)return[];if(Array.isArray(k))return k.map(function(x){return typeof x==='string'?[x,'']:[x.kod||x.code||'',x.popis||x.text||x.desc||'']});if(typeof k==='object')return Object.keys(k).map(function(c){return[c,k[c]]});return[]}
 function roky(m,t){var y=m/12;return y===1?'1 '+t.y1:y+' '+(y<5?t.y24:t.y5)}
@@ -102,7 +103,7 @@ function view(){
   var bezi=D.navstevy.filter(function(n){return n.postup&&!n.predchozi_majitel&&HOT.indexOf(n.stav)<0})[0];
   if(bezi)h+='<div class="sec"><div class="box"><div class="h2" style="margin:0">'+esc(t.postupH)+'</div><p style="margin:4px 0 0;color:#4a4f55">#'+esc(bezi.cislo)+' · '+esc(t.recv+' '+fdate(bezi.datum_prijmu,lang))+'</p>'+lista(bezi.postup,true)+'</div></div>';
   var km=v.km_posledni!=null?kmTxt(v.km_posledni,lang,unit):t.none,sa=kody(v.kody_vybavy);
-  h+='<div class="sec"><div class="h2">'+esc(t.hFacts)+'</div><div class="box"><div class="cols"><div>'+row(t.f.model,v.model||t.none)+row(t.f.typ,v.typ||t.none)+row(t.f.year,v.rok?(v.mesic?v.mesic+'/':'')+v.rok:t.none)+row(t.f.engine,v.cislo_motoru||t.none)+row(t.f.gear,v.prevodovka||t.none)+'</div><div>';
+  h+='<div class="sec"><div class="h2">'+esc(t.hFacts)+'</div><div class="box"><div class="cols"><div>'+row(t.f.model,v.model||t.none)+row(t.f.typ,v.typ?typKod(v.typ)+(kodModelu(v.vin,v.typ)?' ('+kodModelu(v.vin,v.typ)+')':''):t.none)+row(t.f.year,v.rok?(v.mesic?v.mesic+'/':'')+v.rok:t.none)+row(t.f.engine,v.cislo_motoru||t.none)+row(t.f.gear,v.prevodovka||t.none)+'</div><div>';
   h+=row(t.f.vin,'','<span style="display:flex;align-items:center;gap:2px;justify-content:flex-end"><span style="word-break:break-all">'+esc(v.vin)+'</span><button class="b" data-a="copy" aria-label="'+esc(S.copied?t.copied:t.copyVin)+'" title="'+esc(S.copied?t.copied:t.copyVin)+'" style="flex:0 0 auto;margin:-10px -6px -10px 0;width:44px;height:44px;display:flex;align-items:center;justify-content:center">'+(S.copied?'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#092b50" stroke-width="2.4"><path d="M4 10l4 4 8-8"/></svg>':'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#092b50" stroke-width="2"><rect x="7" y="7" width="10" height="10"/><path d="M13 7V3H3v10h4"/></svg>')+'</button></span>');
   h+=row(t.f.spz,v.spz||t.none)+row(t.f.km,km)+row(t.f.ver,v.verze||t.none);
   // SA kódy (výbava z datové karty MB) – vždy pod „Verze“, vedle „Převodovka“; „i“ otevře tabulku

@@ -1768,22 +1768,20 @@
     e.value = t.value; e.focus(); e.setSelectionRange(0, 0); e.scrollTop = 0;
     const puv = document.documentElement.style.overflow; document.documentElement.style.overflow = "hidden";
     e.addEventListener("input", () => { t.value = e.value; t.dispatchEvent(new Event("input", { bubbles: true })); st.textContent = "Ukládá se samo…"; });
-    const zavri = () => { document.documentElement.style.overflow = puv; ov.remove(); document.removeEventListener("keydown", kl, true); t.rows = Math.max(t.rows, radkuPoznamky(t.value)); };
+    const zavri = () => { document.documentElement.style.overflow = puv; ov.remove(); document.removeEventListener("keydown", kl, true); };
     const kl = ev => { if (ev.key === "Escape") { ev.stopPropagation(); zavri(); } };
     document.addEventListener("keydown", kl, true);
     ov.querySelector("[data-zavrit]").onclick = zavri;
   }
   // pole poznámky tak vysoké, aby byla vidět celá (dlouhé poznámky z Apple Poznámek), max. 30 řádků – dál se roluje
-  const radkuPoznamky = t => Math.min(40, Math.max(12, String(t || "").split("\n").reduce((n, r) => n + Math.max(1, Math.ceil(r.length / 90)), 0) + 1));
   function blokPoznamek(pole, zid) {
     const n = pole.filter(x => String(x.hodnota || "").trim()).length;
     return `<details class="karta poznamky"${zid ? ` id="sekce-poznamky" data-sbal${sbalOpen(zid, "sekce-poznamky")}` : ""}><summary><b>📝 Poznámky</b> <span class="mutted">${n ? pole.filter(x => String(x.hodnota || "").trim()).map(x => nahledPoznamky(x.hodnota)).join(" · ") : "žádné"}</span></summary>
-      ${pole.map(x => `<label class="pole" style="margin-top:12px"><span class="popis-poznamky">${x.popis}<button type="button" class="tl tl-male" data-cela-obrazovka title="Otevřít poznámku přes celou obrazovku">⤢ Celá obrazovka</button></span><textarea class="vstup poznamka-text" rows="${radkuPoznamky(x.hodnota)}" data-poznamka="${x.tabulka}" data-id="${x.id}" placeholder="${x.napoveda || ""}">${esc(x.hodnota || "")}</textarea></label>`).join("")}
+      ${pole.map(x => `<label class="pole" style="margin-top:12px"><span class="popis-poznamky">${x.popis}<button type="button" class="tl tl-male" data-cela-obrazovka title="Otevřít poznámku přes celou obrazovku">⤢ Celá obrazovka</button></span><textarea class="vstup poznamka-text" rows="3" data-poznamka="${x.tabulka}" data-id="${x.id}" placeholder="${x.napoveda || ""}">${esc(x.hodnota || "")}</textarea></label>`).join("")}
       <span class="napoveda" data-stav-poznamek></span></details>`;
   }
   function navazPoznamky(root, potom) {
     root.querySelectorAll("textarea[data-poznamka]").forEach(t => {
-      t.addEventListener("input", () => { const r = radkuPoznamky(t.value); if (r > t.rows) t.rows = r; });
       const cela = t.closest("label")?.querySelector("[data-cela-obrazovka]");
       if (cela) cela.onclick = e => { e.preventDefault(); poznamkaNaCelouObrazovku(t, t.closest("label").querySelector(".popis-poznamky").firstChild.textContent.trim()); };
       const st = root.querySelector("[data-stav-poznamek]");
