@@ -290,7 +290,7 @@ ul.odrazky { margin: 6px 0 0; padding-left: 20px; }
 .akce-pol { display: flex; gap: 6px; }
 .akce-pol .tl { min-width: 40px; padding: 6px 8px; }
 .dil { border: 1px solid var(--linka); border-radius: 12px; padding: 10px; margin-bottom: 10px; background: #fcfdfe; }
-.dil-r1 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.dil-r1 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 1.2fr) minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
 .dil-r2 { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-top: 8px; }
 .dil-r2 label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; font-weight: 600; color: var(--sedy); width: 104px; }
 .dil .vstup { min-height: 44px; padding: 8px 10px; font-size: 16px; }
@@ -659,4 +659,9 @@ textarea.poznamka-text { width: 100%; max-width: none; resize: vertical; font-si
 .preklad-stitek.chybi { background: #fde8e6; color: var(--cervena); }
 @media (max-width: 700px) { .preklad-radek { grid-template-columns: 1fr; } }
 .preklad-stitek.stejne { background: #eef0f3; color: var(--sedy); }
-.faktury-dilu { margin-top: 14px; } .faktury-dilu .podnadpis { margin: 0 0 6px; }
+.faktury-dilu { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tl-faktura-dilu { opacity: .55; padding-inline: 8px; } .tl-faktura-dilu:hover, .tl-faktura-dilu:focus-within { opacity: 1; }
+.dil-faktury { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.dil-faktura { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; background: #f1f4f8; border: 1px solid var(--linka); border-radius: 8px; padding: 2px 4px 2px 8px; max-width: 100%; }
+.dil-faktura .odkaz { background: none; border: 0; padding: 4px 0; color: var(--modra, #092b50); text-decoration: underline; cursor: pointer; font: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.dil-faktura .tl-x { background: none; border: 0; cursor: pointer; font-size: 16px; line-height: 1; padding: 6px; color: var(--sedy); min-width: 32px; min-height: 32px; }

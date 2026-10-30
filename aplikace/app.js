@@ -2275,28 +2275,31 @@
   const typDokumentu = f => { const t = (f.type || "").replace("image/heif", "image/heic").replace("image/jpg", "image/jpeg");
     return ["application/pdf", "image/jpeg", "image/png", "image/heic"].includes(t) ? t : (/\.pdf$/i.test(f.name) ? "application/pdf" : /\.hei[cf]$/i.test(f.name) ? "image/heic" : /\.png$/i.test(f.name) ? "image/png" : /\.jpe?g$/i.test(f.name) ? "image/jpeg" : ""); };
 
-  /* ---------- přijaté faktury za materiál (Vašek 30.10.2026): u dílů zakázky, zákazník je nevidí, půjdou účetní (UOL) ---------- */
+  /* ---------- přijaté faktury za materiál (Vašek 30.10.2026): u jednotlivých dílů zakázky, zákazník je nevidí, půjdou účetní (UOL)
+     soubory.druh = "nakupni_doklad", soubory.faze = "dil:<id dílu>" (u dílu); bez dílu / smazaný díl → seznam pod díly ---------- */
+  const fakturyZakazky = () => (E.z.soubory || []).filter(s => s.druh === "nakupni_doklad" && !s.smazano).sort((a, b) => String(a.vytvoreno || "").localeCompare(String(b.vytvoreno || "")));
+  const fakturyDilu = id => fakturyZakazky().filter(f => id && f.faze === `dil:${id}`);
+  const htmlFakturDilu = fa => fa.length ? `<div class="dil-faktury">${fa.map(f => `<span class="dil-faktura">🧾 <button type="button" class="odkaz" data-faktura-otevrit="${esc(f.klic)}" title="Otevřít fakturu">${esc(f.nazev || "faktura")}</button>${jeMajitel() ? `<button type="button" class="tl-x" data-faktura-smazat="${f.id}" aria-label="Smazat fakturu" title="Smazat fakturu">×</button>` : ""}</span>`).join("")}</div>` : "";
   function vykresliFakturyDilu() {
-    const el = document.getElementById("faktury-dilu"); if (!el || !E) return;
-    const fa = (E.z.soubory || []).filter(s => s.druh === "nakupni_doklad" && !s.smazano).sort((a, b) => String(a.vytvoreno || "").localeCompare(String(b.vytvoreno || "")));
-    el.innerHTML = fa.length ? `<div class="faktury-dilu"><h3 class="podnadpis">🧾 Přijaté faktury za materiál <span class="mutted" style="font-weight:400">${fa.length}</span></h3>
-      <div class="doklady">${fa.map(f => `<div class="doklad"><span>${/^image\//.test(f.mime || "") ? "🖼" : "📄"} ${esc(f.nazev || "faktura")}${f.vytvoreno ? ` <small class="mutted">${datumCz(String(f.vytvoreno).slice(0, 10))}</small>` : ""}</span><span class="radek-tlacitek">
-        <button type="button" class="tl tl-male" data-faktura-otevrit="${esc(f.klic)}">Otevřít</button>
-        ${jeMajitel() ? `<button type="button" class="tl tl-male tl-kos" data-faktura-smazat="${f.id}" aria-label="Smazat fakturu">🗑</button>` : ""}</span></div>`).join("")}</div></div>` : "";
-    el.querySelectorAll("[data-faktura-otevrit]").forEach(b => b.onclick = async () => {
+    const box = document.getElementById("dily"); if (!box || !E) return;
+    const el = document.getElementById("faktury-dilu");
+    const idDilu = new Set(E.dily.map(d => d.id).filter(Boolean));
+    const volne = fakturyZakazky().filter(f => !(String(f.faze || "").startsWith("dil:") && idDilu.has(f.faze.slice(4))));
+    if (el) el.innerHTML = volne.length ? `<div class="faktury-dilu"><span class="napoveda">Přijaté faktury bez dílu:</span> ${htmlFakturDilu(volne)}</div>` : "";
+    box.querySelectorAll("[data-faktura-otevrit]").forEach(b => b.onclick = async () => {
       const okno = window.open("", "_blank");
       try { const u = await db.odkaz(b.dataset.fakturaOtevrit, 600); if (okno) okno.location = u; else location.href = u; }
       catch (e) { okno?.close(); hlaska(chybaText(e), true); }
     });
-    el.querySelectorAll("[data-faktura-smazat]").forEach(b => b.onclick = async () => {
-      if (!confirm("Opravdu smazat tuto přijatou fakturu ze zakázky?")) return;
+    box.querySelectorAll("[data-faktura-smazat]").forEach(b => b.onclick = async () => {
+      if (!confirm("Opravdu smazat tuto přijatou fakturu?")) return;
       try { const s = E.z.soubory.find(x => x.id === b.dataset.fakturaSmazat);
         await db.smazatZaznamSouboru(b.dataset.fakturaSmazat); if (s) { uklidSoubory({ klice: [s.klic] }); s.smazano = new Date().toISOString(); }
-        vykresliFakturyDilu(); hlaska("Faktura odebrána."); }
+        vykresliDily(); hlaska("Faktura odebrána."); }
       catch (e) { hlaska(chybaText(e), true); }
     });
   }
-  async function nahratFakturyDilu(vse) {
+  async function nahratFakturyDilu(vse, idDilu) {
     const soubory = vse.filter(f => typDokumentu(f));
     if (soubory.length < vse.length) hlaska("Některé soubory nejsou PDF, JPG, PNG ani HEIC – přeskočeny.", true);
     if (!soubory.length) return;
@@ -2307,11 +2310,11 @@
         const mime = typDokumentu(f), pr = (f.name.match(/\.([a-z0-9]{2,5})$/i)?.[1] || (mime === "application/pdf" ? "pdf" : "jpg")).toLowerCase();
         const klic = `nakupni/${zak.z.cislo}/${uuid()}.${pr}`;
         await db.nahrat(klic, f, mime, () => {});
-        const [rad] = await db.vlozit("soubory", [{ zakazka_id: zak.id, vozidlo_id: zak.z.vozidlo_id || zak.z.vozidla?.id, druh: "nakupni_doklad", klic, nazev: f.name, velikost: f.size, mime, verejne: false }]);
-        (zak.z.soubory ||= []).push(rad || { druh: "nakupni_doklad", klic, nazev: f.name, mime, verejne: false, vytvoreno: new Date().toISOString() }); ok++;
+        const [rad] = await db.vlozit("soubory", [{ zakazka_id: zak.id, vozidlo_id: zak.z.vozidlo_id || zak.z.vozidla?.id, druh: "nakupni_doklad", faze: idDilu ? `dil:${idDilu}` : null, klic, nazev: f.name, velikost: f.size, mime, verejne: false }]);
+        (zak.z.soubory ||= []).push(rad || { druh: "nakupni_doklad", faze: idDilu ? `dil:${idDilu}` : null, klic, nazev: f.name, mime, verejne: false, vytvoreno: new Date().toISOString() }); ok++;
       } catch (er) { hlaska(`${f.name}: ${chybaText(er)}`, true); }
     }
-    if (E === zak) { const sd = document.getElementById("sekce-dily"); if (sd) sd.open = true; vykresliFakturyDilu(); if (ok) hlaska(`Přidáno ${ok} ${ok === 1 ? "faktura" : ok < 5 ? "faktury" : "faktur"}.`); }
+    if (E === zak) { const sd = document.getElementById("sekce-dily"); if (sd) sd.open = true; vykresliDily(); if (ok) hlaska(`Přidáno ${ok} ${ok === 1 ? "faktura" : ok < 5 ? "faktury" : "faktur"}.`); }
   }
 
   /* ---------- archiv (legacy): původní PDF ze starého systému (Excel), jen pro čtení, nic se z nich nedigitalizuje ---------- */
@@ -2708,6 +2711,7 @@
           <input class="vstup" data-f="cislo_mb" value="${esc(d.cislo_mb || "")}" placeholder="Číslo dílu (A 126 …)" autocapitalize="characters" spellcheck="false">
           <select class="vstup" data-f="dodavatel_id"><option value="">Dodavatel…</option>${dod.map(x => `<option value="${x.id}" ${x.id === d.dodavatel_id ? "selected" : ""}>${esc(x.nazev)}</option>`).join("")}</select>
           <select class="vstup" data-f="stav">${STAVY_DILU.map(([k, t]) => `<option value="${k}" ${k === (d.stav || "potreba") ? "selected" : ""}>${t}</option>`).join("")}</select>
+          <label class="tl tl-male tl-faktura-dilu" title="Nahrát přijatou fakturu k tomuto dílu (PDF nebo fotka) – zákazník ji nevidí, půjde účetní" aria-label="Nahrát fakturu k dílu">🧾<input type="file" accept="application/pdf,image/*,.heic,.heif,.jpg,.jpeg,.png" multiple hidden data-faktura-dil="${i}"></label>
           <button type="button" class="tl tl-male" data-smaz-dil="${i}" aria-label="Smazat díl">×</button>
         </div>
         <div class="naseptavac" hidden></div>
@@ -2723,11 +2727,11 @@
           <label class="siroke">Poznámka (Remarks v parts listu)<input class="vstup" data-f="poznamka" value="${esc(d.poznamka || "")}" placeholder="např. Original MB, + o-rings"></label>
           <span class="celkem-dil ${d.stav === "nepouzito" ? "mutted" : ""}">${d.stav === "nepouzito" ? "nepoužito" : kc(cenaDilu(d))}</span>
         </div>
+        ${htmlFakturDilu(fakturyDilu(d.id))}
       </div>`).join("")}
       <div class="radek-tlacitek" style="margin-top:12px">
         <button type="button" class="tl" id="pridat-dil">＋ Přidat díl</button>
         <button type="button" class="tl" id="import-dilu" aria-expanded="${!!E.imp}">📥 Import z e-mailu</button>
-        <label class="tl" title="Faktura od dodavatele za materiál k této zakázce (PDF nebo fotka). Zákazník ji nevidí, půjde účetní do UOL.">🧾 Přijatá faktura<input type="file" accept="application/pdf,image/*,.heic,.heif,.jpg,.jpeg,.png" multiple hidden id="faktura-dilu-nahrat"></label>
         ${E.dily.length ? `<button type="button" class="tl" id="parts-list">📄 Parts list (PDF)</button>
           <label class="cip zaskrt"><input type="checkbox" id="parts-ceny" checked> s cenami</label>
           <button type="button" class="tl tl-smazat" id="smazat-dily" style="margin-left:auto">🗑 Smazat všechny díly</button>` : ""}
@@ -2737,7 +2741,10 @@
       ${htmlTypickychDilu()}
       ${E.imp ? panelImportu() : ""}`;
     vykresliFakturyDilu();
-    el.querySelector("#faktura-dilu-nahrat").onchange = e => { const f = [...e.target.files]; e.target.value = ""; nahratFakturyDilu(f); };
+    el.querySelectorAll("[data-faktura-dil]").forEach(inp => inp.onchange = e => {
+      const d = E.dily[+inp.dataset.fakturaDil], f = [...e.target.files]; e.target.value = "";
+      if (d) { d.id ||= uuid(); nahratFakturyDilu(f, d.id); }
+    });
     el.querySelectorAll(".dil[data-i]").forEach(r => {
       const d = E.dily[+r.dataset.i];
       napojNaseptavac(r, d);
