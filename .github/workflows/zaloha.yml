@@ -1,0 +1,48 @@
+# Noční záloha Werkplaats + E-servisky (Vašek 30.10.2026). Běží na GitHubu, nezávisle na Macu.
+# Balíček (kód, data, obnova-dat.sql, návody) → Cloudflare R2 „werkplaats-zalohy/RRRR-MM-DD/“ (drží se 30 posledních),
+# fotky, videa a PDF → zrcadlo „werkplaats-soubory“ (jen přidává). Pojistka: nad 8 GB v R2 se nic nenahraje (bezplatný limit je 10 GB).
+name: Noční záloha
+on:
+  schedule:
+    - cron: "0 1 * * *"   # 2:00 v zimě, 3:00 v létě (čas v Praze)
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  id-token: write   # token GitHub OIDC – funkce zaloha v Supabase podle něj pozná tuto úlohu (žádné heslo)
+concurrency: { group: zaloha, cancel-in-progress: false }
+jobs:
+  zaloha:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Pojistka – obsazené místo v R2 (max 8 GB)
+        run: |
+          celkem=0
+          for k in werkplaats-zalohy werkplaats-soubory; do
+            b=$(aws --endpoint-url "$R2_ENDPOINT" s3 ls "s3://$k" --recursive --summarize | awk '/Total Size/ {print $3}')
+            celkem=$((celkem + ${b:-0}))
+          done
+          echo "Obsazeno v R2: $((celkem / 1048576)) MB"
+          if [ "$celkem" -gt $((8 * 1024 * 1024 * 1024)) ]; then echo "::error::R2 má přes 8 GB – záloha nic nenahraje, aby se nic neplatilo. Je potřeba uklidit."; exit 1; fi
+      - name: Balíček zálohy
+        run: |
+          echo "DEN=$(TZ=Europe/Prague date +%F)" >> "$GITHUB_ENV"
+          VYSTUP="$RUNNER_TEMP/balicek/zaloha-$(TZ=Europe/Prague date +%F)" zaloha/denni-zaloha.sh
+      - name: Nahrát balíček do R2
+        run: aws --endpoint-url "$R2_ENDPOINT" s3 sync --only-show-errors "$RUNNER_TEMP/balicek/zaloha-$DEN" "s3://werkplaats-zalohy/$DEN/"
+      - name: Zrcadlo fotek a PDF
+        run: python3 zaloha/zrcadlo-souboru.py "$RUNNER_TEMP/balicek/data-$DEN.json"
+      - name: Úklid – nechat 30 posledních záloh
+        run: |
+          aws --endpoint-url "$R2_ENDPOINT" s3 ls s3://werkplaats-zalohy/ | awk '/PRE/ {print $2}' | sort | head -n -30 | while read -r d; do
+            echo "mažu starou zálohu $d"; aws --endpoint-url "$R2_ENDPOINT" s3 rm --only-show-errors --recursive "s3://werkplaats-zalohy/$d"
+          done
