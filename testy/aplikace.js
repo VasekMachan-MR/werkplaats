@@ -973,6 +973,32 @@ const server = http.createServer((q, r) => {
     kontrola(true, "Sklad: nepoužitou položku jde smazat (🗑)");
     await p.screenshot({ path: "testy/vystup-app/sklad.png", fullPage: true });
   }
+  {
+    // ---------- „Upravit příjem“ → Uložit a vystavit k podpisu: nová verze zakázkového listu s novými údaji (Vašek 30.10.2026) ----------
+    const zid = await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky.find(z => z.cislo === 7377).id);
+    const pred = await p.evaluate(id => window.__ULOZENO__.tabulky.doklady.filter(d => d.zakazka_id === id && d.druh === "zakazkovy_list").map(d => d.verze || 1), zid);
+    const cisloNove = pred.length ? `7377-1-${Math.max(...pred) + 1}` : "7377-1";
+    await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid); await p.waitForSelector("#upravit-prijem", { state: "attached" });
+    await p.evaluate(() => { document.querySelector("#upravit-prijem").closest("details")?.setAttribute("open", ""); });
+    await p.click("#upravit-prijem"); await p.waitForSelector("#vystavit-znovu");
+    kontrola(await p.evaluate(() => { const b = [...document.querySelectorAll("#sekce-prijem-detail .radek-tlacitek button[id]")].map(x => x.id); return b.join() === "ulozit-prijem,vystavit-znovu,zrusit-upravy"; }),
+      "Upravit příjem: tlačítko „Uložit a vystavit k podpisu“ je mezi Uložit a Zrušit");
+    await p.fill('[data-uf="odhad_ceny"]', "45000");
+    await p.click('[data-up="zavady"]'); await p.locator('[data-ur="zavady"]').last().fill("Doplněno: výměna brzdové kapaliny");
+    await p.click("#vystavit-znovu");
+    await p.waitForSelector("#nahled"); await p.waitForFunction(() => /45\D?000/.test(document.querySelector("#nahled").contentDocument?.body?.innerText || ""), null, { timeout: 10000 }).catch(() => {});
+    const nahled = await p.evaluate(() => document.querySelector("#nahled").contentDocument.body.innerText);
+    kontrola(/Doplněno:\s+výměna\s+brzdové\s+kapaliny/.test(nahled) && /45\D?000/.test(nahled),
+      "Vystavit k podpisu: náhled listu má nové závady i novou odhadovanou cenu");
+    kontrola(await p.evaluate(z => window.__ULOZENO__.tabulky.zakazky.find(x => x.id === z).odhad_ceny === 45000, zid), "Vystavit k podpisu: změny příjmu se uložily k zakázce");
+    await p.click("#pozdeji");
+    await p.waitForFunction(() => location.hash.startsWith("#/hotovo/"), null, { timeout: 15000 });
+    const nl = await p.evaluate(id => window.__ULOZENO__.tabulky.doklady.filter(d => d.zakazka_id === id && d.druh === "zakazkovy_list").sort((a, b) => (b.verze || 1) - (a.verze || 1))[0], zid);
+    kontrola(nl.cislo === cisloNove && nl.data.cekaPodpis === true && nl.data.odhad === 45000 && nl.data.zavady.includes("Doplněno: výměna brzdové kapaliny"),
+      `Vystavit k podpisu: vznikla nová verze ${cisloNove} s novými údaji, čeká na podpis zákazníka (Podepíše později)`);
+    await p.waitForSelector("#odkaz-podpis");
+    kontrola(true, "Vystavit k podpisu: po uložení je hned tlačítko „Poslat odkaz k podpisu“");
+  }
 
   // ---------- výchozí řazení zakázek podle stavu; smazání řádku práce se potvrzuje ----------
   {
