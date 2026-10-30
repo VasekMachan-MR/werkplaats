@@ -891,6 +891,18 @@ const server = http.createServer((q, r) => {
     await p.waitForSelector("#novy-shoda >> text=už v katalogu je"); await p.fill('#form-novy [data-n="mnozstvi"]', "2"); await p.click("#novy-ulozit");
     await p.waitForFunction(() => window.__ULOZENO__.tabulky.sklad.find(s => s.cislo_mb === "A 103 184 03 01").mnozstvi === 7);
     kontrola((await p.evaluate(() => window.__ULOZENO__.tabulky.sklad.filter(s => s.klic === "c:A1031840301").length)) === 1, "Sklad: stejné číslo dílu (i bez mezer) se přičte k existujícímu dílu (7 ks), nevznikne duplikát");
+    // naskladnění v cizí měně: CZK, EUR, USD, pak abecedně; kurz ČNB se doplní sám, do skladu jde Kč, původní částka do poznámky
+    await p.click("#sklad-novy");
+    const meny = await p.$$eval("#form-novy [data-mena] option", o => o.map(x => x.textContent));
+    kontrola(meny.slice(0, 4).join(",") === "CZK,EUR,USD,AUD" && meny[0] === "CZK" && await p.$eval("#form-novy [data-mena]", s => s.value) === "CZK" && meny.slice(3).join() === [...meny.slice(3)].sort().join(),
+      "Sklad: výběr měny – výchozí CZK, pak EUR, USD a ostatní podle abecedy");
+    await p.fill('#form-novy [data-n="nazev"]', "Těsnění USA"); await p.fill('#form-novy [data-n="mnozstvi"]', "2"); await p.fill('#form-novy [data-n="cena"]', "10");
+    await p.selectOption("#form-novy [data-mena]", "USD");
+    await p.waitForFunction(() => document.querySelector("#form-novy [data-kurz]").value === "21,05");
+    kontrola(/210,50\s*Kč/.test(await p.textContent("#form-novy [data-prepocet]")), "Sklad: po výběru USD se doplní kurz ČNB (21,05) a ukáže přepočet 210,50 Kč/ks");
+    await p.fill("#form-novy [data-kurz]", "21,5"); await p.selectOption("#form-novy [data-fs-vyber]", ""); await p.click("#novy-ulozit"); await p.waitForSelector(".sklad-pol >> text=Těsnění USA");
+    kontrola(await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, s = T.sklad.find(x => x.nazev === "Těsnění USA"), po = T.sklad_pohyby.find(x => x.sklad_id === s.id);
+      return s.nakupni_cena === 215 && po.cena === 215 && po.poznamka === "10 USD × kurz 21,5"; }), "Sklad: cena v USD s ručně upraveným kurzem se uloží v Kč (215 Kč) a původní částka do poznámky");
     kontrola(await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, f = T.soubory.filter(x => x.druh === "nakupni_doklad" && x.faze === "sklad"), pr = T.sklad_pohyby.filter(x => x.druh === "prijem" && x.soubor_id);
       return f.length === 1 && !f[0].zakazka_id && f[0].verejne === false && /^nakupni\/sklad\//.test(f[0].klic) && pr.length === 2 && pr.every(x => x.soubor_id === f[0].id); }),
       "Sklad: faktura nahraná u naskladnění se uloží jednou a u dalšího dílu je předvybraná (2 příjmy, 1 faktura)");

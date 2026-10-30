@@ -669,3 +669,9 @@ textarea.poznamka-text { width: 100%; max-width: none; resize: vertical; font-si
 .faktura-skladu { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
 .faktura-skladu select { flex: 1 1 220px; min-width: 0; }
 .dil-faktury-sklad { margin-top: 4px; }
+/* naskladnění v cizí měně: cena + měna + kurz */
+.cena-mena { display: flex; gap: 6px; }
+.cena-mena [data-n="cena"] { flex: 1 1 90px; min-width: 0; }
+.cena-mena [data-mena] { flex: 0 0 auto; width: auto; }
+.cena-mena [data-kurz] { flex: 0 1 90px; min-width: 70px; }
+.mena-male { width: auto; flex: 0 0 auto; }

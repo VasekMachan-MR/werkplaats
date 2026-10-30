@@ -1,6 +1,7 @@
-// Kurz EUR podle ČNB (denní kurz devizového trhu) pro přepočet dílů nakoupených v eurech. Jen pro přihlášené (verify_jwt).
+// Kurzy ČNB (denní kurz devizového trhu) pro přepočet dílů nakoupených v cizí měně. Jen pro přihlášené (verify_jwt).
+// Vrací { kurz (EUR – kvůli starším verzím aplikace), datum, kurzy: { KÓD: Kč za 1 jednotku } }.
 const POVOLENE = [/^https:\/\/werk\.mercedesrestorations\.cz$/, /^https:\/\/([\w-]+\.)?werkplaats\.pages\.dev$/, /^http:\/\/localhost(:\d+)?$/];
-let mezipamet: { kurz: number; datum: string; cas: number } | null = null;
+let mezipamet: { kurz: number; datum: string; kurzy: Record<string, number>; cas: number } | null = null;
 
 Deno.serve(async req => {
   const origin = req.headers.get("origin");
@@ -16,12 +17,16 @@ Deno.serve(async req => {
       if (!r.ok) throw new Error("ČNB " + r.status);
       const t = await r.text();
       const datum = (t.match(/^(\d{2}\.\d{2}\.\d{4})/) || [])[1] || "";
-      const radek = t.split("\n").find(l => l.split("|")[3] === "EUR");
-      if (!radek) throw new Error("EUR v kurzovním lístku chybí");
-      const [, , mnozstvi, , kurz] = radek.split("|");
-      mezipamet = { kurz: Number(kurz.replace(",", ".")) / Number(mnozstvi), datum, cas: Date.now() };
+      const kurzy: Record<string, number> = {};
+      for (const l of t.split("\n").slice(2)) {
+        const [, , mnozstvi, kod, kurz] = l.trim().split("|");
+        const k = Number(String(kurz || "").replace(",", ".")) / Number(mnozstvi);
+        if (/^[A-Z]{3}$/.test(kod || "") && Number.isFinite(k) && k > 0) kurzy[kod] = k;
+      }
+      if (!kurzy.EUR) throw new Error("EUR v kurzovním lístku chybí");
+      mezipamet = { kurz: kurzy.EUR, datum, kurzy, cas: Date.now() };
     }
-    return new Response(JSON.stringify({ kurz: mezipamet.kurz, datum: mezipamet.datum }), { headers: h });
+    return new Response(JSON.stringify({ kurz: mezipamet.kurz, datum: mezipamet.datum, kurzy: mezipamet.kurzy }), { headers: h });
   } catch (e) {
     return new Response(JSON.stringify({ chyba: String((e as Error).message || e) }), { status: 502, headers: h });
   }

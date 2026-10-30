@@ -1741,6 +1741,10 @@
   // kurz EUR podle ČNB (načte se jednou za otevření aplikace; bez spojení 25 Kč) – jde u dílu přepsat
   let kurzCnb = null, kurzCnbNacitam = null;
   const kurzEur = () => kurzCnb?.kurz ? Math.round(kurzCnb.kurz * 100) / 100 : 25;
+  // měny pro naskladnění: CZK, EUR, USD a pak podle abecedy (seznam měn ČNB) – Vašek 30.10.2026
+  const MENY_CNB = ["AUD", "BRL", "CAD", "CHF", "CNY", "DKK", "GBP", "HKD", "HUF", "IDR", "ILS", "INR", "ISK", "JPY", "KRW", "MXN", "MYR", "NOK", "NZD", "PHP", "PLN", "RON", "SEK", "SGD", "THB", "TRY", "ZAR"];
+  const seznamMen = () => ["CZK", "EUR", "USD", ...[...new Set([...MENY_CNB, ...Object.keys(kurzCnb?.kurzy || {})])].filter(m => !["CZK", "EUR", "USD", "XDR"].includes(m)).sort()];
+  const kurzMeny = m => m === "CZK" ? 1 : m === "EUR" ? kurzEur() : kurzCnb?.kurzy?.[m] ? Math.round(kurzCnb.kurzy[m] * 10000) / 10000 : null;
   const nactiKurzEur = () => kurzCnbNacitam ||= (db.kurzEur ? db.kurzEur() : Promise.reject()).then(k => (kurzCnb = k)).catch(() => { kurzCnbNacitam = null; });
   // sbalovací sekce zakázky: aplikace si pamatuje (pro každou zakázku zvlášť), co bylo rozbalené
   const SBAL_KLIC = "werk-sbaleni", SBAL_VYCHOZI = ["sekce-prace", "sekce-dily", "sekce-servis", "souhrn"];
@@ -3372,6 +3376,37 @@
     }
     return P;
   }
+  // cena při naskladnění v cizí měně: částka + měna + kurz → do skladu Kč, původní částka do poznámky pohybu
+  const htmlMenaNakupu = (tridaMeny = "", tridaKurzu = "") => `<select class="vstup ${tridaMeny}" data-mena aria-label="Měna">${seznamMen().map(m => `<option ${m === "CZK" ? "selected" : ""}>${m}</option>`).join("")}</select>
+    <input class="vstup cislo ${tridaKurzu}" data-kurz inputmode="decimal" hidden aria-label="Kurz Kč za 1 jednotku měny" placeholder="kurz">`;
+  function napojMenuNakupu(root, cenaInp, vystup) {
+    const sel = root.querySelector("[data-mena]"), ku = root.querySelector("[data-kurz]"); if (!sel || !ku) return () => ({ kc: cisloZ(cenaInp.value) });
+    const prepocet = () => {
+      const m = sel.value, c = cisloZ(cenaInp.value), k = cisloZ(ku.value);
+      if (vystup) vystup.textContent = m !== "CZK" && c != null && k ? `= ${kc(Math.round(c * k * 100) / 100)} / ks` : "";
+    };
+    sel.onchange = async () => {
+      const m = sel.value; ku.hidden = m === "CZK";
+      if (vystup) vystup.closest("[hidden]")?.removeAttribute("hidden");
+      if (m !== "CZK") {
+        if (kurzMeny(m) == null || !kurzCnb) { ku.placeholder = "načítám…"; await nactiKurzEur(); }
+        const k = kurzMeny(m); ku.value = k ? String(k).replace(".", ",") : ""; ku.placeholder = "kurz";
+        ku.title = k && kurzCnb ? `ČNB ${kurzCnb.datum}: 1 ${m} = ${String(k).replace(".", ",")} Kč` : "Kurz ČNB se nepodařilo načíst – zadej ho ručně (Kč za 1 " + m + ")";
+        if (!k) ku.focus();
+      }
+      prepocet();
+    };
+    cenaInp.addEventListener("input", prepocet); ku.addEventListener("input", prepocet);
+    // vrací cenu v Kč a poznámku s původní částkou; undefined = chyba (zvýrazněno)
+    return () => {
+      const m = sel.value, c = ciselnyVstup(cenaInp, { min: 0, max: 10000000 });
+      if (c === undefined) return undefined;
+      if (m === "CZK" || c == null) return { kc: c };
+      const k = ciselnyVstup(ku, { min: 0.0001, max: 100000 });
+      if (!k) { ku.classList.add("chybi"); ku.focus(); hlaska(`Zadej kurz: kolik Kč je 1 ${m}.`, true); return undefined; }
+      return { kc: Math.round(c * k * 100) / 100, poznamka: `${String(c).replace(".", ",")} ${m} × kurz ${String(k).replace(".", ",")}` };
+    };
+  }
   let posledniFakturaSkladu = null;                    // naposledy nahraná/vybraná faktura skladu – předvybere se u dalšího dílu
   async function nahratFakturuSkladu(f) {
     const mime = typDokumentu(f); if (!mime) throw new Error("Soubor není PDF, JPG, PNG ani HEIC");
@@ -3426,7 +3461,7 @@
         <div class="s6" id="novy-shoda"></div>
         <label class="pole s2"><span class="povinne">Počet</span><input class="vstup" data-n="mnozstvi" value="${p.mnozstvi ?? 1}" inputmode="decimal"></label>
         <label class="pole s2"><span>Jednotka</span><input class="vstup" data-n="jednotka" value="${esc(p.jednotka || "ks")}"></label>
-        <label class="pole s2"><span>Nákup Kč / ks</span><input class="vstup" data-n="cena" value="${p.nakupni_cena ?? ""}" inputmode="decimal"></label>
+        <div class="pole s4"><span>Nákup / ks</span><div class="cena-mena"><input class="vstup" data-n="cena" value="${p.nakupni_cena ?? ""}" inputmode="decimal" aria-label="Nákupní cena za kus">${htmlMenaNakupu()}</div><small class="mutted" data-prepocet></small></div>
         <label class="pole s2"><span>Výrobce</span><input class="vstup" data-n="vyrobce" value="${esc(p.vyrobce || "")}"></label>
         <label class="pole s2"><span>Umístění</span><input class="vstup" data-n="umisteni" value="${esc(p.umisteni || "")}" placeholder="např. regál A2"></label>
         <label class="pole s2"><span>Minimální zásoba</span><input class="vstup" data-n="min_mnozstvi" value="${p.min_mnozstvi ?? ""}" inputmode="decimal"></label>
@@ -3458,8 +3493,8 @@
           <span class="napoveda" data-stav-skladu></span>
           <div class="sklad-akce">
             <div><b>＋ Naskladnit</b><div class="radek-tlacitek"><input class="vstup cislo" data-prijem-pocet placeholder="ks" inputmode="decimal" aria-label="Počet">
-              <input class="vstup cislo" data-prijem-cena placeholder="Kč/ks" value="${s.nakupni_cena ?? ""}" inputmode="decimal" aria-label="Nákupní cena za kus">
-              <button type="button" class="tl tl-male" data-prijem="${s.id}">Přidat</button></div>${vyberFaktury()}</div>
+              <input class="vstup cislo" data-prijem-cena placeholder="cena/ks" value="${s.nakupni_cena ?? ""}" inputmode="decimal" aria-label="Nákupní cena za kus">${htmlMenaNakupu("mena-male", "cislo")}
+              <button type="button" class="tl tl-male" data-prijem="${s.id}">Přidat</button></div><small class="mutted" data-prepocet></small>${vyberFaktury()}</div>
             <div><b>📋 Inventura</b><div class="radek-tlacitek"><input class="vstup cislo" data-inv-pocet placeholder="${mnozstviCz(s.mnozstvi)}" inputmode="decimal" aria-label="Spočítáno">
               <button type="button" class="tl tl-male" data-inv="${s.id}">Spočítáno</button></div>
               <small class="mutted">${s.inventura ? `naposledy ${datumCz(s.inventura)}` : "zatím nespočítáno"}</small></div>
@@ -3509,7 +3544,7 @@
       let P = []; try { P = await db.pohybySkladu(sid); } catch (e) { /* bez historie */ }
       if (!h.isConnected) return;
       const DR = { prijem: "naskladněno", zakazka: "zakázka", inventura: "inventura", oprava: "oprava" };
-      h.innerHTML = `${P.length ? `<b>Pohyby skladu</b>${P.map(p => `<div class="sklad-pohyb"><span>${datumCz(String(p.cas).slice(0, 10))} · ${DR[p.druh] || p.druh}${p.zakazky?.cislo ? ` <a href="#/zakazka/${p.zakazka_id}">#${p.zakazky.cislo}</a>` : ""}${p.cena != null ? ` · ${kc(p.cena)}/ks` : ""}${p.soubory?.klic && !p.soubory.smazano ? ` · <button type="button" class="odkaz" data-faktura-otevrit="${esc(p.soubory.klic)}" title="Otevřít přijatou fakturu">🧾 ${esc(p.soubory.nazev || "faktura")}</button>` : ""}</span><b class="${p.zmena < 0 ? "minus" : "plus"}">${p.zmena > 0 ? "+" : ""}${mnozstviCz(p.zmena)}</b></div>`).join("")}` : ""}
+      h.innerHTML = `${P.length ? `<b>Pohyby skladu</b>${P.map(p => `<div class="sklad-pohyb"><span>${datumCz(String(p.cas).slice(0, 10))} · ${DR[p.druh] || p.druh}${p.zakazky?.cislo ? ` <a href="#/zakazka/${p.zakazka_id}">#${p.zakazky.cislo}</a>` : ""}${p.cena != null ? ` · ${kc(p.cena)}/ks` : ""}${p.poznamka ? ` <small class="mutted">(${esc(p.poznamka)})</small>` : ""}${p.soubory?.klic && !p.soubory.smazano ? ` · <button type="button" class="odkaz" data-faktura-otevrit="${esc(p.soubory.klic)}" title="Otevřít přijatou fakturu">🧾 ${esc(p.soubory.nazev || "faktura")}</button>` : ""}</span><b class="${p.zmena < 0 ? "minus" : "plus"}">${p.zmena > 0 ? "+" : ""}${mnozstviCz(p.zmena)}</b></div>`).join("")}` : ""}
         ${u.seznam.length ? `<b style="display:block;margin-top:10px">Použito v zakázkách</b>${u.seznam.sort((a, b) => b.datum.localeCompare(a.datum)).map(x => `<a class="odkaz-radek sklad-pohyb" href="#/zakazka/${x.zid}"><span>#${x.cislo} · ${esc(x.auto)} · ${datumCz(x.datum)}${x.ze_skladu ? " · 📦 ze skladu" : ""}</span><span>${ks(x.mnozstvi, s.jednotka)}</span></a>`).join("")}` : ""}
         ${!P.length && !u.seznam.length ? `<span class="napoveda">Zatím žádné pohyby.</span>` : ""}`;
       h.querySelectorAll("[data-faktura-otevrit]").forEach(b => b.onclick = () => otevritSoubor(b.dataset.fakturaOtevrit));
@@ -3550,11 +3585,13 @@
           s[f] = v; st().textContent = "Ukládám…";
           odlozitZmenu(700, "sklad", sid, () => ({ [f]: s[f] }), st, () => { if (f === "nazev" || f === "cislo_mb") katalogDilu = null; });
         }));
+        const cenaDetailu = napojMenuNakupu(d, d.querySelector("[data-prijem-cena]"), d.querySelector("[data-prepocet]"));
         d.querySelector("[data-prijem]").onclick = async () => {
-          const pi = d.querySelector("[data-prijem-pocet]"), ci = d.querySelector("[data-prijem-cena]");
-          const n = ciselnyVstup(pi, { min: 0.01, max: 100000 }), c = ciselnyVstup(ci, { min: 0, max: 10000000 });
-          if (!n) { pi.classList.add("chybi"); pi.focus(); return; } if (c === undefined) return;
-          try { await db.pohybSkladu({ sklad_id: sid, druh: "prijem", zmena: n, cena: c ?? null, soubor_id: d.querySelector("[data-fs-vyber]")?.value || null }); katalogDilu = null; hlaska(`Naskladněno ${mnozstviCz(n)} ${s.jednotka || "ks"} – ${s.nazev}.`); await obnov(); }
+          const pi = d.querySelector("[data-prijem-pocet]");
+          const n = ciselnyVstup(pi, { min: 0.01, max: 100000 });
+          if (!n) { pi.classList.add("chybi"); pi.focus(); return; }
+          const cena = cenaDetailu(); if (cena === undefined) return; const c = cena.kc;
+          try { await db.pohybSkladu({ sklad_id: sid, druh: "prijem", zmena: n, cena: c ?? null, poznamka: cena.poznamka || null, soubor_id: d.querySelector("[data-fs-vyber]")?.value || null }); katalogDilu = null; hlaska(`Naskladněno ${mnozstviCz(n)} ${s.jednotka || "ks"} – ${s.nazev}.`); await obnov(); }
           catch (e) { hlaska("Nepodařilo se naskladnit: " + chybaText(e), true); }
         };
         d.querySelector("[data-inv]").onclick = async () => {
@@ -3583,17 +3620,19 @@
         const ukazShodu = () => { const s = shoda(); fn.querySelector("#novy-shoda").innerHTML = s ? `<div class="info">Tento díl už v katalogu je (<b>${esc(s.nazev)}</b>, skladem ${ks(s.mnozstvi, s.jednotka)}) – počet se k němu přičte.</div>` : ""; };
         ["nazev", "cislo_mb"].forEach(k => g(k).addEventListener("input", ukazShodu)); ukazShodu();
         fn.querySelector("#novy-zrusit").onclick = () => { rezim = null; vykresli(); };
+        const cenaNoveho = napojMenuNakupu(fn, g("cena"), fn.querySelector("[data-prepocet]"));
         fn.querySelector("#novy-ulozit").onclick = async () => {
-          const n = ciselnyVstup(g("mnozstvi"), { min: 0, max: 100000 }), c = ciselnyVstup(g("cena"), { min: 0, max: 10000000 }), mi = ciselnyVstup(g("min_mnozstvi"), { min: 0, max: 100000 });
+          const n = ciselnyVstup(g("mnozstvi"), { min: 0, max: 100000 }), cena = cenaNoveho(), mi = ciselnyVstup(g("min_mnozstvi"), { min: 0, max: 100000 });
           if (!g("nazev").value.trim()) { g("nazev").classList.add("chybi"); g("nazev").focus(); return; }
-          if (n == null || c === undefined || mi === undefined) return;
+          if (n == null || cena === undefined || mi === undefined) return;
+          const c = cena.kc;
           const b = fn.querySelector("#novy-ulozit"); b.disabled = true;
           try {
             let s = shoda();
             if (!s) s = await db.novaPolozkaSkladu({ nazev: g("nazev").value.trim(), cislo_mb: g("cislo_mb").value.trim() || null, vyrobce: g("vyrobce").value.trim() || null,
               jednotka: g("jednotka").value.trim() || "ks", umisteni: g("umisteni").value.trim() || null, min_mnozstvi: mi ?? null, nakupni_cena: c ?? null });
             else { const zm = {}; if (g("umisteni").value.trim() && !s.umisteni) zm.umisteni = g("umisteni").value.trim(); if (mi != null) zm.min_mnozstvi = mi; if (Object.keys(zm).length) await db.upravit("sklad", s.id, zm); }
-            if (n) await db.pohybSkladu({ sklad_id: s.id, druh: "prijem", zmena: n, cena: c ?? null, soubor_id: fn.querySelector("[data-fs-vyber]")?.value || null });
+            if (n) await db.pohybSkladu({ sklad_id: s.id, druh: "prijem", zmena: n, cena: c ?? null, poznamka: cena.poznamka || null, soubor_id: fn.querySelector("[data-fs-vyber]")?.value || null });
             hlaska(`Naskladněno: ${s.nazev}${n ? ` (${mnozstviCz(n)} ${g("jednotka").value.trim() || "ks"})` : ""}.`);
             rezim = null; otevrene.add(s.id); katalogDilu = null; await obnov();
           } catch (e) { b.disabled = false; hlaska(/duplicate|unique/i.test(chybaText(e)) ? "Díl s tímto číslem už v katalogu je." : "Nepodařilo se uložit: " + chybaText(e), true); }
