@@ -261,7 +261,7 @@
       async upravit(tabulka, id, zmeny) { return ok(await sb.from(tabulka).update(zmeny).eq("id", id).select()); },
       async detail(id) {
         return ok(await sb.from("zakazky")
-          .select("*,vozidla(*),zakaznici(*),doklady(id,druh,cislo,verze,vystaveno,splatnost,zamceno,celkem,zaplaceno,odeslano_uol,data,jazyk,pdf_soubor_id,soubory!doklady_pdf_soubor_id_fkey(klic),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id,podepsano,vystaveny_doklad_id,soubory(klic))),soubory!soubory_zakazka_id_fkey(id,druh,faze,klic,nazev,mime,vytvoreno,smazano,doklad_id,verejne)")
+          .select("*,vozidla(*),zakaznici(*),doklady(id,druh,cislo,verze,vystaveno,splatnost,zamceno,celkem,zaplaceno,odeslano_uol,data,jazyk,pdf_soubor_id,soubory!doklady_pdf_soubor_id_fkey(klic),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id,podepsano,vystaveny_doklad_id,soubory(klic))),soubory!soubory_zakazka_id_fkey(id,druh,faze,klic,nazev,mime,vytvoreno,smazano,doklad_id,verejne,podpis_pozadan,podepsany_z)")
           .eq("id", id).maybeSingle());
       }
     };
@@ -2063,13 +2063,19 @@
   /* ---------- archiv (legacy): původní PDF ze starého systému (Excel), jen pro čtení, nic se z nich nedigitalizuje ---------- */
   function vykresliArchiv() {
     const el = document.getElementById("sekce-archiv"); if (!el || !E) return;
+    const v = E.z.vozidla || {};
     const arch = (E.z.soubory || []).filter(s => s.druh === "archiv" && !s.smazano).sort((a, b) => (a.nazev || "").localeCompare(b.nazev || "", "cs"));
     el.innerHTML = `<summary><h2>Ostatní dokumenty${arch.length ? ` <span class="mutted" style="font-weight:400">${arch.length}</span>` : ""}</h2></summary>
       <p class="napoveda" style="margin:0 0 10px">PDF i fotky dokumentů (JPG, HEIC…) k této zakázce, např. původní doklady ze starého systému. 👁 = zákazník je vidí v E-servisce u této návštěvy, 🚫 = skryté.</p>
-      <div class="doklady">${arch.map(f => `<div class="doklad"><span>${/^image\//.test(f.mime || "") || /\.(jpe?g|png|heic|heif|webp)$/i.test(f.nazev || "") ? "🖼" : "📄"} ${esc(f.nazev || "dokument")}</span><span class="radek-tlacitek">
+      <div class="doklady">${arch.map(f => { const pdf = /\.pdf$/i.test(f.klic || "") && !f.podepsany_z, podep = arch.find(g => g.podepsany_z === f.id);
+        const stavPodpisu = !pdf ? "" : podep ? `<br><small style="color:var(--zelena)">✓ podepsáno zákazníkem v E-servisce ${datumCz(String(podep.vytvoreno || "").slice(0, 10))}</small>`
+          : f.podpis_pozadan ? `<br><small style="color:var(--oranzova)">⏳ čeká na podpis zákazníka v E-servisce</small>` : "";
+        return `<div class="doklad"><span>${/^image\//.test(f.mime || "") || /\.(jpe?g|png|heic|heif|webp)$/i.test(f.nazev || "") ? "🖼" : f.podepsany_z ? "✍️" : "📄"} ${esc(f.nazev || "dokument")}${stavPodpisu}</span><span class="radek-tlacitek">
+        ${pdf && !podep && v.vin ? (f.podpis_pozadan ? `<button class="tl tl-male" data-archiv-podpis-odkaz="${f.id}" title="Poslat zákazníkovi znovu odkaz do E-servisky">🔗 Poslat odkaz</button><button class="tl tl-male" data-archiv-podpis-zrusit="${f.id}" title="Zrušit žádost o podpis">✕</button>`
+          : `<button class="tl tl-male" data-archiv-podpis="${f.id}" title="Zákazník PDF podepíše prstem v E-servisce; vznikne kopie …_signed.pdf a originál zůstane">✍️ Nechat podepsat</button>`) : ""}
         <button class="tl tl-male" data-archiv-verejne="${f.id}" title="${f.verejne === false ? "Skryto v E-servisce – klepnutím zobrazit" : "Vidí zákazník v E-servisce – klepnutím skrýt"}" aria-label="Viditelnost v E-servisce">${f.verejne === false ? "🚫" : "👁"}</button>
         <button class="tl tl-male" data-archiv-otevrit="${esc(f.klic)}">Otevřít</button>
-        ${uzivatel.role === "majitel" ? `<button class="tl tl-male tl-kos" data-archiv-smazat="${f.id}" aria-label="Smazat dokument">🗑</button>` : ""}</span></div>`).join("")
+        ${uzivatel.role === "majitel" ? `<button class="tl tl-male tl-kos" data-archiv-smazat="${f.id}" aria-label="Smazat dokument">🗑</button>` : ""}</span></div>`; }).join("")
         || `<p class="mutted" style="margin:0">Zatím žádné dokumenty.</p>`}</div>
       <div class="radek-tlacitek" style="margin-top:12px"><label class="tl">📎 Přidat dokument (PDF / foto)<input type="file" accept="application/pdf,image/*,.heic,.heif,.jpg,.jpeg,.png" multiple hidden id="archiv-nahrat"></label></div>
       <div id="archiv-stav"></div>`;
@@ -2077,6 +2083,17 @@
       const okno = window.open("", "_blank");
       try { const u = await db.odkaz(b.dataset.archivOtevrit, 600); if (okno) okno.location = u; else location.href = u; }
       catch (e) { okno?.close(); hlaska(chybaText(e), true); }
+    });
+    // starý zakázkový list → zákazník ho podepíše v E-servisce (vznikne …_signed.pdf, originál zůstane)
+    const zadejPodpis = async (id, kdy) => { const s = E.z.soubory.find(x => x.id === id); if (!s) return;
+      try { await db.upravit("soubory", id, { podpis_pozadan: kdy }); s.podpis_pozadan = kdy; vykresliArchiv(); return true; } catch (e) { hlaska(chybaText(e), true); } };
+    el.querySelectorAll("[data-archiv-podpis]").forEach(b => b.onclick = async () => {
+      if (await zadejPodpis(b.dataset.archivPodpis, new Date().toISOString())) { hlaska("Zákazník uvidí v E-servisce výzvu k podpisu. Pošlete mu odkaz."); sdiletOdkazEservisky(v, E.z.jazyk === "en", true); }
+    });
+    el.querySelectorAll("[data-archiv-podpis-odkaz]").forEach(b => b.onclick = () => sdiletOdkazEservisky(v, E.z.jazyk === "en", true));
+    el.querySelectorAll("[data-archiv-podpis-zrusit]").forEach(b => b.onclick = async () => {
+      if (!confirm("Zrušit žádost o podpis? Zákazník už v E-servisce výzvu neuvidí.")) return;
+      if (await zadejPodpis(b.dataset.archivPodpisZrusit, null)) hlaska("Žádost o podpis zrušena.");
     });
     el.querySelectorAll("[data-archiv-verejne]").forEach(b => b.onclick = async () => {    // E5: původní doklad v E-servisce ano / ne
       const s = E.z.soubory.find(x => x.id === b.dataset.archivVerejne); if (!s) return;
