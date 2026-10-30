@@ -42,7 +42,7 @@
     await Promise.all([...doc.images].map(i => i.complete ? null : i.decode().catch(() => null)));
 
     const pisma = {};
-    const soubor = { "sans-400": "LiberationSans-Regular", "sans-700": "LiberationSans-Bold", "serif-400": "LiberationSerif-Regular", "serif-700": "LiberationSerif-Regular",
+    const soubor = { "sans-400": "LiberationSans-Regular", "sans-700": "LiberationSans-Bold", "serif-400": "LiberationSerif-Regular", "serif-700": "LiberationSerif-Bold",
                      "calibri-400": "Carlito-Regular", "calibri-700": "Carlito-Bold" };
     async function pismo(rodina, vaha) {
       const r = /calibri/i.test(rodina) ? "calibri" : /serif/i.test(rodina) && !/sans/i.test(rodina) ? "serif" : "sans";

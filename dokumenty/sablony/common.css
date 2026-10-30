@@ -2,6 +2,7 @@
 @font-face { font-family: "MR Sans"; src: url("assets/fonts/LiberationSans-Regular.ttf"); font-weight: 400; }
 @font-face { font-family: "MR Sans"; src: url("assets/fonts/LiberationSans-Bold.ttf"); font-weight: 700; }
 @font-face { font-family: "MR Serif"; src: url("assets/fonts/LiberationSerif-Regular.ttf"); font-weight: 400; }
+@font-face { font-family: "MR Serif"; src: url("assets/fonts/LiberationSerif-Bold.ttf"); font-weight: 700; }
 /* Carlito = metricky shodné s Calibri (licence SIL OFL) – sloupec REMARKS v parts listu */
 @font-face { font-family: "MR Calibri"; src: url("assets/fonts/Carlito-Regular.ttf"); font-weight: 400; }
 @font-face { font-family: "MR Calibri"; src: url("assets/fonts/Carlito-Bold.ttf"); font-weight: 700; }

@@ -154,7 +154,7 @@ const PROTOKOL = {
 
 function hlavicka(tx, cislo) {
   let h = T(73.5, 64.4, tx.titul, { b: true, size: 15.7 });
-  if (cislo != null) h += T(470.4, 63.2, "# ", { serif: true, size: 15.7 }) + T(483.1, 63.2, String(cislo), { serif: true, size: 15.7 });
+  if (cislo != null) h += cisloVHlavicce(cislo, 63.2, { serif: true, b: true, size: 15.7 });
   return h;
 }
 

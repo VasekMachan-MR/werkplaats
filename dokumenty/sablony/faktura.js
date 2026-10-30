@@ -215,7 +215,7 @@ function strana1(d, tx) {
 
   // hlavička
   h += T(73.5, 64.4, d.proforma ? tx.proforma : tx.titul, { b: true, size: 15.7 });
-  h += T(450.8, 64.4, "#", { b: true, size: 15.7 }) + T(466.5, 64.4, String(d.cislo), { b: true, size: 15.7 });
+  h += cisloVHlavicce(d.cislo, 64.4, { b: true, size: 15.7 });
   h += T(186.2, 105.9, "Mercedes Restorations", { b: true, size: 21.6 });
 
   // dodavatel
