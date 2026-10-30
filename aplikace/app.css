@@ -570,6 +570,7 @@ details.postup-prace[open] > summary .postup { display: none; }
 .dan-zap { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600; }
 .dan-zap input { width: 20px; height: 20px; accent-color: var(--navy); }
 .dan-vypnuta > b, .dan-vypnuta .dan-pole > .vstup { opacity: .5; }
+.dan-pole .vstup:disabled { background: #eceeef; color: #9aa0a6; text-decoration: line-through; cursor: not-allowed; }
 #s-dani { display: flex; justify-content: space-between; gap: 20px; font-size: 14px; }
 
 /* sbalovací sekce (Díly) */

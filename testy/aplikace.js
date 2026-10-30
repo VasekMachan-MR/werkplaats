@@ -84,7 +84,10 @@ const server = http.createServer((q, r) => {
   await p.fill('[data-pole="zakazka.km_prijem"]', "123456");
   await p.fill('[data-pole="zakazka.predpoklad_dokonceni"]', "2027-01-07");
   await p.click('[data-segment="zakazka.nadrz_prijem"] >> text=1/4');
+  kontrola(/odhadovaná cena/.test(await p.textContent("#co-chybi")), "odhadovaná cena je povinná");
   await p.fill('[data-pole="zakazka.odhad_ceny"]', "40 000");
+  await p.fill('[data-pole="vozidlo.cislo_motoru"]', "103.983-12-012345"); await p.fill('[data-pole="vozidlo.prevodovka"]', "722.350");
+  await p.fill('[data-pole="vozidlo.pneu_letni"]', "205/65 R15");
   await p.click('.cip[data-cip="zavady"] >> nth=0');
   await p.click('.cip[data-cip="zavady"] >> nth=1');
   await p.click('[data-pridat="zavady"]');
@@ -134,6 +137,8 @@ const server = http.createServer((q, r) => {
   kontrola(ulozeno.t.doklady.length === 1 && ulozeno.t.doklady[0].cislo === "7377-1" && ulozeno.t.doklady[0].variabilni_symbol === "73771" && ulozeno.t.doklady[0].zamceno, "doklad 7377-1, VS 73771, uzamčený");
   kontrola(ulozeno.t.podpisy.length === 2 && ulozeno.t.podpisy.every(x => /^[0-9a-f]{64}$/.test(x.otisk_dokumentu)), "2 podpisy s otiskem SHA-256");
   kontrola(ulozeno.t.soubory.filter(s => s.druh === "foto").length === 2 && ulozeno.t.soubory.filter(s => s.druh === "video" && s.mime === "video/webm" && /^videa\/.*\.webm$/.test(s.klic)).length === 1, "2 fotky a 1 video přiřazené k zakázce");
+  kontrola(ulozeno.t.vozidla[0].cislo_motoru === "103.983-12-012345" && ulozeno.t.vozidla[0].prevodovka === "722.350" && ulozeno.t.vozidla[0].pneu_letni === "205/65 R15", "číslo motoru, převodovka a pneu z příjmu uložené k autu");
+  kontrola(ulozeno.t.soubory.filter(s => s.druh === "foto" && s.faze === "profil").length === 1, "první fotka z příjmu je profilová");
   kontrola(ulozeno.t.zakazky[0].zavady.length === 5 && ulozeno.t.zakazky[0].km_prijem === 123456 && ulozeno.t.zakazky[0].odhad_ceny === 40000, "závady, km a odhad uložené");
   fs.writeFileSync(path.join(OUT, "7377-1.pdf"), Buffer.from(ulozeno.pdf[0][1]));
 
@@ -182,7 +187,8 @@ const server = http.createServer((q, r) => {
   await p.fill("#dan-pct", "20"); await p.waitForSelector("#stav-dane >> text=✓ Uloženo");
   kontrola((await p.textContent("#souhrn-celkem")).replace(/\s/g, "") === "24800Kč" && await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky[0].dan_pct === 20), "daň jde změnit (20 % → celkem 24 800 Kč) a uloží se k zakázce");
   await p.fill("#dan-pct", "50"); await p.waitForSelector("#stav-dane >> text=✓ Uloženo");
-  await p.uncheck("#dan-zap"); await p.waitForSelector("#stav-dane >> text=✓ Uloženo");   // další kontroly dokladů počítají ceny bez daně
+  await p.uncheck("#dan-zap"); await p.waitForSelector("#stav-dane >> text=✓ Uloženo");
+  kontrola(await p.isDisabled("#dan-pct") && (await p.textContent("#dan-kc")).replace(/\s/g, "") === "0Kč", "vypnutá daň: pole sazby zablokované, daň 0 Kč");   // další kontroly dokladů počítají ceny bez daně
   { const t = (await p.textContent("#souhrn")).replace(/[\u00a0\u202f]/g, " ").replace(/\s+/g, " ");
     kontrola(/Celkem bez daně ?22 375 Kč/.test(t) && /S daní by to bylo ?28 438 Kč/.test(t) && await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky[0].dan_zapnuto === false), "políčko Daň vypnuto: celkem bez daně 22 375 Kč, náhled „s daní by to bylo 28 438 Kč“, uloží se k zakázce"); }
   await foto("11-prace-dily");
@@ -237,8 +243,8 @@ const server = http.createServer((q, r) => {
   await p.evaluate(() => { window.__MAILTO__ = u => { window.__MAIL__ = u; }; window.__MAIL__ = null; });
   await p.click("[data-odkaz-faktura]");
   { const m = decodeURIComponent(await p.evaluate(() => window.__MAIL__ || ""));
-    kontrola(/subject=Zálohová faktura č\. 7377-5 Mercedes-Benz W126&/.test(m) && /podepsání zálohové faktury k vašemu vozu Mercedes-Benz W126 \(zálohová faktura č\. 7377-5, zakázka č\. 7377\)/.test(m) && /e-serviska\?k=[0-9a-f]{20}/.test(m),
-      "e-mail k podpisu zálohy: předmět „Zálohová faktura č. 7377-5 Mercedes-Benz W126“, text o záloze, odkaz do E-servisky"); }
+    kontrola(/subject=Mercedes-Benz W126 - Zálohová faktura č\. 7377-5&/.test(m) && /podepsání zálohové faktury k vašemu vozu Mercedes-Benz W126 \(zálohová faktura č\. 7377-5, zakázka č\. 7377\)/.test(m) && /e-serviska\?k=[0-9a-f]{20}/.test(m),
+      "e-mail k podpisu zálohy: předmět „Mercedes-Benz W126 - Zálohová faktura č. 7377-5“, text o záloze, odkaz do E-servisky"); }
   await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === "7377-5");   // zákazník podepsal v E-servisce (server vloží podpis do PDF)
     T.dalkove_podpisy.push({ id: "dp-za", doklad_id: d.id, soubor_id: null, podepsano: new Date().toISOString(), vystaveny_doklad_id: d.id }); });
   await p.evaluate(() => { const h = location.hash; location.hash = "#/zakazky"; location.hash = h; });
@@ -360,6 +366,7 @@ const server = http.createServer((q, r) => {
   kontrola(await p.isVisible("text=naposledy zakázka #7377"), "auto poznáno podle VIN (naposledy #7377)");
   kontrola(await p.inputValue('[data-pole="vozidlo.model"]') === "300 SE", "údaje auta se doplnily");
   await p.fill('[data-pole="zakazka.km_prijem"]', "123700");
+  await p.fill('[data-pole="zakazka.odhad_ceny"]', "30000");
   await p.click('[data-segment="zakaznik.jazyk"] >> text=English');
   await p.click('.cip[data-cip="zavady"] >> nth=0');
   await p.click('.cip[data-cip="stav_prijem"] >> nth=0');
@@ -569,6 +576,9 @@ const server = http.createServer((q, r) => {
   await m.fill('[data-pole="vozidlo.model"]', "300 TD");
   await m.fill('[data-pole="zakazka.km_prijem"]', "250000");
   await m.click('.cip[data-cip="zavady"] >> nth=0');
+  kontrola(/rok výroby.*odhadovaná cena/.test(await m.textContent("#co-chybi")) && await m.isDisabled("#k-podpisu"), "rok výroby a odhadovaná cena jsou povinné (typ se doplnil z VIN)");
+  await m.fill('[data-pole="vozidlo.rok"]', "1984"); await m.fill('[data-pole="zakazka.odhad_ceny"]', "15000");
+  if (!(await m.inputValue('[data-pole="vozidlo.typ"]'))) await m.fill('[data-pole="vozidlo.typ"]', "123");
   kontrola(!(await m.isDisabled("#k-podpisu")), "po vyplnění povinných polí jde dál");
   await m.click("#k-podpisu");
   await m.waitForSelector("#muj-podpis-sekce:not([hidden])");

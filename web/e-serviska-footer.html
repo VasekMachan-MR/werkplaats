@@ -54,6 +54,8 @@ var I_X='<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="cur
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function fdate(s,l){if(!s)return'';var p=String(s).split('-'),D=+p[2],M=+p[1],Y=p[0];return l==='cs'?D+'. '+M+'. '+Y:D+' '+MON[l][M-1]+' '+Y}
 function num(n,l){return Number(n).toLocaleString(l==='cs'?'cs-CZ':l==='nl'?'nl-NL':'en-GB')}
+// stav tachometru; u mílí i přepočet na km („180 955 mi (≈ 291 200 km)“)
+function kmTxt(n,l,unit){return num(n,l)+' '+unit+(unit==='mi'?' (≈ '+num(Math.round(n*1.609344/100)*100,l)+' km)':'')}
 function typKod(t){t=String(t||'').toUpperCase().replace(/\s+/g,'');var m=t.match(/^([WRC])?(\d{3})/);if(!m)return t;return (m[1]||(m[2]==='107'?'R':m[2]==='124'&&/C$/.test(t)?'C':'W'))+m[2]}
 function kody(k){if(!k)return[];if(Array.isArray(k))return k.map(function(x){return typeof x==='string'?[x,'']:[x.kod||x.code||'',x.popis||x.text||x.desc||'']});if(typeof k==='object')return Object.keys(k).map(function(c){return[c,k[c]]});return[]}
 function roky(m,t){var y=m/12;return y===1?'1 '+t.y1:y+' '+(y<5?t.y24:t.y5)}
@@ -94,7 +96,7 @@ function view(){
    '<div style="display:flex;gap:10px;flex-wrap:wrap"><button class="b" data-a="podsmaz" style="min-height:44px;padding:0 20px;border:2px solid #092b50;color:#092b50;font-weight:600">'+esc(t.podSmazat)+'</button><button class="b" data-a="podepsat" '+(podpisDost()&&S.souhlas&&!S.odesilam?'':'disabled ')+'style="min-height:44px;padding:0 24px;background:#092b50;color:#fff;font-weight:600;opacity:'+(podpisDost()&&S.souhlas&&!S.odesilam?1:.45)+'">'+esc(S.odesilam?t.podOdesilam:t.podOdeslat)+'</button></div></div></div>'}
   var bezi=D.navstevy.filter(function(n){return n.postup&&!n.predchozi_majitel&&HOT.indexOf(n.stav)<0})[0];
   if(bezi)h+='<div class="sec"><div class="box"><div class="h2" style="margin:0">'+esc(t.postupH)+'</div><p style="margin:4px 0 0;color:#4a4f55">#'+esc(bezi.cislo)+' · '+esc(t.recv+' '+fdate(bezi.datum_prijmu,lang))+'</p>'+lista(bezi.postup,true)+'</div></div>';
-  var km=v.km_posledni!=null?num(v.km_posledni,lang)+' '+unit:t.none,sa=kody(v.kody_vybavy);
+  var km=v.km_posledni!=null?kmTxt(v.km_posledni,lang,unit):t.none,sa=kody(v.kody_vybavy);
   h+='<div class="sec"><div class="h2">'+esc(t.hFacts)+'</div><div class="box"><div class="cols"><div>'+row(t.f.model,v.model||t.none)+row(t.f.typ,v.typ||t.none)+row(t.f.year,v.rok?(v.mesic?v.mesic+'/':'')+v.rok:t.none)+row(t.f.engine,v.cislo_motoru||t.none)+row(t.f.gear,v.prevodovka||t.none)+'</div><div>';
   h+=row(t.f.vin,'','<span style="display:flex;align-items:center;gap:2px;justify-content:flex-end"><span style="word-break:break-all">'+esc(v.vin)+'</span><button class="b" data-a="copy" aria-label="'+esc(S.copied?t.copied:t.copyVin)+'" title="'+esc(S.copied?t.copied:t.copyVin)+'" style="flex:0 0 auto;margin:-10px -6px -10px 0;width:44px;height:44px;display:flex;align-items:center;justify-content:center">'+(S.copied?'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#092b50" stroke-width="2.4"><path d="M4 10l4 4 8-8"/></svg>':'<svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#092b50" stroke-width="2"><rect x="7" y="7" width="10" height="10"/><path d="M13 7V3H3v10h4"/></svg>')+'</button></span>');
   h+=row(t.f.spz,v.spz||t.none)+row(t.f.km,km)+row(t.f.ver,v.verze||t.none);
@@ -115,7 +117,7 @@ function view(){
   if(!D.navstevy.length)h+='<div class="info">'+esc(t.noVisits)+'</div>';
   D.navstevy.forEach(function(n,i){var o=!!S.open[i],kmN=n.km_predani||n.km_prijem,hot=HOT.indexOf(n.stav)>-1;
    var title=(n.prace.filter(function(p){return p.typ==='nadpis'})[0]||{}).popis||n.zavady[0]||t.visit;
-   h+='<div class="vis"><button class="b vh" data-a="visit" data-i="'+i+'" aria-expanded="'+o+'"><span class="vd">'+esc(fdate(n.datum_predani||n.datum_prijmu,lang))+'</span><span class="vt">'+esc(title)+(n.predchozi_majitel?' <small style="font-weight:400;color:#4a4f55">· '+esc(t.predchozi)+'</small>':'')+'</span><span class="vk">'+(kmN?esc(num(kmN,lang)+' '+unit):'#'+esc(n.cislo))+'</span>'+I_CHEV(o)+'</button>';
+   h+='<div class="vis"><button class="b vh" data-a="visit" data-i="'+i+'" aria-expanded="'+o+'"><span class="vd">'+esc(fdate(n.datum_predani||n.datum_prijmu,lang))+'</span><span class="vt">'+esc(title)+(n.predchozi_majitel?' <small style="font-weight:400;color:#4a4f55">· '+esc(t.predchozi)+'</small>':'')+'</span><span class="vk">'+(kmN?esc(kmTxt(kmN,lang,unit)):'#'+esc(n.cislo))+'</span>'+I_CHEV(o)+'</button>';
    if(o){h+='<div class="vp"><p style="margin:0;color:#4a4f55">'+esc(t.recv+' '+fdate(n.datum_prijmu,lang))+(n.datum_predani?esc(' · '+t.hand+' '+fdate(n.datum_predani,lang)):'')+' · #'+esc(n.cislo)+(hot?'':'<br><b style="color:#333">'+esc(t.inprog)+'</b>')+'</p>';
     if(n.postup&&!hot)h+='<div><div class="sub">'+esc(t.postupL)+'</div>'+lista(n.postup)+'</div>';
     var work=n.prace.length?n.prace:n.zavady.map(function(z){return{typ:'prace',popis:z}});
