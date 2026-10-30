@@ -3158,7 +3158,7 @@
       const T = textyKPrekladu();
       if (!T.length) app.querySelector("#preklad").hidden = true;
       prEl.innerHTML = T.map(cs => { const r = prelozitEn(cs, ulozenePreklady || {}), k = klicPrekladu(cs);
-        const stitek = r.zdroj === "navrh" ? `<span class="preklad-stitek navrh">návrh – zkontrolujte</span>` : !r.en ? `<span class="preklad-stitek chybi">nepřeloženo</span>` : "";
+        const stitek = r.zdroj === "navrh" ? `<span class="preklad-stitek navrh">návrh – zkontrolujte</span>` : r.zdroj === "stejne" ? `<span class="preklad-stitek stejne">ponecháno beze změny</span>` : !r.en ? `<span class="preklad-stitek chybi">nepřeloženo</span>` : "";
         return `<div class="preklad-radek"><div class="preklad-cs">${esc(cs)}${stitek}</div>
           <input class="vstup" data-preklad="${esc(k)}" data-cs="${esc(cs)}" value="${esc(r.en)}" placeholder="Anglicky…" lang="en" spellcheck="true"></div>`; }).join("");
       prEl.querySelectorAll("[data-preklad]").forEach(inp => inp.addEventListener("input", () => {

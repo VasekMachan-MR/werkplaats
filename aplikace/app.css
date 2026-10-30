@@ -658,3 +658,4 @@ textarea.poznamka-text { width: 100%; max-width: none; resize: vertical; font-si
 .preklad-stitek.navrh { background: var(--oranzova-svetla); color: var(--oranzova); }
 .preklad-stitek.chybi { background: #fde8e6; color: var(--cervena); }
 @media (max-width: 700px) { .preklad-radek { grid-template-columns: 1fr; } }
+.preklad-stitek.stejne { background: #eef0f3; color: var(--sedy); }

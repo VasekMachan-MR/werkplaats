@@ -155,7 +155,7 @@
     if (!k) return { en: "", zdroj: "slovnik" };
     if (ulozene && ulozene[k]) return { en: ulozene[k], zdroj: "ulozeno" };
     if (F[k]) return { en: F[k], zdroj: "slovnik" };
-    if (!/[áčďéěíňóřšťúůýž]/i.test(k)) return { en: String(text).trim(), zdroj: "slovnik" };   // už je anglicky / jen značka a čísla
+    if (!/[áčďéěíňóřšťúůýž]/i.test(k)) { const n = navrh(text); return n ? { en: n, zdroj: "navrh" } : { en: String(text).trim(), zdroj: "stejne" }; }   // bez diakritiky: možná anglicky / jen značka – nechat, ale ukázat ke kontrole
     const n = navrh(text);
     return n ? { en: n, zdroj: "navrh" } : { en: "", zdroj: null };
   };
