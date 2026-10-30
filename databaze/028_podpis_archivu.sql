@@ -5,7 +5,9 @@ alter table public.soubory add column if not exists podepsany_z uuid references 
 
 -- důkaz podpisu: buď k dokladu (nový zakázkový list), nebo k PDF z archivu
 alter table public.dalkove_podpisy alter column doklad_id drop not null;
-alter table public.dalkove_podpisy add column if not exists archiv_soubor_id uuid references public.soubory(id) on delete cascade;
+-- bez cizího klíče: druhá vazba dalkove_podpisy→soubory by rozbila načítání zakázky v aplikaci (soubory(klic) by nebylo jednoznačné)
+alter table public.dalkove_podpisy add column if not exists archiv_soubor_id uuid;
+alter table public.dalkove_podpisy drop constraint if exists dalkove_podpisy_archiv_soubor_id_fkey;
 alter table public.dalkove_podpisy drop constraint if exists dalkove_podpisy_k_cemu;
 alter table public.dalkove_podpisy add constraint dalkove_podpisy_k_cemu check (doklad_id is not null or archiv_soubor_id is not null);
 
