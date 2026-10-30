@@ -2204,24 +2204,47 @@
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") dokoncitUkladani(); });   // iPad: přepnutí aplikace
 
   // daň: navýšení ceny práce o daň, kterou pak odvedu (výchozí 30 %, u zakázky jde změnit)
-  const DAN_VYCHOZI = 30;
-  const danZakazky = z => z?.dan_pct == null || isNaN(Number(z.dan_pct)) ? DAN_VYCHOZI : Number(z.dan_pct);
+  const DAN_VYCHOZI = 50;
+  const sazbaDane = z => z?.dan_pct == null || isNaN(Number(z.dan_pct)) ? DAN_VYCHOZI : Number(z.dan_pct);
+  const danZakazky = z => z?.dan_zapnuto === false ? 0 : sazbaDane(z);       // políčko „Daň“ u zakázky (výchozí zapnuto)
+  // daň se rozpustí do ceny práce a do marže dílů (nákupní cena dílu zůstane) – na nabídce a faktuře žádný řádek „daň“
+  function sDani(z, polozky, dily) {
+    const k = 1 + danZakazky(z) / 100;
+    const P2 = polozky.map(p => (p.typ || "prace") === "prace" && p.sazba != null ? { ...p, sazba: zaokrouhli(Number(p.sazba) * k) }
+      : p.typ === "pausal" && p.castka != null ? { ...p, castka: zaokrouhli(Number(p.castka) * k) } : { ...p });
+    const D2 = dily.map(d => {
+      if (d.nakupni_cena == null || d.prodejni_cena == null) return { ...d };
+      const nakup = Number(d.nakupni_cena) * (Number(d.kurz) || 1), prodej = Number(d.prodejni_cena), marze = Math.max(0, prodej - nakup);
+      return { ...d, prodejni_cena: zaokrouhli(nakup + marze * k) };
+    });
+    return [P2, D2];
+  }
   function vykresliSouhrnZakazky() {
     const el = document.getElementById("souhrn"); if (!el || !E) return;
-    const s = soucty(E.polozky, E.dily), pct = danZakazky(E.z), dan = zaokrouhli(s.prace * pct / 100), celkem = s.celkem + dan;
+    const s = soucty(E.polozky, E.dily), pct = sazbaDane(E.z), zap = E.z.dan_zapnuto !== false;
+    const sD = p => soucty(...sDani({ dan_pct: p }, E.polozky, E.dily)).celkem, danP = p => sD(p) - s.celkem;
+    const dan = danP(pct), celkem = s.celkem + (zap ? dan : 0);
+    const bezNakupu = E.dily.filter(d => d.stav !== "nepouzito" && d.prodejni_cena != null && d.nakupni_cena == null).length;
     el.innerHTML = `<div class="souhrn-radky">
       <div><span>Práce${s.hodin ? ` (${mnozstviCz(s.hodin)} h)` : ""}</span><b>${kc(s.prace)}</b></div>
-      <div><span class="dan-pole">Daň <input class="vstup cislo" id="dan-pct" value="${mnozstviCz(pct)}" inputmode="decimal" aria-label="Daň v procentech z práce" title="Navýšení ceny práce o daň (výchozí 30 %)"> % z práce</span><b id="dan-kc">${kc(dan)}</b></div>
       <div><span>Materiál (díly)</span><b>${kc(s.material)}</b></div>
-      <div class="celkem"><span>Celkem</span><b id="souhrn-celkem">${kc(celkem)}</b></div></div>
-      <span class="napoveda" id="stav-dane"></span>
+      <div class="${zap ? "" : "dan-vypnuta"}" id="radek-dane"><span class="dan-pole"><label class="dan-zap"><input type="checkbox" id="dan-zap" ${zap ? "checked" : ""}> Daň</label> <input class="vstup cislo" id="dan-pct" value="${mnozstviCz(pct)}" inputmode="decimal" aria-label="Daň v procentech z práce a marže" title="Navýšení práce a marže dílů o daň (výchozí 50 %)"> % z práce a marže</span><b id="dan-kc">${zap ? "" : "("}${kc(dan)}${zap ? "" : ")"}</b></div>
+      <div class="celkem"><span>Celkem${zap ? "" : " bez daně"}</span><b id="souhrn-celkem">${kc(celkem)}</b></div>
+      ${zap ? "" : `<div class="mutted" id="s-dani"><span>S daní by to bylo</span><b>${kc(s.celkem + dan)}</b></div>`}</div>
+      <p class="napoveda" style="margin:6px 0 0;text-align:right">${zap ? "Na nabídce a faktuře je daň rozpuštěná do ceny práce a dílů (bez řádku „daň“)." : "Daň je vypnutá – nabídka a faktura budou bez ní."}${bezNakupu ? ` ${bezNakupu} ${bezNakupu === 1 ? "díl nemá" : "díly nemají"} nákupní cenu – ${bezNakupu === 1 ? "jeho" : "jejich"} marži neznám, daň se k ${bezNakupu === 1 ? "němu" : "nim"} nepřičte.` : ""} <span id="stav-dane"></span></p>
       ${E.z.odhad_ceny != null ? `<p class="napoveda" style="margin:8px 0 0">Odhad při příjmu: ${kc(E.z.odhad_ceny)}${E.z.odhad_ceny && celkem > E.z.odhad_ceny * 1.15 ? ` – <b style="color:var(--oranzova)">o víc než 15 % vyšší, podle podmínek je potřeba to se zákazníkem probrat</b>` : ""}</p>` : ""}`;
     const inp = el.querySelector("#dan-pct"), zid = E.z.id;
+    el.querySelector("#dan-zap").onchange = async e => {
+      E.z.dan_zapnuto = e.target.checked; vykresliSouhrnZakazky();
+      const st = document.getElementById("stav-dane");
+      try { await ulozitZmenu("zakazky", zid, { dan_zapnuto: E.z.dan_zapnuto }, st); } catch (er) { if (st) st.innerHTML = `<span style="color:var(--cervena)">Neuloženo – ${esc(chybaText(er))}</span>`; }
+    };
     inp.addEventListener("input", () => {
       const n = cisloZ(inp.value), ok = n != null && !isNaN(n) && n >= 0 && n <= 100;
       inp.classList.toggle("neplatne", !ok); if (!ok) return;
-      E.z.dan_pct = n; const d = zaokrouhli(s.prace * n / 100);
-      el.querySelector("#dan-kc").textContent = kc(d); el.querySelector("#souhrn-celkem").textContent = kc(s.celkem + d);
+      E.z.dan_pct = n; const d = danP(n);
+      el.querySelector("#dan-kc").textContent = zap ? kc(d) : `(${kc(d)})`; el.querySelector("#souhrn-celkem").textContent = kc(s.celkem + (zap ? d : 0));
+      const sd = el.querySelector("#s-dani b"); if (sd) sd.textContent = kc(s.celkem + d);
       clearTimeout(inp._u); inp._u = setTimeout(async () => {
         const st = el.querySelector("#stav-dane");
         try { await ulozitZmenu("zakazky", zid, { dan_pct: n }, st); } catch (e) { st.innerHTML = `<span style="color:var(--cervena)">Neuloženo – ${esc(chybaText(e))}</span>`; }
@@ -2364,7 +2387,7 @@
       const okno = window.open("", "_blank");
       try {
         await dokoncitUkladani();
-        const b = await pdfZeSablony("parts-list.html", dataPartsListu(E.z, E.dily, el.querySelector("#parts-ceny").checked), "cs", { nazev: `Parts list ${E.z.cislo}` });
+        const b = await pdfZeSablony("parts-list.html", dataPartsListu(E.z, sDani(E.z, [], E.dily)[1], el.querySelector("#parts-ceny").checked), "cs", { nazev: `Parts list ${E.z.cislo}` });
         const u = URL.createObjectURL(new Blob([b], { type: "application/pdf" }));
         if (okno) okno.location = u; else window.open(u, "_blank");
       } catch (e) { okno?.close(); hlaska("Parts list se nepodařil: " + chybaText(e), true); }
@@ -2501,6 +2524,7 @@
     catch (e) { app.innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
     if (navId !== n0) return;                         // mezitím se přešlo jinam – nepřekreslovat cizí stránku
     if (!z) { app.innerHTML = `<div class="info chyba">Zakázka nenalezena.</div>`; return; }
+    if (druh === "nabidka" || druh === "faktura") [polozky, dily] = sDani(z, polozky, dily);   // daň v ceně práce a marže dílů
     const jazyk = z.jazyk || "cs", en = jazyk === "en";
     const verze = (z.doklady || []).filter(d => d.druh === druh).length + 1;
     const cislo = cisloDokladu(z.cislo, druh, verze), vs = vsDokladu(z.cislo, druh, verze);

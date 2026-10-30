@@ -176,10 +176,14 @@ const server = http.createServer((q, r) => {
   const souhrn = await p.textContent("#souhrn");
   const sh = souhrn.replace(/[\u00a0\u202f]/g, " ").replace(/\s+/g, " ");
   if (!/Práce \(6 h\) ?9 050 Kč/.test(sh)) console.log("souhrn:", sh);
-  kontrola(/Práce \(6 h\) ?9 050 Kč/.test(sh) && /Materiál \(díly\) ?13 325 Kč/.test(sh) && /z práce ?2 715 Kč/.test(sh) && /Celkem ?25 090 Kč/.test(sh), "souhrn: práce 9 050 + daň 30 % (2 715) + díly 13 325 = 25 090 Kč");
+  // daň 50 % z práce (9 050 → 4 525) a z marže dílů (3 000 → 1 500, 75 → 38) = 6 063 Kč
+  kontrola(/Práce \(6 h\) ?9 050 Kč/.test(sh) && /Materiál \(díly\) ?13 325 Kč/.test(sh) && /marže ?6 063 Kč/.test(sh) && /Celkem ?28 438 Kč/.test(sh), "souhrn: daň 50 % jen z práce a marže dílů (6 063 Kč), celkem 28 438 Kč");
   await p.fill("#dan-pct", "20"); await p.waitForSelector("#stav-dane >> text=✓ Uloženo");
-  kontrola((await p.textContent("#souhrn-celkem")).replace(/\s/g, "") === "24185Kč" && await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky[0].dan_pct === 20), "daň jde změnit (20 % → celkem 24 185 Kč) a uloží se k zakázce");
-  await p.fill("#dan-pct", "30"); await p.waitForSelector("#stav-dane >> text=✓ Uloženo");
+  kontrola((await p.textContent("#souhrn-celkem")).replace(/\s/g, "") === "24800Kč" && await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky[0].dan_pct === 20), "daň jde změnit (20 % → celkem 24 800 Kč) a uloží se k zakázce");
+  await p.fill("#dan-pct", "50"); await p.waitForSelector("#stav-dane >> text=✓ Uloženo");
+  await p.uncheck("#dan-zap"); await p.waitForSelector("#stav-dane >> text=✓ Uloženo");   // další kontroly dokladů počítají ceny bez daně
+  { const t = (await p.textContent("#souhrn")).replace(/[\u00a0\u202f]/g, " ").replace(/\s+/g, " ");
+    kontrola(/Celkem bez daně ?22 375 Kč/.test(t) && /S daní by to bylo ?28 438 Kč/.test(t) && await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky[0].dan_zapnuto === false), "políčko Daň vypnuto: celkem bez daně 22 375 Kč, náhled „s daní by to bylo 28 438 Kč“, uloží se k zakázce"); }
   await foto("11-prace-dily");
   // změna a hned odchod na přehled – musí se uložit i tak (bez čekání)
   await p.locator('.radek-pol[data-i="0"] [data-f="mnozstvi"]').fill("1");
@@ -713,6 +717,18 @@ const server = http.createServer((q, r) => {
     const n0 = await p.locator(".radek-pol[data-i]").count();
     odmitnoutDialog = true; await p.click('[data-smaz="0"]'); await p.waitForTimeout(200); odmitnoutDialog = false;
     kontrola(await p.locator(".radek-pol[data-i]").count() === n0, "smazání řádku práce se nejdřív zeptá (Zrušit = nic se nesmaže)");
+  }
+
+  // ---------- daň zapnutá → nabídka má práci i díly s daní (bez řádku „daň“) ----------
+  {
+    const zid = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const z = T.zakazky.find(x => T.polozky.some(y => y.zakazka_id === x.id && Number(y.sazba) > 0)); z.dan_zapnuto = true; z.dan_pct = 50; return z.id; });
+    const sazba = await p.evaluate(id => Number(window.__ULOZENO__.tabulky.polozky.find(y => y.zakazka_id === id && Number(y.sazba) > 0).sazba), zid);
+    await p.evaluate(id => { location.hash = "#/zakazka/" + id + "/nabidka"; }, zid);
+    await p.waitForFunction(() => document.querySelector("#nahled")?.contentDocument?.body?.innerText?.length > 200, null, { timeout: 15000 });
+    const txt = (await p.evaluate(() => document.querySelector("#nahled").contentDocument.body.innerText)).replace(/[\u00a0\u202f\s]/g, "");
+    const cil = Math.round(sazba * 1.5).toLocaleString("cs-CZ").replace(/[\u00a0\u202f\s]/g, "");
+    kontrola(txt.includes(cil) && !/daň/i.test(txt), `daň zapnutá: na nabídce je sazba práce ${cil} Kč (${sazba} × 1,5) a žádný řádek „daň“`);
+    await p.evaluate(id => { window.__ULOZENO__.tabulky.zakazky.find(z => z.id === id).dan_zapnuto = false; location.hash = "#/zakazky"; }, zid);
   }
 
   // ---------- Kalendář v Přehledu ----------
