@@ -387,7 +387,7 @@ const server = http.createServer((q, r) => {
   // ---------- import dílů z e-mailu dodavatele ----------
   await p.click(".zakazka-radek >> text=7378");
   await p.waitForSelector("#import-dilu");
-  await p.click("#import-dilu");
+  await p.evaluate(() => { const d = document.getElementById("sekce-dily"); if (d) d.open = true; }); await p.click("#import-dilu");
   await p.fill("#imp-text", "LKQ CZ s.r.o., pobočka HRADECZ - faktura 4126028275\nNázev   ks      DPH     Kč/ks bez DPH   Kč s DPH\n1.              LO 00596 / Sada ložiska kola STARLINE   1       21%     319.00  385.99\n2.\tMH KC22 / Palivový filtr KNECHT\t3\t21%\t200.00\t726.00\nCelkem s DPH 1111.99 Kč");
   await p.click("#imp-rozpoznat");
   await p.waitForSelector(".import-tabulka");
@@ -399,6 +399,9 @@ const server = http.createServer((q, r) => {
   const di = await p.evaluate(() => window.__ULOZENO__.tabulky.dily.filter(d => d.cislo_mb === "LO 00596"));
   kontrola(di.length === 1 && di[0].nakupni_cena === 385.99 && di[0].dodavatel_id === "d1" && di[0].puvod === "aftermarket" && di[0].stav === "objednano" && di[0].prodejni_cena === 502 && di[0].nazev === "Sada ložiska kola STARLINE",
     "import: přidán jen vybraný díl – nákup 385,99 s DPH, prodej 502 Kč, Auto Kelly, Aftermarket, objednáno");
+  kontrola(await p.evaluate(() => !document.getElementById("sekce-dily").open) && /díl.* · .*Kč/.test(await p.textContent("#souhrn-dilu")), "po importu se sekce Díly sbalí (v nadpisu počet dílů a částka)");
+  { const t = (await p.textContent("#souhrn")).replace(/[\u00a0\u202f]/g, " ");
+    kontrola(/z toho marže/.test(t) && /116 Kč · 30,1 %/.test(t), "součet ukazuje celkovou marži na dílech (116 Kč · 30,1 %)"); }
   // PDF faktura Granexu (vyrobená pro test, stejné rozložení řádků)
   {
     const { PDFDocument } = require("pdf-lib"), fontkit = require("@pdf-lib/fontkit");
@@ -412,7 +415,7 @@ const server = http.createServer((q, r) => {
      "DPD – Zásilková služba 1 ks 114,88 Kč 21 % 114,88 Kč 24,12 Kč 139 Kč", "Základ Výše DPH Celkem s DPH"].forEach(radek);
     fs.writeFileSync(path.join(OUT, "granex-test.pdf"), await doc.save());
   }
-  await p.click("#import-dilu");
+  await p.evaluate(() => { const d = document.getElementById("sekce-dily"); if (d) d.open = true; }); await p.click("#import-dilu");
   await p.setInputFiles("#imp-soubor", path.join(OUT, "granex-test.pdf"));
   await p.waitForSelector(".import-tabulka", { timeout: 15000 });
   const radkyPdf = await p.$$eval(".import-tabulka tbody tr", tr => tr.map(r => [...r.querySelectorAll("input.vstup")].map(i => i.value)));

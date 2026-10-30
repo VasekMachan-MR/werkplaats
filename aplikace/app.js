@@ -1753,10 +1753,10 @@
         <div id="prace"></div>
       </section>
 
-      <section class="karta" id="sekce-dily">
-        <h2>Díly <span class="napoveda" id="stav-dilu" style="margin-left:auto;font-weight:400"></span></h2>
+      <details class="karta sbalovaci" id="sekce-dily"${E.dily.length < 6 ? " open" : ""}>
+        <summary><h2>Díly <span class="mutted" id="souhrn-dilu" style="font-weight:400;font-size:15px"></span> <span class="napoveda" id="stav-dilu" style="margin-left:auto;font-weight:400"></span></h2></summary>
         <div id="dily"></div>
-      </section>
+      </details>
       <section class="karta" id="sekce-servis"></section>
       ${blokPoznamek([{ tabulka: "zakazky", id: z.id, hodnota: z.poznamky, popis: "K této zakázce", napoveda: "Co je potřeba udělat, co jsme zjistili, domluva se zákazníkem…" },
         { tabulka: "vozidla", id: z.vozidlo_id || v.id, hodnota: v.poznamky, popis: "K autu (zůstanou u auta i pro další návštěvy)", napoveda: "Zvláštnosti auta, historie, co hlídat příště…" }])}
@@ -2204,6 +2204,17 @@
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") dokoncitUkladani(); });   // iPad: přepnutí aplikace
 
   // daň: navýšení ceny práce o daň, kterou pak odvedu (výchozí 30 %, u zakázky jde změnit)
+  // celková marže na dílech (prodej − nákup × kurz), jen díly s nákupní cenou – pro můj přehled
+  function marzeDilu(dily) {
+    let nakup = 0, prodej = 0, bezNakupu = 0;
+    for (const d of dily) {
+      if (d.stav === "nepouzito") continue;
+      if (d.nakupni_cena == null || d.prodejni_cena == null) { if (d.prodejni_cena != null) bezNakupu++; continue; }
+      const mn = Number(d.mnozstvi) || 0;
+      nakup += Number(d.nakupni_cena) * (Number(d.kurz) || 1) * mn; prodej += Number(d.prodejni_cena) * mn;
+    }
+    return { nakup: zaokrouhli(nakup), marze: zaokrouhli(prodej - nakup), bezNakupu };
+  }
   const DAN_VYCHOZI = 50;
   const sazbaDane = z => z?.dan_pct == null || isNaN(Number(z.dan_pct)) ? DAN_VYCHOZI : Number(z.dan_pct);
   const danZakazky = z => z?.dan_zapnuto === false ? 0 : sazbaDane(z);       // políčko „Daň“ u zakázky (výchozí zapnuto)
@@ -2220,6 +2231,8 @@
     return [P2, D2];
   }
   function vykresliSouhrnZakazky() {
+    const sdh = document.getElementById("souhrn-dilu");
+    if (sdh && E) { const n = E.dily.filter(d => d.stav !== "nepouzito").length; sdh.textContent = E.dily.length ? `· ${n} ${n === 1 ? "díl" : n > 1 && n < 5 ? "díly" : "dílů"} · ${kc(soucty([], E.dily).material)}` : ""; }
     const el = document.getElementById("souhrn"); if (!el || !E) return;
     const s = soucty(E.polozky, E.dily), pct = sazbaDane(E.z), zap = E.z.dan_zapnuto !== false;
     const sD = p => soucty(...sDani({ dan_pct: p }, E.polozky, E.dily)).celkem, danP = p => sD(p) - s.celkem;
@@ -2228,6 +2241,7 @@
     el.innerHTML = `<div class="souhrn-radky">
       <div><span>Práce${s.hodin ? ` (${mnozstviCz(s.hodin)} h)` : ""}</span><b>${kc(s.prace)}</b></div>
       <div><span>Materiál (díly)</span><b>${kc(s.material)}</b></div>
+      ${(() => { const m = marzeDilu(E.dily); return m.nakup && jeMajitel() ? `<div class="mutted" style="font-size:14px"><span>z toho marže${m.bezNakupu ? " (bez dílů bez nákupní ceny)" : ""}</span><b>${kc(m.marze)}${m.nakup ? ` · ${mnozstviCz(Math.round(m.marze / m.nakup * 1000) / 10)} %` : ""}</b></div>` : ""; })()}
       <div class="${zap ? "" : "dan-vypnuta"}" id="radek-dane"><span class="dan-pole"><label class="dan-zap"><input type="checkbox" id="dan-zap" ${zap ? "checked" : ""}> Daň</label> <input class="vstup cislo" id="dan-pct" value="${mnozstviCz(pct)}" inputmode="decimal" aria-label="Daň v procentech z práce a marže" title="Navýšení práce a marže dílů o daň (výchozí 50 %)"> % z práce a marže</span><b id="dan-kc">${zap ? "" : "("}${kc(dan)}${zap ? "" : ")"}</b></div>
       <div class="celkem"><span>Celkem${zap ? "" : " bez daně"}</span><b id="souhrn-celkem">${kc(celkem)}</b></div>
       ${zap ? "" : `<div class="mutted" id="s-dani"><span>S daní by to bylo</span><b>${kc(s.celkem + dan)}</b></div>`}</div>
@@ -2509,7 +2523,8 @@
       }
       E.imp = null;
       vykresliDily(); vykresliSouhrnZakazky(); ulozitPozdeji("dily");
-      hlaska(`Přidáno ${vybrane.length} ${vybrane.length === 1 ? "díl" : vybrane.length < 5 ? "díly" : "dílů"}.`);
+      const sd = document.getElementById("sekce-dily"); if (sd) { sd.open = false; sd.scrollIntoView({ behavior: "smooth", block: "nearest" }); }   // po importu sbalit, ať je stránka přehledná
+      hlaska(`Přidáno ${vybrane.length} ${vybrane.length === 1 ? "díl" : vybrane.length < 5 ? "díly" : "dílů"} – sekce Díly je sbalená, klepnutím ji rozbalíte.`);
     };
   }
 

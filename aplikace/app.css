@@ -569,3 +569,11 @@ details.postup-prace[open] > summary .postup { display: none; }
 .dan-zap input { width: 20px; height: 20px; accent-color: var(--navy); }
 .dan-vypnuta > b, .dan-vypnuta .dan-pole > .vstup { opacity: .5; }
 #s-dani { display: flex; justify-content: space-between; gap: 20px; font-size: 14px; }
+
+/* sbalovací sekce (Díly) */
+details.sbalovaci > summary { cursor: pointer; list-style: none; }
+details.sbalovaci > summary::-webkit-details-marker { display: none; }
+details.sbalovaci > summary h2 { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 0; }
+details.sbalovaci > summary h2::before { content: "▸"; color: var(--sedy); font-size: 16px; }
+details.sbalovaci[open] > summary h2::before { content: "▾"; }
+details.sbalovaci[open] > summary { margin-bottom: 14px; }
