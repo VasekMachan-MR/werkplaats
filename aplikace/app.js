@@ -1796,7 +1796,7 @@
         <div class="podsekce" id="sekce-prijem-detail"></div>
       </details>
       <details class="karta sbalovaci" id="sekce-archiv" data-sbal${sbalOpen(id, "sekce-archiv")}><summary><h2>Ostatní dokumenty</h2></summary></details>
-      <section class="karta" id="sekce-fotky-detail"></section>`;
+      <details class="karta sbalovaci" id="sekce-fotky-detail" data-sbal${sbalOpen(id, "sekce-fotky-detail")}><summary><h2>Fotky a videa</h2></summary></details>`;
     vykresliPrijemDetail(false);
     sbalPamatuj(app, id);
     app.querySelectorAll("[data-rychle-foto]").forEach(inp => inp.addEventListener("change", e => {
@@ -1974,7 +1974,7 @@
   async function vykresliFotkyDetail() {
     const el = document.getElementById("sekce-fotky-detail"); if (!el || !E) return;
     const fotky = (E.z.soubory || []).filter(s => (s.druh === "foto" || s.druh === "video") && !s.smazano).map(s => ({ ...s, video: s.druh === "video" }));
-    el.innerHTML = `<h2>Fotky a videa${fotky.length ? ` (${popisPoctu(fotky)})` : ""}</h2>
+    el.innerHTML = `<summary><h2>Fotky a videa${fotky.length ? ` <span class="mutted" style="font-weight:400;font-size:15px">· ${popisPoctu(fotky)}</span>` : ""}</h2></summary>
       <div class="radek-tlacitek">
         <label class="tl tl-hlavni">📷 Vyfotit<input type="file" accept="image/*" capture="environment" multiple hidden data-nahrat></label>
         <label class="tl">🎥 Natočit video<input type="file" accept="video/*" capture="environment" hidden data-nahrat></label>
@@ -1986,7 +1986,7 @@
       ${E.vyber ? `<div class="info vyber-fotek"><span>Klepnutím vyberte fotky (<b id="pocet-vybranych">${E.vyber.size}</b>).</span>
         <span class="radek-tlacitek"><button type="button" class="tl tl-male" id="vybrat-vse" title="Vybere všechny kromě skrytých (🚫)">Vybrat vše</button>
         <button type="button" class="tl tl-hlavni" id="odeslat-fotky" ${E.vyber.size ? "" : "disabled"}>📤 Poslat (WhatsApp…)</button></span></div>` : ""}
-      ${FAZE_FOTEK.map(([k, t]) => { const f = fotky.filter(x => (x.faze || "prijem") === k); return f.length ? `<p class="faze-nadpis"><b>${t}</b> <span class="mutted">${popisPoctu(f)}${k === "profil" ? " · v E-servisce nahoře vpravo" : ""}</span></p><div class="fotky" data-faze="${k}">${f.map(x => `<div class="fotka" data-klic="${esc(x.klic)}"><span class="mutted" style="font-size:12px">Načítám…</span></div>`).join("")}</div>` : ""; }).join("")}
+      ${[FAZE_FOTEK[0], ["skryte", "🚫 Neveřejné"], ...FAZE_FOTEK.slice(1)].map(([k, t]) => { const f = fotky.filter(x => k === "skryte" ? x.verejne === false : x.verejne !== false && (x.faze || "prijem") === k); return f.length ? `<p class="faze-nadpis"><b>${t}</b> <span class="mutted">${popisPoctu(f)}${k === "profil" ? " · v E-servisce nahoře vpravo" : k === "skryte" ? " · zákazník je v E-servisce nevidí (👁 je vrátí zpět)" : ""}</span></p><div class="fotky" data-faze="${k}">${f.map(x => `<div class="fotka" data-klic="${esc(x.klic)}"><span class="mutted" style="font-size:12px">Načítám…</span></div>`).join("")}</div>` : ""; }).join("")}
       ${fotky.length ? "" : `<p class="mutted" style="margin:12px 0 0">Zatím žádné fotky.</p>`}`;
     el.querySelector("#faze-fotek").onchange = e => { E.fazeFotek = e.target.value; };
     const pf = el.querySelector("#poslat-fotky");
@@ -2114,6 +2114,7 @@
     };
   }
   async function nahratFotkyKZakazce(soubory) {
+    const sf = document.getElementById("sekce-fotky-detail"); if (sf && !sf.open) sf.open = true;   // ať je vidět průběh nahrávání
     const zak = E, faze = E.fazeFotek || "prubeh", box = document.getElementById("nahravani-detail");
     const radky = soubory.map(s => ({ s, stav: "čeká", video: jeVideo(s) }));
     const kresli = () => { if (box && box.isConnected) box.innerHTML = `<div class="info">${radky.map(r => `${esc(r.s.name || (r.video ? "video" : "fotka"))}: <b>${r.stav}</b>`).join("<br>")}</div>`; };

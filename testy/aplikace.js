@@ -139,6 +139,7 @@ const server = http.createServer((q, r) => {
 
   await p.click("text=Detail zakázky");
   await p.waitForSelector("text=Otevřít PDF");
+  await p.waitForSelector("#sekce-fotky-detail"); await p.evaluate(() => { const d = document.getElementById("sekce-fotky-detail"); if (d) d.open = true; });
   await p.waitForSelector("#sekce-fotky-detail video");
   kontrola(await p.locator("#sekce-fotky-detail video").count() === 1 && await p.locator("#sekce-fotky-detail img").count() === 2, "detail ukazuje 2 fotky a přehrávatelné video");
   await foto("05-detail");
@@ -455,6 +456,7 @@ const server = http.createServer((q, r) => {
   await p.selectOption("#stav-zakazky", "v_praci");
   await p.waitForFunction(() => window.__ULOZENO__.tabulky.zakazky.find(z => z.cislo === 7378).stav === "v_praci");
   kontrola(true, "stav zakázky jde ručně změnit (V práci)");
+  await p.evaluate(() => { document.getElementById("sekce-fotky-detail").open = true; });
   await p.setInputFiles("#sekce-fotky-detail [data-nahrat] >> nth=2", ["testy/auto-1.jpg"]);
   await p.waitForSelector('#sekce-fotky-detail [data-faze="prubeh"] .fotka img', { timeout: 15000 });
   kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.soubory.some(f => f.faze === "prubeh" && f.druh === "foto")) && /Během opravy/.test(await p.textContent("#sekce-fotky-detail")),
@@ -465,6 +467,11 @@ const server = http.createServer((q, r) => {
   await p.waitForSelector('#sekce-fotky-detail [data-faze="profil"] .fotka img', { timeout: 15000 });
   kontrola(/Profilové/.test(await p.textContent("#sekce-fotky-detail")) && await p.locator('#faze-fotek option[value="profil"]').count() === 1,
     "fotka jde označit ⭐ jako profilová (E-serviska nahoře) a jde rovnou nahrát jako profilová");
+  await p.click('#sekce-fotky-detail [data-faze="profil"] [data-verejne]');
+  await p.waitForSelector('#sekce-fotky-detail [data-faze="skryte"] .fotka img', { timeout: 15000 });
+  kontrola(await p.locator('#sekce-fotky-detail [data-faze="profil"]').count() === 0 && /Neveřejné/.test(await p.textContent("#sekce-fotky-detail")), "skrytá fotka (🚫) se přesune do skupiny Neveřejné");
+  await p.click('#sekce-fotky-detail [data-faze="skryte"] [data-verejne]');
+  await p.waitForSelector('#sekce-fotky-detail [data-faze="profil"] .fotka img', { timeout: 15000 });
   kontrola(/mercedesrestorations\.cz\/e-serviska\?k=[0-9a-f]{20}$/.test(await p.getAttribute("#odkaz-eservisky", "href")), "detail zakázky má tajný odkaz do E-servisky (VIN sám nestačí)");
   await p.evaluate(() => { navigator.share = async d => { window.__SDILENO__ = d.url; }; });
   await p.click("#sdilet-eservisku");
