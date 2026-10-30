@@ -588,3 +588,6 @@ details.sbalovaci[open] > summary { margin-bottom: 14px; }
 .podnadpis { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; font-size: 16px; color: var(--navy); }
 .fotka .profil-tl { position: absolute; right: 6px; bottom: 6px; width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(255,255,255,.92); font-size: 18px; line-height: 1; color: #8a6d00; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
 .fotka .profil-tl[aria-pressed="true"] { background: #ffd54a; }
+
+/* profilová fotka auta z dřívější návštěvy */
+.fotka .od-auta { position: absolute; left: 6px; bottom: 6px; background: rgba(9,43,80,.85); color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 4px; pointer-events: none; }

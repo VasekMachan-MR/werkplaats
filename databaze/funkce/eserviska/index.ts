@@ -47,7 +47,7 @@ Deno.serve(async req => {
   if (!v) return odp(404, { chyba: "nenalezeno" });
 
   const sk = skupina(v);
-  const [{ data: vl }, { data: zak }, { data: tp }, { data: intervaly }, { data: motory }, { data: typy }, { data: ukony }, { data: intMot }] = await Promise.all([
+  const [{ data: vl }, { data: zak }, { data: tp }, { data: intervaly }, { data: motory }, { data: typy }, { data: ukony }, { data: intMot }, { data: prof }] = await Promise.all([
     sb.from("vlastnictvi").select("zakaznik_id,vlastni_od,vlastni_do,zakaznici(jmeno,kontaktni_osoba,email,telefon)").eq("vozidlo_id", v.id).order("vlastni_od", { ascending: false }),
     sb.from("zakazky").select("id,cislo,stav,zakaznik_id,datum_prijmu,datum_predani,km_prijem,km_predani,zavady,servisni_ukony,ukoly,poznamky").eq("vozidlo_id", v.id).neq("stav", "zruseno").neq("stav", "poptavka").order("datum_prijmu", { ascending: false }),
     sb.from("soubory").select("klic,nazev,mime,vytvoreno").eq("vozidlo_id", v.id).eq("druh", "tp").eq("verejne", true).is("smazano", null).order("vytvoreno"),
@@ -55,7 +55,9 @@ Deno.serve(async req => {
     sb.from("motory").select("kod,palivo,serizovani_ventilu"),
     sb.from("typy_motoru").select("klic,motor"),
     sb.from("servisni_ukony").select("ukon,jen_palivo,jen_serizovani_ventilu"),
-    sb.from("servisni_intervaly_motoru").select("motor,ukon,interval_km,interval_mesice,zdroj")
+    sb.from("servisni_intervaly_motoru").select("motor,ukon,interval_km,interval_mesice,zdroj"),
+    // profilové fotky patří k autu – ze všech návštěv, i ze smazaných / zrušených zakázek (Vašek 30.10.2026)
+    sb.from("soubory").select("klic,verejne,vytvoreno").eq("vozidlo_id", v.id).eq("druh", "foto").eq("faze", "profil").is("smazano", null).order("vytvoreno")
   ]);
   const motor = urciMotor(v, motory || [], typy || []), mInfo = (motory || []).find(m => m.kod === motor);
   const palivo = mInfo ? mInfo.palivo : /\b\d{3}\s*(D|TD|SD|CD|SDL)\b/i.test(v.model || "") ? "diesel" : "benzin";
@@ -75,6 +77,7 @@ Deno.serve(async req => {
   // podepsané odkazy najednou
   const klice = new Set<string>();
   tpVidi.forEach((f: any) => klice.add(f.klic));
+  (prof || []).forEach((f: any) => { if (f.verejne !== false) klice.add(f.klic); });
   (soub || []).forEach(f => { if (f.druh === "pdf" || f.verejne !== false || (f.druh === "archiv" && f.podpis_pozadan)) klice.add(f.klic); });
   (dok || []).forEach(d => (d as any).soubory?.klic && klice.add((d as any).soubory.klic));
   const url: Record<string, string> = {};
@@ -155,7 +158,7 @@ Deno.serve(async req => {
     zakaznik: aktualni?.zakaznici || null,
     tp: tpVidi.filter((f: any) => url[f.klic]).map(f => ({ nazev: f.nazev, url: url[f.klic], pdf: f.mime === "application/pdf" })),
     // profilové fotky auta (nahoře vpravo) – jen fotky označené ⭐, nejnovější první; servisní fotky jsou jen u návštěv
-    profil: (soub || []).filter(f => f.druh === "foto" && f.faze === "profil" && f.verejne !== false && url[f.klic]).reverse().map(f => url[f.klic]),
+    profil: (prof || []).filter((f: any) => f.verejne !== false && url[f.klic]).reverse().map((f: any) => url[f.klic]),
     navstevy, podpis,
     servis, servis_skupina: sk, motor, palivo,
     platnost_odkazu_s: PLATNOST

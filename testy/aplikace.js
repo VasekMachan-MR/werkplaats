@@ -384,6 +384,17 @@ const server = http.createServer((q, r) => {
   const u2 = await p.evaluate(() => ({ t: window.__ULOZENO__.tabulky, pdf: Object.entries(window.__ULOZENO__.soubory).filter(([k]) => k.includes("7378") && k.endsWith(".pdf")).map(([k, v]) => [k, Array.from(v)]) }));
   kontrola(u2.t.zakaznici.length === 1 && u2.t.vozidla.length === 1 && u2.t.vlastnictvi.length === 1, "zákazník i auto jen jednou (nic zdvojeného)");
   fs.writeFileSync(path.join(OUT, "7378-1.pdf"), Buffer.from(u2.pdf[0][1]));
+  { // profilové fotky patří k autu: v druhé zakázce stejného auta je vidět ⭐ fotka z první návštěvy
+    const z2 = await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky.find(z => z.cislo === 7378).id);
+    await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, z2);
+    await p.waitForSelector("#sekce-fotky-detail"); await p.evaluate(() => { const d = document.getElementById("sekce-fotky-detail"); if (d) d.open = true; });
+    await p.waitForSelector('#sekce-fotky-detail [data-faze="profil"] .od-auta', { timeout: 8000 }).catch(() => null);
+    kontrola(await p.locator('#sekce-fotky-detail [data-faze="profil"] .od-auta').count() === 1, "druhá zakázka stejného auta ukazuje ⭐ profilovou fotku z dřívější návštěvy");
+    const vid = await p.evaluate(() => window.__ULOZENO__.tabulky.vozidla[0].id);
+    await p.evaluate(id => { location.hash = "#/vozidlo/" + id; }, vid);
+    await p.waitForSelector("#profilovky-vozu .fotka img", { timeout: 8000 }).catch(() => null);
+    kontrola(await p.locator("#profilovky-vozu .fotka").count() === 1, "detail vozidla: sekce ⭐ Profilové fotky");
+  }
   await p.evaluate(() => { location.hash = "#/"; });
   await p.waitForSelector(".dlazdice-k");
   kontrola(await p.isVisible("h1 >> text=Přehled") && await p.isVisible(".dlazdice-k >> text=V dílně") && await p.isVisible(".dlazdice-k >> text=Nezaplaceno"), "úvodní přehled: dlaždice V dílně, Nezaplaceno");
@@ -485,14 +496,14 @@ const server = http.createServer((q, r) => {
   kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.soubory.some(f => f.faze === "prubeh" && f.druh === "foto")) && /Během opravy/.test(await p.textContent("#sekce-fotky-detail")),
     "fotka přidaná během opravy se uloží do skupiny „Během opravy“");
   await foto("21-uprava-prijmu-fotky");
-  await p.click('#sekce-fotky-detail [data-profil]');
-  await p.waitForFunction(() => window.__ULOZENO__.tabulky.soubory.some(f => f.druh === "foto" && f.faze === "profil"));
-  await p.waitForSelector('#sekce-fotky-detail [data-faze="profil"] .fotka img', { timeout: 15000 });
+  await p.click('#sekce-fotky-detail [data-faze="prubeh"] [data-profil]');
+  await p.waitForFunction(() => window.__ULOZENO__.tabulky.soubory.filter(f => f.druh === "foto" && f.faze === "profil").length === 2);
+  await p.waitForSelector('#sekce-fotky-detail [data-faze="profil"] .fotka:not(:has(.od-auta)) img', { timeout: 15000 });
   kontrola(/Profilové/.test(await p.textContent("#sekce-fotky-detail")) && await p.locator('#faze-fotek option[value="profil"]').count() === 1,
     "fotka jde označit ⭐ jako profilová (E-serviska nahoře) a jde rovnou nahrát jako profilová");
-  await p.click('#sekce-fotky-detail [data-faze="profil"] [data-verejne]');
+  await p.click('#sekce-fotky-detail [data-faze="profil"] .fotka:not(:has(.od-auta)) [data-verejne]');
   await p.waitForSelector('#sekce-fotky-detail [data-faze="skryte"] .fotka img', { timeout: 15000 });
-  kontrola(await p.locator('#sekce-fotky-detail [data-faze="profil"]').count() === 0 && /Neveřejné/.test(await p.textContent("#sekce-fotky-detail")), "skrytá fotka (🚫) se přesune do skupiny Neveřejné");
+  kontrola(await p.locator('#sekce-fotky-detail [data-faze="profil"] .fotka').count() === 1 && /Neveřejné/.test(await p.textContent("#sekce-fotky-detail")), "skrytá fotka (🚫) se přesune do skupiny Neveřejné");
   await p.click('#sekce-fotky-detail [data-faze="skryte"] [data-verejne]');
   await p.waitForSelector('#sekce-fotky-detail [data-faze="profil"] .fotka img', { timeout: 15000 });
   kontrola(/mercedesrestorations\.cz\/e-serviska\?k=[0-9a-f]{20}$/.test(await p.getAttribute("#odkaz-eservisky", "href")), "detail zakázky má tajný odkaz do E-servisky (VIN sám nestačí)");

@@ -95,6 +95,7 @@ window.__WERK_DB__ = (() => {
       const z = T.zakazky.find(x => x.id === zid);
       if (T.doklady.some(d => d.zakazka_id === zid && ["faktura", "zalohova", "opravny"].includes(d.druh))) throw new Error(`Zakázka #${z.cislo} má vystavenou fakturu`);
       for (const t of ["doklady", "polozky", "dily", "nabidky"]) T[t] = T[t].filter(x => x.zakazka_id !== zid);
+      T.soubory.forEach(x => { if (x.zakazka_id === zid && x.druh === "foto" && x.faze === "profil") x.zakazka_id = null; });   // jako v databázi: profilovky zůstanou u auta
       T.soubory = T.soubory.filter(x => x.zakazka_id !== zid || x.druh === "tp"); T.zakazky = T.zakazky.filter(x => x.id !== zid);
       if (window.__ULOZENO__.citac === z.cislo) window.__ULOZENO__.citac = Math.max(7376, ...T.zakazky.map(x => x.cislo)); return z.cislo;
     },
@@ -128,6 +129,7 @@ window.__WERK_DB__ = (() => {
       if (zid) await this.zapsatVlastnictvi(a.id, zid, v.zmena_majitele);
       return a.id;
     },
+    async profilovkyVozu(vid) { return kopie(T.soubory.filter(s => s.vozidlo_id === vid && s.druh === "foto" && s.faze === "profil" && !s.smazano)); },
     async dokumentyVozidla(vid) { return kopie(T.soubory.filter(s => s.vozidlo_id === vid && s.druh === "tp")); },
     async seznamZakazniku() { return kopie(T.zakaznici.map(z => ({ ...z, vlastnictvi: T.vlastnictvi.filter(v => v.zakaznik_id === z.id).map(v => ({ ...v, vozidla: T.vozidla.find(a => a.id === v.vozidlo_id) })), zakazky: [{ count: T.zakazky.filter(k => k.zakaznik_id === z.id).length }] }))); },
     async zakaznik(zid) { const z = T.zakaznici.find(x => x.id === zid); if (!z) return null;

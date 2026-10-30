@@ -213,6 +213,8 @@
       async vozidlo(id) {
         return ok(await sb.from("vozidla").select("*,vlastnictvi(id,vlastni_od,vlastni_do,zakaznici(id,jmeno,telefon,email)),zakazky(id,cislo,stav,datum_prijmu,km_prijem,km_predani)").eq("id", id).maybeSingle());
       },
+      // profilové fotky patří k autu (ze všech zakázek i po smazané zakázce) – Vašek 30.10.2026
+      async profilovkyVozu(vid) { return ok(await sb.from("soubory").select("id,zakazka_id,vozidlo_id,doklad_id,druh,faze,klic,nazev,mime,vytvoreno,smazano,verejne").eq("vozidlo_id", vid).eq("druh", "foto").eq("faze", "profil").is("smazano", null).order("vytvoreno")); },
       async dokumentyVozidla(vid) { return ok(await sb.from("soubory").select("id,druh,klic,nazev,mime,verejne,vytvoreno").eq("vozidlo_id", vid).eq("druh", "tp").is("smazano", null).order("vytvoreno")); },
       async polozky(zid) { return ok(await sb.from("polozky").select("typ,popis,mnozstvi,jednotka,sazba,castka,poradi").eq("zakazka_id", zid).is("nabidka_id", null).order("poradi")); },
       async ulozitPolozky(zid, polozky) { return ok(await sb.rpc("ulozit_polozky", { p_zakazka: zid, p_polozky: polozky })); },
@@ -1374,7 +1376,7 @@
       if (P.vysledek) {                                    // zakázka už existuje, jen list se nepodařilo uložit → nezaseknout se v příjmu
         if (!confirm(`Zakázka #${P.vysledek.cislo} už je založená, jen se nepodařilo uložit zakázkový list.\n\nUkončit příjem? Zakázka i fotky z příjmu zůstanou, zakázkový list vystavíte později.`)) return;
         const { zakazka_id: zid, vozidlo_id: vid } = P.vysledek, f = P.fotky.filter(x => x.klic && x.stav === "nahrano");
-        try { const pf = f.find(x => !x.video); if (f.length) await db.vlozit("soubory", f.map(x => ({ zakazka_id: zid, vozidlo_id: vid, druh: x.video ? "video" : "foto", faze: x === pf ? "profil" : "prijem", klic: x.klic, nazev: x.nazev || null, mime: x.mime || "image/jpeg" }))); }
+        try { let mp = false; try { mp = (await db.profilovkyVozu(vid) || []).length > 0; } catch (e) { mp = true; } const pf = mp ? null : f.find(x => !x.video); if (f.length) await db.vlozit("soubory", f.map(x => ({ zakazka_id: zid, vozidlo_id: vid, druh: x.video ? "video" : "foto", faze: x === pf ? "profil" : "prijem", klic: x.klic, nazev: x.nazev || null, mime: x.mime || "image/jpeg" }))); }
         catch (e) { return hlaska("Fotky se nepodařilo přiřadit: " + chybaText(e) + " – zkuste to znovu, až bude signál.", true, 8000); }
         uloz(KONCEPT, null); P = null; location.hash = `#/zakazka/${zid}`; return;
       }
@@ -1520,7 +1522,8 @@
       if (podepisePozdeji && posledniPdf) posledniPdf.cekaPodpis = true;
       // 4) fotky k zakázce
       // první fotka auta z příjmu = profilová (E-serviska nahoře vpravo), Vašek 30.10.2026
-      const prvniFoto = P.fotky.find(f => !f.video);
+      let maProfil = false; try { maProfil = (await db.profilovkyVozu(vozidlo_id) || []).length > 0; } catch (e) { maProfil = true; }
+      const prvniFoto = maProfil ? null : P.fotky.find(f => !f.video);   // auto už profilovou fotku má (dřívější návštěva) → nic nepřepisovat
       if (P.fotky.length) await db.vlozit("soubory", P.fotky.map(f => ({ zakazka_id, vozidlo_id, druh: f.video ? "video" : "foto", faze: f === prvniFoto ? "profil" : "prijem", klic: f.klic, nazev: f.nazev || null, mime: f.mime || "image/jpeg" })));
       await zapsatTP(vozidlo_id, zakazka_id);
       uloz(KONCEPT, null); P = null;
@@ -1767,6 +1770,10 @@
     let z, polozky = [], dily = [], dodavatele = [];
     try {
       [z, polozky, dily, dodavatele] = await Promise.all([db.detail(id), db.polozky(id), db.dily(id), db.dodavatele().catch(() => [])]);
+      if (z?.vozidlo_id) try {                          // ⭐ profilové fotky auta z dřívějších návštěv (patří k autu, ne k zakázce)
+        const pv = await db.profilovkyVozu(z.vozidlo_id), ma = new Set((z.soubory || []).map(f => f.id));
+        z.soubory = [...(z.soubory || []), ...(pv || []).filter(f => !ma.has(f.id)).map(f => ({ ...f, odAuta: true }))];
+      } catch (e) { /* bez profilovek z jiných zakázek */ }
       if (navId !== n0) return;                         // mezitím se přešlo jinam – nepřekreslovat cizí stránku
     } catch (e) { app.innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
     if (!z) { app.innerHTML = `<div class="info chyba">Zakázka nenalezena.</div>`; return; }
@@ -1884,12 +1891,12 @@
 
     const sz = app.querySelector("#smazat-zakazku");
     if (sz) sz.onclick = async () => {
-      const odp = prompt(`Smazat zakázku #${z.cislo} včetně zakázkového listu, nabídek, protokolu, prací, dílů a fotek? Nejde to vrátit.\n\nPro potvrzení napište číslo zakázky:`);
+      const odp = prompt(`Smazat zakázku #${z.cislo} včetně zakázkového listu, nabídek, protokolu, prací, dílů a fotek? Nejde to vrátit. (Profilové fotky ⭐ a TP zůstanou u auta.)\n\nPro potvrzení napište číslo zakázky:`);
       if (odp == null) return;
       if (odp.trim() !== String(z.cislo)) return hlaska("Číslo nesouhlasí – nic se nesmazalo.", true);
       try {
         await dokoncitUkladani();
-        const klice = (z.soubory || []).filter(f => f.druh !== "tp").map(f => f.klic), slozky = [...new Set(klice.map(slozkaSouboru).filter(Boolean))];
+        const klice = (z.soubory || []).filter(f => f.druh !== "tp" && f.faze !== "profil").map(f => f.klic), slozky = [...new Set(klice.map(slozkaSouboru).filter(Boolean))];
         await db.smazatZakazku(id); uklidSoubory({ klice, slozky }); E = null;
         uloz(FRONTA, fronta().filter(x => x.zid !== id && !(x.tabulka === "zakazky" && x.id === id))); ukazFrontu(); hlaska(`Zakázka #${z.cislo} smazána.`); location.hash = "#/zakazky";
       }
@@ -2063,7 +2070,8 @@
           : `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="" loading="lazy"></a>`)
           + (uzivatel.role === "majitel" ? `<button type="button" class="odebrat" data-smazat-fotku="${f.id}" aria-label="Smazat">×</button>` : "")
           + `<button type="button" class="viditelnost" data-verejne="${f.id}" aria-pressed="${f.verejne !== false}" title="${f.verejne === false ? "Skryto v E-servisce – klepnutím zobrazit" : "Vidí zákazník v E-servisce – klepnutím skrýt"}">${f.verejne === false ? "🚫" : "👁"}</button>`;
-        if (!f.video) box.insertAdjacentHTML("beforeend", `<button type="button" class="profil-tl" data-profil="${f.id}" aria-pressed="${f.faze === "profil"}" title="${f.faze === "profil" ? "Profilová fotka (E-serviska nahoře) – klepnutím přesunout mezi servisní" : "Servisní fotka – klepnutím udělat profilovou (E-serviska nahoře)"}" aria-label="Profilová fotka">${f.faze === "profil" ? "⭐" : "☆"}</button>`);
+        if (f.odAuta) box.insertAdjacentHTML("beforeend", `<span class="od-auta" title="Profilová fotka auta z dřívější návštěvy">dřívější</span>`);
+        if (!f.video && !(f.odAuta && !f.zakazka_id)) box.insertAdjacentHTML("beforeend", `<button type="button" class="profil-tl" data-profil="${f.id}" aria-pressed="${f.faze === "profil"}" title="${f.faze === "profil" ? "Profilová fotka (E-serviska nahoře) – klepnutím přesunout mezi servisní" : "Servisní fotka – klepnutím udělat profilovou (E-serviska nahoře)"}" aria-label="Profilová fotka">${f.faze === "profil" ? "⭐" : "☆"}</button>`);
         box.classList.toggle("skryto", f.verejne === false);
         (E.urlFotek ||= {})[f.id] = u;
         if (E.vyber) { box.classList.add("vybiram"); box.classList.toggle("vybrana", E.vyber.has(f.id)); box.dataset.vybrat = f.id;
@@ -2076,13 +2084,15 @@
           const id = box.dataset.vybrat; E.vyber.has(id) ? E.vyber.delete(id) : E.vyber.add(id);
           box.classList.toggle("vybrana", E.vyber.has(id)); box.querySelector(".znacka-vyberu").textContent = E.vyber.has(id) ? "✓" : ""; obnov();
         }, true));
-        el.querySelector("#vybrat-vse").onclick = () => { fotky.filter(f => f.verejne !== false).forEach(f => E.vyber.add(f.id)); vykresliFotkyDetail(); };   // skryté (🚫) nikdy hromadně
+        el.querySelector("#vybrat-vse").onclick = () => { fotky.filter(f => f.verejne !== false && !f.odAuta).forEach(f => E.vyber.add(f.id)); vykresliFotkyDetail(); };   // skryté (🚫) a profilovky z dřívějších návštěv nikdy hromadně
         el.querySelector("#odeslat-fotky").onclick = () => poslatFotky(fotky.filter(f => E.vyber.has(f.id)));
       }
       el.querySelectorAll("[data-profil]").forEach(b => b.onclick = async () => {        // profilová ⭐ / servisní fotka
         const s = E.z.soubory.find(x => x.id === b.dataset.profil); if (!s) return;
         const nova = s.faze === "profil" ? "prubeh" : "profil";
-        try { await db.upravit("soubory", s.id, { faze: nova }); s.faze = nova; vykresliFotkyDetail(); hlaska(nova === "profil" ? "Profilová fotka – v E-servisce bude nahoře vpravo." : "Fotka přesunuta mezi servisní (Během opravy)."); }
+        try { await db.upravit("soubory", s.id, { faze: nova }); s.faze = nova;
+          if (s.odAuta && nova !== "profil") E.z.soubory = E.z.soubory.filter(x => x !== s);   // fotka z jiné návštěvy se vrátí mezi její servisní fotky
+          vykresliFotkyDetail(); hlaska(nova === "profil" ? "Profilová fotka – v E-servisce bude nahoře vpravo." : "Fotka přesunuta mezi servisní (Během opravy)."); }
         catch (e) { hlaska(chybaText(e), true); }
       });
       el.querySelectorAll("[data-verejne]").forEach(b => b.onclick = async () => {      // E2: fotka v E-servisce ano / ne
@@ -3156,6 +3166,26 @@
     });
     return r.length ? r : null;
   }
+  // ⭐ profilové fotky auta v detailu vozidla (Vašek 30.10.2026)
+  async function vykresliProfilovkyVozu(vid, el) {
+    if (!el) return;
+    let f = [];
+    try { f = await db.profilovkyVozu(vid) || []; } catch (e) { el.innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+    if (!el.isConnected) return;
+    if (!f.length) { el.innerHTML = `<span class="mutted">Zatím žádné. První fotka z příjmu se stane profilovou sama.</span>`; return; }
+    el.innerHTML = f.map(x => `<div class="fotka${x.verejne === false ? " skryto" : ""}" data-klic="${esc(x.klic)}"><span class="mutted" style="font-size:12px">Načítám…</span></div>`).join("");
+    try {
+      const odk = await db.odkazy(f.map(x => x.klic));
+      f.forEach((x, i) => { const box = el.querySelector(`.fotka[data-klic="${CSS.escape(x.klic)}"]`), u = odk[i]?.signedUrl; if (!box || !u) return;
+        box.innerHTML = `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="" loading="lazy"></a>`
+          + (uzivatel.role === "majitel" ? `<button type="button" class="odebrat" data-smazat-profilovku="${x.id}" aria-label="Smazat">×</button>` : ""); });
+      el.querySelectorAll("[data-smazat-profilovku]").forEach(b => b.onclick = async () => {
+        if (!confirm("Smazat tuto profilovou fotku auta? Nejde to vrátit.")) return;
+        const x = f.find(y => y.id === b.dataset.smazatProfilovku);
+        try { await db.smazatZaznamSouboru(x.id); uklidSoubory({ klice: [x.klic] }); hlaska("Smazáno."); vykresliProfilovkyVozu(vid, el); } catch (e) { hlaska(chybaText(e), true); }
+      });
+    } catch (e) { el.insertAdjacentHTML("beforeend", `<div class="info chyba">${esc(chybaText(e))}</div>`); }
+  }
   async function vozidloDetail(id) {
     const n0 = navId;
     app.innerHTML = `<div class="nacitani">Načítám…</div>`;
@@ -3192,6 +3222,9 @@
           <label class="tl">📷 TP – přední strana<input type="file" accept="image/*,application/pdf" data-tp="TP – přední strana" hidden></label>
           <label class="tl">📷 TP – zadní strana<input type="file" accept="image/*,application/pdf" data-tp="TP – zadní strana" hidden></label>
           <span class="napoveda" id="stav-tp">Zobrazí se v E-servisce mezi dokumenty ke stažení.</span></div></section>
+      <section class="karta"><h2>⭐ Profilové fotky</h2>
+        <div class="fotky" id="profilovky-vozu"><span class="mutted">Načítám…</span></div>
+        <p class="napoveda" style="margin:10px 0 0">Patří k autu – zůstanou i při další návštěvě a po smazání zakázky. V E-servisce jsou nahoře vpravo. Novou profilovou fotku označíte ⭐ u fotky v zakázce.</p></section>
       <section class="karta"><h2>Majitel</h2>
         <div class="doklady">${majitele.map(x => `<div class="doklad"><span><a href="#/zakaznik/${x.zakaznici.id}"><b>${esc(x.zakaznici.jmeno)}</b></a><br><small class="mutted kontakty">${[telOdkaz(x.zakaznici.telefon), mailOdkaz(x.zakaznici.email)].filter(Boolean).join(" · ")}</small></span>
           <small class="mutted">${x.vlastni_do ? `${datumCz(x.vlastni_od)} – ${datumCz(x.vlastni_do)}` : `od ${datumCz(x.vlastni_od)} · <b style="color:var(--zelena)">současný</b>`}</small></div>`).join("") || `<span class="mutted">Majitel není zadaný.</span>`}</div>
@@ -3201,6 +3234,7 @@
       <section class="karta"><h2>Zakázky</h2><div class="doklady">${(v.zakazky || []).sort((a, b) => b.cislo - a.cislo).map(k => `<a class="doklad odkaz-radek" href="#/zakazka/${k.id}"><span><b>#${k.cislo}</b> · přijato ${datumCz(k.datum_prijmu)}<br><small class="mutted">${k.km_prijem != null ? `${Number(k.km_prijem).toLocaleString("cs-CZ")} ${v.jednotka_tachometru === "mi" ? "mi" : "km"}` : ""}</small></span><span class="stitek">${STAVY[k.stav] || k.stav}</span></a>`).join("") || `<span class="mutted">Žádné zakázky.</span>`}</div></section>
       ${blokPoznamek([{ tabulka: "vozidla", id: v.id, hodnota: v.poznamky, popis: "Poznámky k autu", napoveda: "Zvláštnosti auta, historie, co hlídat příště…" }])}`;
     vykresliDokumentyVozidla(id, app.querySelector("#dokumenty-vozidla"), true);
+    vykresliProfilovkyVozu(id, app.querySelector("#profilovky-vozu"));
     const sm = app.querySelector("#smazat");
     if (sm) sm.onclick = async () => {
       const pocet = (v.zakazky || []).length;
