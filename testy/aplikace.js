@@ -648,6 +648,22 @@ const server = http.createServer((q, r) => {
     await p.screenshot({ path: "testy/vystup-app/prace-postup.png", fullPage: false });
   }
 
+  // ---------- Fotky zákazníkovi: výběr a odeslání přes Sdílet (WhatsApp) ----------
+  {
+    const zf = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const f = T.soubory.find(x => x.druh === "foto" && x.zakazka_id && !x.smazano); return f && f.zakazka_id; });
+    await p.evaluate(id => { window.__SDILENO__ = null; navigator.canShare = d => !!(d && d.files && d.files.length); navigator.share = async d => { window.__SDILENO__ = { n: d.files.length, typ: d.files[0].type, nazev: d.files[0].name, text: d.text }; }; location.hash = "#/zakazka/" + id; }, zf);
+    await p.waitForSelector("#poslat-fotky"); await p.click("#poslat-fotky");
+    await p.waitForSelector(".fotka[data-vybrat]");
+    kontrola(await p.isDisabled("#odeslat-fotky"), "bez vybrané fotky nejde nic poslat");
+    await p.click(".fotka[data-vybrat] >> nth=0");
+    kontrola((await p.textContent("#pocet-vybranych")).trim() === "1", "klepnutím se fotka vybere (1)");
+    await p.click("#odeslat-fotky");
+    await p.waitForFunction(() => window.__SDILENO__);
+    const sd = await p.evaluate(() => window.__SDILENO__);
+    kontrola(sd.n === 1 && /^image\//.test(sd.typ) && /E-servisní knížce: http/.test(sd.text), "vybraná fotka jde do nabídky Sdílet (WhatsApp) i s odkazem na E-servisku");
+    await p.waitForFunction(() => !document.querySelector(".fotka[data-vybrat]"));
+  }
+
   // ---------- E2 + D1: fotku jde skrýt v E-servisce; smazaná fotka zmizí i z úložiště ----------
   {
     const zf = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const f = T.soubory.find(x => x.druh === "foto" && x.zakazka_id && !x.smazano); return f && { z: f.zakazka_id, id: f.id, klic: f.klic }; });

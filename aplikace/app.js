@@ -1708,6 +1708,32 @@
 
   /* ---------- fotky a videa zakázky: při příjmu, během opravy, při předání ---------- */
   const FAZE_FOTEK = [["prijem", "Při příjmu"], ["prubeh", "Během opravy"], ["predani", "Při předání"]];
+  // fotky zákazníkovi: iPhone/iPad otevře nabídku Sdílet (WhatsApp, Zprávy…) přímo s fotkami; jinde WhatsApp s odkazem na E-servisku
+  async function poslatFotky(vybrane) {
+    const v = E.z.vozidla || {}, c = E.z.zakaznici || {}, en = E.z.jazyk === "en", odkaz = v.vin ? odkazEservisky(v) : "";
+    const text = (en ? `Hello, here are photos from the work on your ${[v.typ, v.model].filter(Boolean).join(" ")}.` : `Dobrý den, posílám fotky z opravy vašeho vozu ${[v.typ, v.model].filter(Boolean).join(" ")}.`)
+      + (odkaz ? (en ? ` More in your e-service book: ${odkaz}` : ` Další najdete v E-servisní knížce: ${odkaz}`) : "");
+    const tl = app.querySelector("#odeslat-fotky"); if (tl) { tl.disabled = true; tl.textContent = "Připravuji fotky…"; }
+    try {
+      let soubory = [];
+      if (navigator.canShare) {
+        soubory = await Promise.all(vybrane.map(async (f, i) => {
+          const b = await (await fetch(E.urlFotek?.[f.id] || (await db.odkaz(f.klic, 600)))).blob();
+          const pr = (b.type.split("/")[1] || (f.video ? "mp4" : "jpg")).replace("jpeg", "jpg").replace("quicktime", "mov");
+          return new File([b], `${E.z.cislo}-${String(i + 1).padStart(2, "0")}.${pr}`, { type: b.type || (f.video ? "video/mp4" : "image/jpeg") });
+        }));
+      }
+      if (soubory.length && navigator.canShare({ files: soubory })) {
+        try { await navigator.share({ files: soubory, text }); E.vyber = null; vykresliFotkyDetail(); hlaska("Odesláno."); return; }
+        catch (e) { if (e?.name === "AbortError") return; }
+      }
+      // počítač: fotky nejdou přiložit – otevřít WhatsApp se zprávou (fotky vidí v E-servisce)
+      const tel = String(c.telefon || "").replace(/[^\d+]/g, "").replace(/^00/, "+").replace(/^(?!\+)/, "+420").replace(/^\+/, "");
+      window.open(`https://wa.me/${tel.length > 8 ? tel : ""}?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+      hlaska("Na počítači nejde fotky přiložit – WhatsApp dostal zprávu s odkazem na E-servisku, kde fotky jsou.", false, 7000);
+    } catch (e) { hlaska("Fotky se nepodařilo připravit: " + chybaText(e), true); }
+    finally { if (tl && document.body.contains(tl)) { tl.disabled = false; tl.textContent = "📤 Poslat (WhatsApp…)"; } }
+  }
   async function vykresliFotkyDetail() {
     const el = document.getElementById("sekce-fotky-detail"); if (!el || !E) return;
     const fotky = (E.z.soubory || []).filter(s => (s.druh === "foto" || s.druh === "video") && !s.smazano).map(s => ({ ...s, video: s.druh === "video" }));
@@ -1716,12 +1742,18 @@
         <label class="tl tl-hlavni">📷 Vyfotit<input type="file" accept="image/*" capture="environment" multiple hidden data-nahrat></label>
         <label class="tl">🎥 Natočit video<input type="file" accept="video/*" capture="environment" hidden data-nahrat></label>
         <label class="tl">Vybrat z galerie<input type="file" accept="image/*,video/*" multiple hidden data-nahrat></label>
+        ${fotky.length ? `<button type="button" class="tl" id="poslat-fotky" aria-pressed="${!!E.vyber}">${E.vyber ? "✕ Zrušit výběr" : "📤 Poslat zákazníkovi"}</button>` : ""}
         <select class="vstup" id="faze-fotek" style="max-width:200px" aria-label="Kdy vyfoceno">${FAZE_FOTEK.map(([k, t]) => `<option value="${k}" ${k === (E.fazeFotek || "prubeh") ? "selected" : ""}>${t}</option>`).join("")}</select>
       </div>
       <div id="nahravani-detail"></div>
+      ${E.vyber ? `<div class="info vyber-fotek"><span>Klepnutím vyberte fotky (<b id="pocet-vybranych">${E.vyber.size}</b>).</span>
+        <span class="radek-tlacitek"><button type="button" class="tl tl-male" id="vybrat-vse">Vybrat vše</button>
+        <button type="button" class="tl tl-hlavni" id="odeslat-fotky" ${E.vyber.size ? "" : "disabled"}>📤 Poslat (WhatsApp…)</button></span></div>` : ""}
       ${FAZE_FOTEK.map(([k, t]) => { const f = fotky.filter(x => (x.faze || "prijem") === k); return f.length ? `<p class="faze-nadpis"><b>${t}</b> <span class="mutted">${popisPoctu(f)}</span></p><div class="fotky" data-faze="${k}">${f.map(x => `<div class="fotka" data-klic="${esc(x.klic)}"><span class="mutted" style="font-size:12px">Načítám…</span></div>`).join("")}</div>` : ""; }).join("")}
       ${fotky.length ? "" : `<p class="mutted" style="margin:12px 0 0">Zatím žádné fotky.</p>`}`;
     el.querySelector("#faze-fotek").onchange = e => { E.fazeFotek = e.target.value; };
+    const pf = el.querySelector("#poslat-fotky");
+    if (pf) pf.onclick = () => { E.vyber = E.vyber ? null : new Set(); vykresliFotkyDetail(); };
     el.querySelectorAll("[data-nahrat]").forEach(i => i.addEventListener("change", e => { const s = [...e.target.files]; e.target.value = ""; if (s.length) nahratFotkyKZakazce(s); }));
     if (!fotky.length) return;
     try {
@@ -1734,7 +1766,20 @@
           + (uzivatel.role === "majitel" ? `<button type="button" class="odebrat" data-smazat-fotku="${f.id}" aria-label="Smazat">×</button>` : "")
           + `<button type="button" class="viditelnost" data-verejne="${f.id}" aria-pressed="${f.verejne !== false}" title="${f.verejne === false ? "Skryto v E-servisce – klepnutím zobrazit" : "Vidí zákazník v E-servisce – klepnutím skrýt"}">${f.verejne === false ? "🚫" : "👁"}</button>`;
         box.classList.toggle("skryto", f.verejne === false);
+        (E.urlFotek ||= {})[f.id] = u;
+        if (E.vyber) { box.classList.add("vybiram"); box.classList.toggle("vybrana", E.vyber.has(f.id)); box.dataset.vybrat = f.id;
+          box.insertAdjacentHTML("beforeend", `<span class="znacka-vyberu" aria-hidden="true">${E.vyber.has(f.id) ? "✓" : ""}</span>`); }
       });
+      if (E.vyber) {                                      // výběr fotek k odeslání: klepnutí vybírá místo otevření
+        const obnov = () => { el.querySelector("#pocet-vybranych").textContent = E.vyber.size; el.querySelector("#odeslat-fotky").disabled = !E.vyber.size; };
+        el.querySelectorAll(".fotka[data-vybrat]").forEach(box => box.addEventListener("click", e => {
+          if (e.target.closest("button")) return; e.preventDefault();
+          const id = box.dataset.vybrat; E.vyber.has(id) ? E.vyber.delete(id) : E.vyber.add(id);
+          box.classList.toggle("vybrana", E.vyber.has(id)); box.querySelector(".znacka-vyberu").textContent = E.vyber.has(id) ? "✓" : ""; obnov();
+        }, true));
+        el.querySelector("#vybrat-vse").onclick = () => { fotky.forEach(f => E.vyber.add(f.id)); vykresliFotkyDetail(); };
+        el.querySelector("#odeslat-fotky").onclick = () => poslatFotky(fotky.filter(f => E.vyber.has(f.id)));
+      }
       el.querySelectorAll("[data-verejne]").forEach(b => b.onclick = async () => {      // E2: fotka v E-servisce ano / ne
         const s = E.z.soubory.find(x => x.id === b.dataset.verejne); if (!s) return;
         const nove = s.verejne === false;

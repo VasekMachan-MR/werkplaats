@@ -507,3 +507,11 @@ details.postup-prace[open] > summary .postup { display: none; }
 .ukol .ukol-check { flex: 0 0 auto; width: 26px; height: 26px; margin-top: 9px; accent-color: var(--zelena); cursor: pointer; }
 .ukol textarea { flex: 1 1 auto; resize: none; overflow: hidden; min-height: 44px; line-height: 1.4; }
 .ukol.hotovy textarea { text-decoration: line-through; color: var(--sedy); }
+
+/* výběr fotek k odeslání zákazníkovi */
+.vyber-fotek { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.fotka.vybiram { cursor: pointer; position: relative; }
+.fotka.vybiram a { pointer-events: none; }
+.fotka .znacka-vyberu { position: absolute; left: 6px; top: 6px; width: 28px; height: 28px; border-radius: 50%; border: 2px solid #fff; background: rgba(0,0,0,.35); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+.fotka.vybrana { outline: 3px solid var(--navy); outline-offset: 2px; }
+.fotka.vybrana .znacka-vyberu { background: var(--navy); }
