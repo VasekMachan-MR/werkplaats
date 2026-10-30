@@ -945,6 +945,32 @@ const server = http.createServer((q, r) => {
     await p.fill(".sklad-detail [data-inv-pocet]", "3"); await p.click(".sklad-detail [data-inv]");
     await p.waitForFunction(() => window.__ULOZENO__.tabulky.sklad.find(s => s.cislo_mb === "A 103 184 03 01").mnozstvi === 3, null, { timeout: 5000 });
     kontrola(true, "Sklad: inventura (spočítáno 3 ks → stav 3 ks, rozdíl v historii)");
+    // nahraná faktura u jednoho dílu se nepředvybere u ostatních; k hotovému příjmu jde fakturu přiřadit dodatečně
+    await p.fill("#sklad-hledat", "Těsnění USA"); await p.click(".sklad-pol >> text=Těsnění USA");
+    await p.waitForSelector(".sklad-historie [data-priradit]");
+    await p.fill("#sklad-hledat", ""); await p.waitForSelector(".sklad-pol >> text=Olejový filtr MANN");
+    kontrola(await p.$$eval(".sklad-detail [data-fs-vyber]", s => s.length >= 2 && s.every(x => x.value === "")), "Sklad: u otevřených dílů je výchozí „bez faktury“ (žádný předvýběr)");
+    const det = `.sklad-pol[data-sid="${await p.evaluate(() => window.__ULOZENO__.tabulky.sklad.find(x => x.nazev === "Těsnění USA").id)}"] .sklad-detail`;
+    await p.setInputFiles(`${det} [data-fs-soubor]`, [{ name: "Invoice_USA.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF") }]);
+    await p.waitForFunction(d => /Invoice_USA/.test(document.querySelector(d + " [data-fs-vyber]")?.selectedOptions[0]?.textContent || ""), det);
+    kontrola(await p.$$eval(".sklad-detail [data-fs-vyber]", s => s.filter(x => x.value).length === 1), "Sklad: nahraná faktura se vybere jen u dílu, kde se nahrála – ne u všech");
+    await p.click(`${det} [data-priradit]`); await p.selectOption(`${det} [data-prirazeni] [data-fs-vyber]`, { label: await p.$eval(`${det} [data-fs-vyber]`, s => s.selectedOptions[0].textContent) });
+    await p.click(`${det} [data-prirazeni-ulozit]`);
+    await p.waitForSelector(`${det} .sklad-historie >> text=Invoice_USA.pdf`);
+    kontrola(await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, s = T.sklad.find(x => x.nazev === "Těsnění USA"), f = T.soubory.find(x => x.nazev === "Invoice_USA.pdf");
+      return T.sklad_pohyby.find(x => x.sklad_id === s.id && x.druh === "prijem").soubor_id === f.id; }), "Sklad: k hotovému příjmu jde dodatečně přiřadit fakturu");
+    // stejné číslo dílu u jiné položky → srozumitelná hláška, ne chyba databáze
+    await p.fill(`${det} [data-u="cislo_mb"]`, "A1031840301");
+    await p.waitForSelector(`${det} [data-stav-skladu] >> text=už má položka`);
+    kontrola(await p.evaluate(() => !window.__ULOZENO__.tabulky.sklad.find(x => x.nazev === "Těsnění USA").cislo_mb), "Sklad: duplicitní číslo dílu se neuloží a hláška řekne, která položka ho má");
+    await p.fill(`${det} [data-u="cislo_mb"]`, "");
+    // mazání položky (jen nepoužitá v zakázkách); použitá smazat nejde
+    kontrola(await p.locator('.sklad-pol:has-text("Olejový filtr MANN") [data-smazat-sklad]').count() === 0 && /použitý v zakázkách/.test(await p.textContent('.sklad-pol:has-text("Olejový filtr MANN") .sklad-detail')),
+      "Sklad: díl použitý v zakázkách smazat nejde (vysvětlení místo tlačítka)");
+    await p.click(`${det} [data-smazat-sklad]`);
+    await p.waitForFunction(() => !window.__ULOZENO__.tabulky.sklad.some(x => x.nazev === "Těsnění USA"));
+    await p.waitForSelector(".sklad-pol >> text=Těsnění USA", { state: "detached", timeout: 5000 });
+    kontrola(true, "Sklad: nepoužitou položku jde smazat (🗑)");
     await p.screenshot({ path: "testy/vystup-app/sklad.png", fullPage: true });
   }
 
