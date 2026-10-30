@@ -130,7 +130,9 @@ window.__WERK_DB__ = (() => {
     async preklady() { await cekej(); return kopie(T.preklady.map(r => ({ klic: r.klic, en: r.en }))); },
     async ulozitPreklady(radky) { await cekej(); for (const r of radky) { T.preklady = T.preklady.filter(x => x.klic !== r.klic); T.preklady.push({ ...r }); } return radky.map(r => ({ klic: r.klic })); },
     async sklad() { await cekej(); return kopie(T.sklad).sort((a, b) => a.nazev.localeCompare(b.nazev, "cs")); },
-    async pohybySkladu(sid) { await cekej(); return kopie(T.sklad_pohyby.filter(p => p.sklad_id === sid).map(p => ({ ...p, zakazky: T.zakazky.find(z => z.id === p.zakazka_id) || null })).reverse()); },
+    async pohybySkladu(sid) { await cekej(); return kopie(T.sklad_pohyby.filter(p => p.sklad_id === sid).map(p => ({ ...p, zakazky: T.zakazky.find(z => z.id === p.zakazka_id) || null, soubory: T.soubory.find(f => f.id === p.soubor_id) || null })).reverse()); },
+    async fakturySkladu() { await cekej(); return kopie(T.soubory.filter(f => f.druh === "nakupni_doklad" && f.faze === "sklad" && !f.smazano).reverse()); },
+    async fakturyPrijmu() { await cekej(); return kopie(T.sklad_pohyby.filter(p => p.druh === "prijem" && p.soubor_id).map(p => ({ sklad_id: p.sklad_id, cas: p.cas, soubory: T.soubory.find(f => f.id === p.soubor_id) || null })).reverse()); },
     async novaPolozkaSkladu(p) { await cekej(); const k = klicSkladu(p); if (T.sklad.some(x => x.klic === k)) throw new Error('duplicate key value violates unique constraint "sklad_klic"');
       const r = { id: id(), jednotka: "ks", mnozstvi: 0, ...p, klic: k }; T.sklad.push(r); return kopie(r); },
     async pohybSkladu(p) { await cekej(); pohyb(p); return [{}]; },

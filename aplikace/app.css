@@ -665,3 +665,7 @@ textarea.poznamka-text { width: 100%; max-width: none; resize: vertical; font-si
 .dil-faktura { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; background: #f1f4f8; border: 1px solid var(--linka); border-radius: 8px; padding: 2px 4px 2px 8px; max-width: 100%; }
 .dil-faktura .odkaz { background: none; border: 0; padding: 4px 0; color: var(--modra, #092b50); text-decoration: underline; cursor: pointer; font: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
 .dil-faktura .tl-x { background: none; border: 0; cursor: pointer; font-size: 16px; line-height: 1; padding: 6px; color: var(--sedy); min-width: 32px; min-height: 32px; }
+/* přijatá faktura u naskladnění (výběr nebo nahrání) */
+.faktura-skladu { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.faktura-skladu select { flex: 1 1 220px; min-width: 0; }
+.dil-faktury-sklad { margin-top: 4px; }

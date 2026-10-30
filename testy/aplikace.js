@@ -881,6 +881,9 @@ const server = http.createServer((q, r) => {
     await p.click("#sklad-novy");
     await p.fill('#form-novy [data-n="nazev"]', "Olejový filtr MANN"); await p.fill('#form-novy [data-n="cislo_mb"]', "A 103 184 03 01");
     await p.fill('#form-novy [data-n="mnozstvi"]', "5"); await p.fill('#form-novy [data-n="cena"]', "180"); await p.fill('#form-novy [data-n="umisteni"]', "regál A2");
+    // přijatá faktura k naskladnění (jedna faktura na víc dílů)
+    await p.setInputFiles("#form-novy [data-fs-soubor]", [{ name: "Faktura_Pneuboss.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF") }]);
+    await p.waitForFunction(() => /Faktura_Pneuboss/.test(document.querySelector("#form-novy [data-fs-vyber]")?.selectedOptions[0]?.textContent || ""));
     await p.click("#novy-ulozit"); await p.waitForSelector(".sklad-pol >> text=Olejový filtr MANN");
     const sk = () => p.evaluate(() => window.__ULOZENO__.tabulky.sklad.find(s => s.cislo_mb === "A 103 184 03 01"));
     kontrola((await sk()).mnozstvi === 5 && (await sk()).umisteni === "regál A2" && (await sk()).nakupni_cena === 180, "Sklad: naskladnění nového dílu (5 ks, 180 Kč, regál A2)");
@@ -888,6 +891,9 @@ const server = http.createServer((q, r) => {
     await p.waitForSelector("#novy-shoda >> text=už v katalogu je"); await p.fill('#form-novy [data-n="mnozstvi"]', "2"); await p.click("#novy-ulozit");
     await p.waitForFunction(() => window.__ULOZENO__.tabulky.sklad.find(s => s.cislo_mb === "A 103 184 03 01").mnozstvi === 7);
     kontrola((await p.evaluate(() => window.__ULOZENO__.tabulky.sklad.filter(s => s.klic === "c:A1031840301").length)) === 1, "Sklad: stejné číslo dílu (i bez mezer) se přičte k existujícímu dílu (7 ks), nevznikne duplikát");
+    kontrola(await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, f = T.soubory.filter(x => x.druh === "nakupni_doklad" && x.faze === "sklad"), pr = T.sklad_pohyby.filter(x => x.druh === "prijem" && x.soubor_id);
+      return f.length === 1 && !f[0].zakazka_id && f[0].verejne === false && /^nakupni\/sklad\//.test(f[0].klic) && pr.length === 2 && pr.every(x => x.soubor_id === f[0].id); }),
+      "Sklad: faktura nahraná u naskladnění se uloží jednou a u dalšího dílu je předvybraná (2 příjmy, 1 faktura)");
     // zakázka: našeptávač z katalogu + vzít ze skladu → stav se odečte
     const zid = await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky.find(z => z.cislo === 7377).id);
     await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid); await p.waitForSelector("#pridat-dil", { state: "attached" });
@@ -898,6 +904,8 @@ const server = http.createServer((q, r) => {
     kontrola(/📦 7 ks/.test(await p.textContent(".naseptavac:not([hidden])")), "Zakázka: našeptávač nabídne díl z katalogu i se stavem skladu (📦 7 ks)");
     await p.click(".naseptavac:not([hidden]) >> text=Olejový filtr MANN");
     await p.waitForFunction(() => window.__ULOZENO__.tabulky.sklad.find(s => s.cislo_mb === "A 103 184 03 01").mnozstvi === 6, null, { timeout: 5000 });
+    await p.waitForSelector(".dil-faktury-sklad >> text=Faktura_Pneuboss.pdf", { timeout: 5000 });
+    kontrola(true, "Zakázka: díl vzatý ze skladu ukáže fakturu z naskladnění (📦 sklad)");
     const dil = await p.evaluate(id => window.__ULOZENO__.tabulky.dily.find(d => d.zakazka_id === id && d.cislo_mb === "A 103 184 03 01"), zid);
     kontrola(dil.ze_skladu && dil.nakupni_cena === 180 && dil.stav === "mam", "Zakázka: díl ze skladu – doplní se číslo, cena 180 Kč, stav „Mám“ a ze skladu se odečte 1 ks (7 → 6)");
     await p.locator('.dil [data-f="mnozstvi"]').last().fill("3");

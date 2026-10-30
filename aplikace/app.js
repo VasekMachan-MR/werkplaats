@@ -236,7 +236,10 @@
       async ulozitPreklady(radky) { return ok(await sb.from("preklady").upsert(radky.map(r => ({ ...r, upraveno: new Date().toISOString() }))).select("klic")); },
       // sklad = katalog dílů (každý díl ze zakázek) + stav skladu
       async sklad() { return ok(await sb.from("sklad").select("*").order("nazev").limit(10000)); },
-      async pohybySkladu(sid) { return ok(await sb.from("sklad_pohyby").select("id,druh,zmena,cena,poznamka,cas,zakazka_id,zakazky(cislo)").eq("sklad_id", sid).order("cas", { ascending: false }).limit(200)); },
+      async pohybySkladu(sid) { return ok(await sb.from("sklad_pohyby").select("id,druh,zmena,cena,poznamka,cas,zakazka_id,zakazky(cislo),soubory(id,klic,nazev,smazano)").eq("sklad_id", sid).order("cas", { ascending: false }).limit(200)); },
+      // přijaté faktury k naskladnění (jedna faktura může patřit k více dílům) a které díly skladu je mají
+      async fakturySkladu() { return ok(await sb.from("soubory").select("id,klic,nazev,mime,vytvoreno").eq("druh", "nakupni_doklad").eq("faze", "sklad").is("smazano", null).order("vytvoreno", { ascending: false }).limit(30)); },
+      async fakturyPrijmu() { return ok(await sb.from("sklad_pohyby").select("sklad_id,cas,soubory(id,klic,nazev,mime,smazano)").eq("druh", "prijem").not("soubor_id", "is", null).order("cas", { ascending: false }).limit(5000)); },
       async novaPolozkaSkladu(p) { return ok(await sb.from("sklad").insert(p).select().single()); },
       async pohybSkladu(p) { return ok(await sb.from("sklad_pohyby").insert(p).select("id")); },
       async inventura(sid, stav) { return ok(await sb.rpc("inventura_skladu", { p_sklad: sid, p_stav: stav })); },
@@ -2288,6 +2291,13 @@
   const fakturyZakazky = () => (E.z.soubory || []).filter(s => s.druh === "nakupni_doklad" && !s.smazano).sort((a, b) => String(a.vytvoreno || "").localeCompare(String(b.vytvoreno || "")));
   const fakturyDilu = id => fakturyZakazky().filter(f => id && f.faze === `dil:${id}`);
   const htmlFakturDilu = fa => fa.length ? `<div class="dil-faktury">${fa.map(f => `<span class="dil-faktura">🧾 <button type="button" class="odkaz" data-faktura-otevrit="${esc(f.klic)}" title="Otevřít fakturu">${esc(f.nazev || "faktura")}</button>${jeMajitel() ? `<button type="button" class="tl-x" data-faktura-smazat="${f.id}" aria-label="Smazat fakturu" title="Smazat fakturu">×</button>` : ""}</span>`).join("")}</div>` : "";
+  // díl „Ze skladu“: faktura z naskladnění se ukáže sama (jen ke čtení – patří ke skladu, ne k zakázce)
+  function htmlFakturSkladu(d) {
+    if (!d.ze_skladu || !E?.katalog?.faktury?.length) return "";
+    const s = polozkaKatalogu(d); if (!s) return "";
+    const vid = new Set(), fa = E.katalog.faktury.filter(p => p.sklad_id === s.id && p.soubory && !p.soubory.smazano && !vid.has(p.soubory.id) && vid.add(p.soubory.id)).map(p => p.soubory);
+    return fa.length ? `<div class="dil-faktury dil-faktury-sklad">${fa.map(f => `<span class="dil-faktura" title="Faktura z naskladnění">🧾 <button type="button" class="odkaz" data-faktura-otevrit="${esc(f.klic)}">${esc(f.nazev || "faktura")}</button> <small class="mutted">📦 sklad</small></span>`).join("")}</div>` : "";
+  }
   // smazání dílu smaže i jeho přijaté faktury (Vašek 30.10.2026)
   function smazatFaktury(fa) {
     for (const f of fa) {
@@ -2742,7 +2752,7 @@
           <label class="siroke">Poznámka (Remarks v parts listu)<input class="vstup" data-f="poznamka" value="${esc(d.poznamka || "")}" placeholder="např. Original MB, + o-rings"></label>
           <span class="celkem-dil ${d.stav === "nepouzito" ? "mutted" : ""}">${d.stav === "nepouzito" ? "nepoužito" : kc(cenaDilu(d))}</span>
         </div>
-        ${htmlFakturDilu(fakturyDilu(d.id))}
+        ${htmlFakturDilu(fakturyDilu(d.id))}${htmlFakturSkladu(d)}
       </div>`).join("")}
       <div class="radek-tlacitek" style="margin-top:12px">
         <button type="button" class="tl" id="pridat-dil">＋ Přidat díl</button>
@@ -3362,11 +3372,24 @@
     }
     return P;
   }
+  let posledniFakturaSkladu = null;                    // naposledy nahraná/vybraná faktura skladu – předvybere se u dalšího dílu
+  async function nahratFakturuSkladu(f) {
+    const mime = typDokumentu(f); if (!mime) throw new Error("Soubor není PDF, JPG, PNG ani HEIC");
+    const pr = (f.name.match(/\.([a-z0-9]{2,5})$/i)?.[1] || (mime === "application/pdf" ? "pdf" : "jpg")).toLowerCase();
+    const klic = `nakupni/sklad/${uuid()}.${pr}`;
+    await db.nahrat(klic, f, mime, () => {});
+    const [rad] = await db.vlozit("soubory", [{ druh: "nakupni_doklad", faze: "sklad", klic, nazev: f.name, velikost: f.size, mime, verejne: false }]);
+    return rad || { id: null, klic, nazev: f.name, mime, vytvoreno: new Date().toISOString() };
+  }
+  async function otevritSoubor(klic) {
+    const okno = window.open("", "_blank");
+    try { const u = await db.odkaz(klic, 600); if (okno) okno.location = u; else location.href = u; } catch (e) { okno?.close(); hlaska(chybaText(e), true); }
+  }
   let katalogDilu = null;                                // {polozky, pouziti, dily} – cache pro našeptávač v zakázce
   async function nactiKatalogDilu(znovu) {
     if (katalogDilu && !znovu) return katalogDilu;
-    const [polozky, dily] = await Promise.all([db.sklad ? db.sklad() : [], db.vsechnyDily().catch(() => [])]);
-    return katalogDilu = { polozky: polozky || [], dily: dily || [], pouziti: pouzitiDilu(dily || []) };
+    const [polozky, dily, faktury] = await Promise.all([db.sklad ? db.sklad() : [], db.vsechnyDily().catch(() => []), db.fakturyPrijmu ? db.fakturyPrijmu().catch(() => []) : []]);
+    return katalogDilu = { polozky: polozky || [], dily: dily || [], pouziti: pouzitiDilu(dily || []), faktury: faktury || [] };
   }
   const pod = s => s.min_mnozstvi != null && Number(s.mnozstvi) < Number(s.min_mnozstvi);
   const ks = (n, j) => `${mnozstviCz(Number(n) || 0)} ${esc(j || "ks")}`;
@@ -3377,8 +3400,8 @@
         <button type="button" class="tl tl-hlavni" id="sklad-novy">＋ Naskladnit díl</button></div>
       ${tabyDilu("sklad")}<div id="sklad"><div class="nacitani">Načítám sklad…</div></div>`;
     napojTaby();
-    let K, dod = [];
-    try { [K, dod] = await Promise.all([nactiKatalogDilu(true), db.dodavatele().catch(() => [])]); }
+    let K, dod = [], FS = [];                          // FS = přijaté faktury k naskladnění (nejnovější nahoře)
+    try { [K, dod, FS] = await Promise.all([nactiKatalogDilu(true), db.dodavatele().catch(() => []), db.fakturySkladu ? db.fakturySkladu().catch(() => []) : []]); }
     catch (e) { app.querySelector("#sklad").innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
     if (navId !== n0) return;
     const F = { filtr: "vse", razeni: "pouziti", ...(nacti("werk-filtr-skladu") || {}) }, otevrene = new Set();
@@ -3392,6 +3415,10 @@
       && pouz(s).seznam.filter(x => x.datum >= rokZpet).length >= 3));
     const kolikObjednat = s => pod(s) ? Math.max(1, Math.ceil(Number(s.min_mnozstvi) - Number(s.mnozstvi))) : Math.max(1, Math.round(pouz(s).mnozstvi / Math.max(1, pouz(s).zakazky.size)));
 
+    // výběr přijaté faktury k naskladnění: nahrát novou, nebo vybrat už nahranou (jedna faktura na víc dílů – Vašek 30.10.2026)
+    const moznostiFaktur = vybrano => `<option value="">🧾 bez faktury</option>${FS.map(f => `<option value="${f.id}" ${f.id === vybrano ? "selected" : ""}>🧾 ${esc(f.nazev || "faktura")} · ${datumCz(String(f.vytvoreno || "").slice(0, 10))}</option>`).join("")}`;
+    const vyberFaktury = () => `<div class="faktura-skladu"><select class="vstup" data-fs-vyber aria-label="Přijatá faktura k naskladnění">${moznostiFaktur(posledniFakturaSkladu)}</select>
+      <label class="tl tl-male" title="Nahrát přijatou fakturu (PDF nebo fotka) – stejnou pak vybereš i u dalších dílů z té faktury">＋ Nahrát fakturu<input type="file" accept="application/pdf,image/*,.heic,.heif,.jpg,.jpeg,.png" hidden data-fs-soubor></label></div>`;
     const formNovy = (p = {}) => `<div class="karta sklad-form" id="form-novy"><h2 style="margin-top:0">Naskladnit díl</h2>
       <div class="mrizka">
         <label class="pole s3"><span class="povinne">Název</span><input class="vstup" data-n="nazev" value="${esc(p.nazev || "")}" autocomplete="off"></label>
@@ -3403,6 +3430,7 @@
         <label class="pole s2"><span>Výrobce</span><input class="vstup" data-n="vyrobce" value="${esc(p.vyrobce || "")}"></label>
         <label class="pole s2"><span>Umístění</span><input class="vstup" data-n="umisteni" value="${esc(p.umisteni || "")}" placeholder="např. regál A2"></label>
         <label class="pole s2"><span>Minimální zásoba</span><input class="vstup" data-n="min_mnozstvi" value="${p.min_mnozstvi ?? ""}" inputmode="decimal"></label>
+        <div class="pole s6"><span>Přijatá faktura</span>${vyberFaktury()}</div>
       </div>
       <div class="radek-tlacitek" style="margin-top:12px"><button type="button" class="tl tl-hlavni" id="novy-ulozit">Naskladnit</button><button type="button" class="tl" id="novy-zrusit">Zrušit</button></div></div>`;
 
@@ -3431,7 +3459,7 @@
           <div class="sklad-akce">
             <div><b>＋ Naskladnit</b><div class="radek-tlacitek"><input class="vstup cislo" data-prijem-pocet placeholder="ks" inputmode="decimal" aria-label="Počet">
               <input class="vstup cislo" data-prijem-cena placeholder="Kč/ks" value="${s.nakupni_cena ?? ""}" inputmode="decimal" aria-label="Nákupní cena za kus">
-              <button type="button" class="tl tl-male" data-prijem="${s.id}">Přidat</button></div></div>
+              <button type="button" class="tl tl-male" data-prijem="${s.id}">Přidat</button></div>${vyberFaktury()}</div>
             <div><b>📋 Inventura</b><div class="radek-tlacitek"><input class="vstup cislo" data-inv-pocet placeholder="${mnozstviCz(s.mnozstvi)}" inputmode="decimal" aria-label="Spočítáno">
               <button type="button" class="tl tl-male" data-inv="${s.id}">Spočítáno</button></div>
               <small class="mutted">${s.inventura ? `naposledy ${datumCz(s.inventura)}` : "zatím nespočítáno"}</small></div>
@@ -3481,12 +3509,27 @@
       let P = []; try { P = await db.pohybySkladu(sid); } catch (e) { /* bez historie */ }
       if (!h.isConnected) return;
       const DR = { prijem: "naskladněno", zakazka: "zakázka", inventura: "inventura", oprava: "oprava" };
-      h.innerHTML = `${P.length ? `<b>Pohyby skladu</b>${P.map(p => `<div class="sklad-pohyb"><span>${datumCz(String(p.cas).slice(0, 10))} · ${DR[p.druh] || p.druh}${p.zakazky?.cislo ? ` <a href="#/zakazka/${p.zakazka_id}">#${p.zakazky.cislo}</a>` : ""}${p.cena != null ? ` · ${kc(p.cena)}/ks` : ""}</span><b class="${p.zmena < 0 ? "minus" : "plus"}">${p.zmena > 0 ? "+" : ""}${mnozstviCz(p.zmena)}</b></div>`).join("")}` : ""}
+      h.innerHTML = `${P.length ? `<b>Pohyby skladu</b>${P.map(p => `<div class="sklad-pohyb"><span>${datumCz(String(p.cas).slice(0, 10))} · ${DR[p.druh] || p.druh}${p.zakazky?.cislo ? ` <a href="#/zakazka/${p.zakazka_id}">#${p.zakazky.cislo}</a>` : ""}${p.cena != null ? ` · ${kc(p.cena)}/ks` : ""}${p.soubory?.klic && !p.soubory.smazano ? ` · <button type="button" class="odkaz" data-faktura-otevrit="${esc(p.soubory.klic)}" title="Otevřít přijatou fakturu">🧾 ${esc(p.soubory.nazev || "faktura")}</button>` : ""}</span><b class="${p.zmena < 0 ? "minus" : "plus"}">${p.zmena > 0 ? "+" : ""}${mnozstviCz(p.zmena)}</b></div>`).join("")}` : ""}
         ${u.seznam.length ? `<b style="display:block;margin-top:10px">Použito v zakázkách</b>${u.seznam.sort((a, b) => b.datum.localeCompare(a.datum)).map(x => `<a class="odkaz-radek sklad-pohyb" href="#/zakazka/${x.zid}"><span>#${x.cislo} · ${esc(x.auto)} · ${datumCz(x.datum)}${x.ze_skladu ? " · 📦 ze skladu" : ""}</span><span>${ks(x.mnozstvi, s.jednotka)}</span></a>`).join("")}` : ""}
         ${!P.length && !u.seznam.length ? `<span class="napoveda">Zatím žádné pohyby.</span>` : ""}`;
+      h.querySelectorAll("[data-faktura-otevrit]").forEach(b => b.onclick = () => otevritSoubor(b.dataset.fakturaOtevrit));
     }
     const obnov = async () => { try { const k = await nactiKatalogDilu(true); S.splice(0, S.length, ...k.polozky); Object.keys(U).forEach(x => delete U[x]); Object.assign(U, k.pouziti); } catch (e) { /* zůstane staré */ } vykresli(); };
     function napoj() {
+      app.querySelectorAll(".faktura-skladu").forEach(w => {
+        const sel = w.querySelector("[data-fs-vyber]");
+        sel.onchange = () => { posledniFakturaSkladu = sel.value || null; };
+        w.querySelector("[data-fs-soubor]").onchange = async e => {
+          const f = e.target.files?.[0]; e.target.value = ""; if (!f) return;
+          hlaska("Nahrávám fakturu…");
+          try {
+            const rad = await nahratFakturuSkladu(f);
+            FS.unshift(rad); posledniFakturaSkladu = rad.id;
+            app.querySelectorAll("[data-fs-vyber]").forEach(x => { const v = x === sel ? rad.id : x.value; x.innerHTML = moznostiFaktur(v); });
+            hlaska(`Faktura ${f.name} nahrána – vyber ji i u dalších dílů z této faktury.`);
+          } catch (er) { hlaska("Fakturu se nepodařilo nahrát: " + chybaText(er), true); }
+        };
+      });
       const hl = app.querySelector("#sklad-hledat");
       hl.oninput = () => { F.q = hl.value; const pos = hl.selectionStart; vykresli(); const n = app.querySelector("#sklad-hledat"); n.focus(); n.setSelectionRange(pos, pos); };
       app.querySelector("#sklad-filtr").onchange = e => { F.filtr = e.target.value; uloz("werk-filtr-skladu", { filtr: F.filtr, razeni: F.razeni }); vykresli(); };
@@ -3511,7 +3554,7 @@
           const pi = d.querySelector("[data-prijem-pocet]"), ci = d.querySelector("[data-prijem-cena]");
           const n = ciselnyVstup(pi, { min: 0.01, max: 100000 }), c = ciselnyVstup(ci, { min: 0, max: 10000000 });
           if (!n) { pi.classList.add("chybi"); pi.focus(); return; } if (c === undefined) return;
-          try { await db.pohybSkladu({ sklad_id: sid, druh: "prijem", zmena: n, cena: c ?? null }); hlaska(`Naskladněno ${mnozstviCz(n)} ${s.jednotka || "ks"} – ${s.nazev}.`); await obnov(); }
+          try { await db.pohybSkladu({ sklad_id: sid, druh: "prijem", zmena: n, cena: c ?? null, soubor_id: d.querySelector("[data-fs-vyber]")?.value || null }); katalogDilu = null; hlaska(`Naskladněno ${mnozstviCz(n)} ${s.jednotka || "ks"} – ${s.nazev}.`); await obnov(); }
           catch (e) { hlaska("Nepodařilo se naskladnit: " + chybaText(e), true); }
         };
         d.querySelector("[data-inv]").onclick = async () => {
@@ -3550,7 +3593,7 @@
             if (!s) s = await db.novaPolozkaSkladu({ nazev: g("nazev").value.trim(), cislo_mb: g("cislo_mb").value.trim() || null, vyrobce: g("vyrobce").value.trim() || null,
               jednotka: g("jednotka").value.trim() || "ks", umisteni: g("umisteni").value.trim() || null, min_mnozstvi: mi ?? null, nakupni_cena: c ?? null });
             else { const zm = {}; if (g("umisteni").value.trim() && !s.umisteni) zm.umisteni = g("umisteni").value.trim(); if (mi != null) zm.min_mnozstvi = mi; if (Object.keys(zm).length) await db.upravit("sklad", s.id, zm); }
-            if (n) await db.pohybSkladu({ sklad_id: s.id, druh: "prijem", zmena: n, cena: c ?? null });
+            if (n) await db.pohybSkladu({ sklad_id: s.id, druh: "prijem", zmena: n, cena: c ?? null, soubor_id: fn.querySelector("[data-fs-vyber]")?.value || null });
             hlaska(`Naskladněno: ${s.nazev}${n ? ` (${mnozstviCz(n)} ${g("jednotka").value.trim() || "ks"})` : ""}.`);
             rezim = null; otevrene.add(s.id); katalogDilu = null; await obnov();
           } catch (e) { b.disabled = false; hlaska(/duplicate|unique/i.test(chybaText(e)) ? "Díl s tímto číslem už v katalogu je." : "Nepodařilo se uložit: " + chybaText(e), true); }
@@ -3658,7 +3701,7 @@
       stav?.(`Stahuji ${++n}/${celkem}…`);
       const pripona = (/\.[a-z0-9]{2,5}$/i.exec(f.nazev || f.klic || "")?.[0] || (f.mime === "application/pdf" ? ".pdf" : "")).toLowerCase();
       const zaklad = (f.nazev || "doklad").replace(/\.[a-z0-9]{2,5}$/i, "");
-      const jmeno = bezpecnyNazev([String(f.vytvoreno).slice(0, 10), f.zakazky?.cislo ? `#${f.zakazky.cislo}` : "", f.dil?.dodavatele?.nazev, zaklad].filter(Boolean).join(" "));
+      const jmeno = bezpecnyNazev([String(f.vytvoreno).slice(0, 10), f.zakazky?.cislo ? `#${f.zakazky.cislo}` : f.faze === "sklad" ? "sklad" : "", f.dil?.dodavatele?.nazev, zaklad].filter(Boolean).join(" "));
       try { f._soubor = unikat(`Přijaté faktury/${jmeno}${pripona}`); soubory[f._soubor] = [await bajty(f.klic), { level: /pdf|jpe?g|png|heic/i.test(pripona) ? 0 : 6 }]; }
       catch (e) { chybi.push(`${f.nazev || f.klic} (${chybaText(e)})`); f._soubor = ""; }
     }
@@ -3669,7 +3712,7 @@
     r.push(["Celkem faktury a opravné doklady (bez zálohových)", "", "", "", "", "", "", csvCislo(sumaFa)], [], ["PŘIJATÉ FAKTURY (nahrané v " + nazevMesice(mesic) + ")"],
       ["Soubor v ZIP", "Nahráno", "Zakázka", "Zákazník", "Vozidlo", "Díl", "Číslo MB", "Dodavatel", "Nákupní cena", "Měna"]);
     for (const f of prijate) r.push([f._soubor || `CHYBÍ: ${f.nazev || ""}`, datumCz(f.vytvoreno), f.zakazky?.cislo, f.zakazky?.zakaznici?.jmeno, [f.zakazky?.vozidla?.typ, f.zakazky?.vozidla?.model].filter(Boolean).join(" "),
-      f.dil?.nazev || (f.faze ? "(díl smazán)" : "bez dílu"), f.dil?.cislo_mb, f.dil?.dodavatele?.nazev, csvCislo(f.dil?.nakupni_cena), f.dil?.mena || (f.dil ? "CZK" : "")]);
+      f.dil?.nazev || (f.faze === "sklad" ? "na sklad" : f.faze ? "(díl smazán)" : "bez dílu"), f.dil?.cislo_mb, f.dil?.dodavatele?.nazev, csvCislo(f.dil?.nakupni_cena), f.dil?.mena || (f.dil ? "CZK" : "")]);
     if (chybi.length) r.push([], ["CHYBĚJÍCÍ SOUBORY"], ...chybi.map(c => [c]));
     soubory[`Přehled ${mesic}.csv`] = strToU8("﻿" + r.map(x => x.map(csvBunka).join(";")).join("\r\n") + "\r\n");
     stav?.("Balím ZIP…");
