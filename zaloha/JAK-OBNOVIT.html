@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jak obnovit Werkplaats a E-servisku</title>
+<style>
+body{font:17px/1.55 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;max-width:820px;margin:0 auto;padding:28px 20px 60px;color:#1d2733;background:#fff}
+h1{color:#092b50;font-size:30px;margin:0 0 6px}h2{color:#092b50;margin:38px 0 10px;padding-top:18px;border-top:2px solid #e3e6ea}h3{margin:24px 0 6px}
+.box{background:#eef4fb;border-left:5px solid #092b50;padding:14px 18px;border-radius:8px;margin:14px 0}
+.pozor{background:#fff4e0;border-left-color:#c86a00}.ok{background:#e3f3ea;border-left-color:#1e7a4c}
+code,kbd{background:#f1f3f5;padding:2px 6px;border-radius:5px;font:15px ui-monospace,Menlo,monospace}
+ol li,ul li{margin:6px 0}table{border-collapse:collapse;width:100%;margin:10px 0}td,th{border:1px solid #d7dce1;padding:8px 10px;text-align:left;vertical-align:top}th{background:#f5f7f9}
+.mutted{color:#5b6672}
+</style></head><body>
+<h1>Jak obnovit Werkplaats a E-servisku</h1>
+<p class="mutted">Návod pro případ, že by se cokoli ztratilo nebo rozbilo. Záloha z 30. 10. 2026.</p>
+
+<div class="box ok"><b>Nejjednodušší cesta (doporučeno):</b> otevři Clauda (aplikace Claude na Macu), propoj ho s Macem a napiš:<br>
+<i>„Obnov prosím Werkplaats a E-servisku ze zálohy v iCloudu: Mercedes Restorations → Zálohy Werkplaats → (nejnovější datum). Postupuj podle souboru JAK-OBNOVIT.html.“</i><br>
+Claude udělá všechno sám. Ty jen potvrdíš přístupy a jednou se přihlásíš.</div>
+
+<h2>1. Co je v tomhle balíčku</h2>
+<table>
+<tr><th>Soubor / složka</th><th>Co to je</th></tr>
+<tr><td><code>werkplaats-kod-….bundle</code></td><td><b>Celý kód</b> aplikace Werkplaats, E-servisky (web), databáze a serverových funkcí, včetně celé historie změn. Totéž je i na GitHubu (účet <b>VasekMachan-MR</b>, projekt <b>werkplaats</b>).</td></tr>
+<tr><td><code>data/</code></td><td><b>Všechna data:</b> zákazníci, auta, zakázky, práce, díly, doklady, podpisy, nastavení, katalogy, sklad. Každá tabulka má jeden soubor.</td></tr>
+<tr><td><code>data/obnova-dat.sql</code></td><td><b>Hotový skript</b>, který všechna data nahraje zpátky jedním kliknutím (krok 5).</td></tr>
+<tr><td><code>data/_seznam-souboru-v-uloisti.json</code></td><td>Seznam všech fotek, videí a PDF. Samotné soubory jsou zrcadlené v <b>Cloudflare R2</b> (krok 8).</td></tr>
+<tr><td><code>OBNOVA.md</code></td><td>Technický popis pro programátora nebo Clauda.</td></tr>
+</table>
+
+<h2>2. Kde co běží (účty)</h2>
+<p>Všechny účty jsou na e-mailu <b>info@mercedesrest.cz</b>.</p>
+<table>
+<tr><th>Služba</th><th>Co tam je</th><th>Adresa</th></tr>
+<tr><td><b>Supabase</b></td><td>databáze (zákazníci, zakázky…), fotky a PDF, přihlašování, serverové funkce</td><td>supabase.com → projekt <code>yokbljdjcvwbadbcwmgx</code></td></tr>
+<tr><td><b>Cloudflare</b></td><td>aplikace Werkplaats (werk.mercedesrestorations.cz) a zrcadlo fotek a PDF (R2)</td><td>dash.cloudflare.com → Workers &amp; Pages → <code>werkplaats</code>; R2 → <code>werkplaats-soubory</code></td></tr>
+<tr><td><b>GitHub</b></td><td>kód (originál, s historií)</td><td>github.com/VasekMachan-MR/werkplaats</td></tr>
+<tr><td><b>Webflow</b></td><td>web mercedesrestorations.cz a stránka <b>E-serviska</b></td><td>webflow.com → web Mercedes Restorations → stránka E-serviska</td></tr>
+</table>
+
+<h2>3. Co se může stát a co dělat</h2>
+<table>
+<tr><th>Situace</th><th>Co dělat</th></tr>
+<tr><td>Smazal jsem omylem zakázku, zákazníka nebo doklad</td><td>Jen <b>krok 5</b> pro tu jednu tabulku, nebo napiš Claudovi, ať to vrátí ze zálohy. Supabase Pro má navíc zálohy po dnech 7 dní zpátky (Supabase → Database → Backups → Restore).</td></tr>
+<tr><td>Aplikace werk.… nejde otevřít</td><td><b>Krok 6</b> (Cloudflare). Data jsou v bezpečí v Supabase.</td></tr>
+<tr><td>E-serviska na webu nefunguje</td><td><b>Krok 7</b> (Webflow).</td></tr>
+<tr><td>Supabase projekt zmizel úplně</td><td>Kroky <b>4 → 5 → 8</b>, pak 6 a 7 jen přepsat adresu.</td></tr>
+</table>
+
+<h2>4. Nová databáze (jen když Supabase projekt zmizel)</h2>
+<ol>
+<li>Na <b>supabase.com</b> se přihlas → <b>New project</b> → region <b>Central EU (Frankfurt)</b> → vytvořit.</li>
+<li>Vlevo <b>SQL Editor</b> → <b>New query</b>.</li>
+<li>Rozbal kód: v Terminálu na Macu napiš <kbd>git clone "cesta/k/werkplaats-kod-….bundle" werkplaats</kbd>. Nebo si soubory stáhni z GitHubu (zelené tlačítko <b>Code → Download ZIP</b>).</li>
+<li>Ve složce <code>databaze</code> otevírej soubory <code>001_…sql</code>, <code>002_…</code>, … <b>přesně v pořadí podle čísla</b> (015 před 015b, 028 před 028b). Obsah každého vlož do SQL Editoru a klikni <b>Run</b>. Musí napsat „Success“.</li>
+<li><b>Authentication → Providers → Email</b> nech zapnuté. <b>Authentication → Multi-Factor</b> zapni <b>TOTP</b>.</li>
+<li><b>Authentication → URL Configuration:</b> Site URL <code>https://werk.mercedesrestorations.cz</code>, Redirect URL <code>https://werk.mercedesrestorations.cz/**</code>.</li>
+<li><b>Storage:</b> koš <code>soubory</code> vytvořil už skript 005, nic dalšího se nedělá.</li>
+<li><b>Edge Functions:</b> pro každou složku v <code>databaze/funkce/</code> (eserviska, kurz-cnb, smazat-soubory, sprava-uzivatelu) → <b>Deploy new function</b> se stejným názvem a vložit obsah <code>index.ts</code>. U <b>eserviska</b> vypnout „Verify JWT“, u ostatních nechat zapnuté.</li>
+<li>Nový projekt má novou adresu a klíč: <b>Project Settings → API</b>. Adresu a „publishable key“ přepiš v souboru <code>aplikace/nastaveni.js</code>. Adresu přepiš i v <code>web/e-serviska-footer.html</code> (řádek <code>var API=…</code>).</li>
+</ol>
+
+<h2>5. Nahrát data zpátky</h2>
+<div class="box pozor">Nejdřív se jednou <b>přihlas do aplikace</b> (vytvoř si účet se svým e-mailem). Skript tvůj nový účet pozná a dá mu roli majitele.</div>
+<ol>
+<li>Supabase → <b>SQL Editor</b> → <b>New query</b>.</li>
+<li>Otevři <code>data/obnova-dat.sql</code> (třeba v TextEditu), označ všechno (⌘A), zkopíruj (⌘C) a vlož do editoru (⌘V).</li>
+<li>Klikni <b>Run</b>. Na konci se objeví „<b>Obnova dat dokončena</b>“.</li>
+</ol>
+<p class="mutted">Skript nejdřív smaže, co v tabulkách je, a nahraje data ze zálohy. Vyzkoušeno 30. 10. 2026 na čisté databázi: všech 10 zakázek, 9 zákazníků, 9 aut, 37 dílů, doklady, podpisy i nastavení se nahrály.</p>
+
+<h2>6. Aplikace Werkplaats (Cloudflare)</h2>
+<ol>
+<li><b>dash.cloudflare.com</b> → <b>Workers &amp; Pages</b> → projekt <b>werkplaats</b>. Pokud chybí: <b>Create → Pages → Connect to Git</b> → GitHub <b>VasekMachan-MR/werkplaats</b>.</li>
+<li>Nastavení: Production branch <code>main</code>, Build command <code>npm run build</code>, Build output <code>dist</code>.</li>
+<li><b>Custom domains</b> → <code>werk.mercedesrestorations.cz</code>.</li>
+<li>Každá změna kódu na GitHubu (větev main) se nasadí sama za 1–2 minuty.</li>
+</ol>
+
+<h2>7. E-serviska na webu (Webflow)</h2>
+<ol>
+<li>Webflow → web Mercedes Restorations → <b>Pages</b> → stránka <b>E-serviska</b> (adresa <code>/e-serviska</code>). Pokud chybí, vytvoř prázdnou stránku s tímto názvem a adresou.</li>
+<li>Ozubené kolečko stránky → <b>Custom code</b>:
+  <ul><li><b>Inside &lt;head&gt; tag</b> ← celý obsah souboru <code>web/e-serviska-head.html</code></li>
+  <li><b>Before &lt;/body&gt; tag</b> ← celý obsah souboru <code>web/e-serviska-footer.html</code></li></ul></li>
+<li>SEO title: <i>E-servisní knížka | Mercedes Restorations</i>, description: <i>Servisní historie vozu Mercedes-Benz z dílny Mercedes Restorations.</i></li>
+<li><b>Publish</b> na obě domény (mercedesrestorations.cz i www).</li>
+</ol>
+
+<h2>8. Fotky, videa a PDF (Cloudflare R2)</h2>
+<ol>
+<li>Kopie všech souborů je v Cloudflare: <b>R2 → koš <code>werkplaats-soubory</code></b>. Složky jsou stejné jako v Supabase (<code>zakazky/7377/…</code>, <code>dokumenty/tp/…</code>, <code>archiv/…</code>).</li>
+<li>Obnova = nahrát obsah koše R2 zpátky do Supabase → <b>Storage → soubory</b> se stejnými cestami. Nejrychleji: napiš Claudovi „nahraj soubory z R2 werkplaats-soubory do Supabase Storage soubory“. Ručně: v Supabase Storage přetáhnout složky stažené z R2.</li>
+<li>Které soubory k čemu patří, ví databáze (tabulka <code>soubory</code>, sloupec <code>klic</code> = cesta souboru). Po nahrání dat i souborů se všechno samo propojí.</li>
+</ol>
+
+<h2>9. Kontrola, že vše funguje</h2>
+<ul>
+<li>werk.mercedesrestorations.cz → přihlášení (heslo + kód z aplikace) → v Zakázkách vidím zakázky, fotky a PDF jdou otevřít.</li>
+<li>Otevřít odkaz na E-servisku u některého auta (Vozidlo → „Odkaz na E-servisku“) → stránka se načte i s fotkami.</li>
+</ul>
+
+<h2>10. Jak často se zálohuje</h2>
+<ul>
+<li><b>Kód:</b> GitHub drží každou změnu. Do iCloudu se dává balíček při každé větší záloze.</li>
+<li><b>Databáze:</b> Supabase Pro dělá zálohu každý den (7 dní zpátky). Tenhle balíček je k tomu navíc mimo Supabase.</li>
+<li><b>Fotky a PDF:</b> zrcadlo v Cloudflare R2.</li>
+</ul>
+</body></html>

@@ -1,4 +1,4 @@
-// Jednorázová záloha (Vašek 30.10.2026): všechny tabulky + podepsané odkazy na všechny soubory v úložišti.
+// Záloha dat (Vašek 30.10.2026): všechny tabulky + seznam souborů v úložišti (fotky a PDF se zrcadlí zvlášť do Cloudflare R2).
 // Pustí jen toho, kdo zná jednorázový klíč (v kódu je jen jeho otisk SHA-256). Po záloze se funkce vypne.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 const OTISK = "808bc7afbfe352a2e60010b5fa1a436492a677044a822261b1ac9648e7be5351";
@@ -30,10 +30,5 @@ Deno.serve(async req => {
     }
   };
   await projdi("");
-  const soubory: { cesta: string; url: string | null }[] = [];
-  for (let i = 0; i < cesty.length; i += 100) {
-    const { data } = await sb.storage.from("soubory").createSignedUrls(cesty.slice(i, i + 100), 3600);
-    (data || []).forEach(x => soubory.push({ cesta: x.path!, url: x.signedUrl || null }));
-  }
-  return new Response(JSON.stringify({ vytvoreno: new Date().toISOString(), tabulky, soubory }), { headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify({ vytvoreno: new Date().toISOString(), tabulky, soubory: cesty }), { headers: { "content-type": "application/json" } });
 });
