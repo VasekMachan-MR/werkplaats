@@ -620,6 +620,34 @@ const server = http.createServer((q, r) => {
     kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.vozidla.some(v => v.poznamky === "Pozor: zadní levé kolo – zrezlý šroub")), "poznámka k autu se uloží k autu");
   }
 
+  // ---------- Práce: odrážky z inspekce, odklikávání a lišta s procenty ----------
+  {
+    const zid = await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky[0].id);
+    await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid); await p.waitForSelector("details.postup-prace");
+    if (!(await p.isVisible('textarea[data-ukol="0"]'))) await p.click("details.postup-prace > summary");
+    const zav = await p.locator("[data-ukol-zavady]").count();
+    kontrola(zav === 1, "Práce: jde převzít závady ze zakázkového listu");
+    await p.fill('textarea[data-ukol="0"]', "Vyměnit přední brzdové destičky");
+    await p.press('textarea[data-ukol="0"]', "Enter");
+    await p.keyboard.type("Seřídit ventily");
+    await p.press('textarea[data-ukol="1"]', "Enter");
+    await p.keyboard.type("Nový olej");
+    await p.press('textarea[data-ukol="2"]', "Enter");
+    await p.keyboard.type("Zkušební jízda");
+    kontrola(await p.locator(".ukol").count() === 4, "Práce: Enter založí další odrážku (jako v Poznámkách)");
+    await p.check('[data-ukol-h="0"]');
+    await p.waitForSelector("[data-stav-ukolu] >> text=✓ Uloženo");
+    const u = await p.evaluate(id => window.__ULOZENO__.tabulky.zakazky.find(z => z.id === id).ukoly, zid);
+    kontrola(u.length === 4 && u[0].h && !u[1].h && u[3].t === "Zkušební jízda", "Práce: odrážky i odškrtnutí se uloží");
+    kontrola((await p.textContent("#ukoly .postup b")).trim() === "25 %", "Práce: lišta ukazuje 25 % (1 ze 4)");
+    await p.check('[data-ukol-h="1"]');
+    kontrola((await p.textContent("#ukoly .postup b")).trim() === "50 %", "Práce: po odkliknutí další odrážky 50 %");
+    await p.press('textarea[data-ukol="3"]', "End"); for (let i = 0; i < 14; i++) await p.press('textarea[data-ukol="3"]', "Backspace");
+    await p.press('textarea[data-ukol="3"]', "Backspace");
+    kontrola(await p.locator(".ukol").count() === 3 && (await p.textContent("#ukoly .postup b")).trim() === "67 %", "Práce: Backspace na prázdném řádku ho smaže (2 ze 3 = 67 %)");
+    await p.screenshot({ path: "testy/vystup-app/prace-postup.png", fullPage: false });
+  }
+
   // ---------- E2 + D1: fotku jde skrýt v E-servisce; smazaná fotka zmizí i z úložiště ----------
   {
     const zf = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const f = T.soubory.find(x => x.druh === "foto" && x.zakazka_id && !x.smazano); return f && { z: f.zakazka_id, id: f.id, klic: f.klic }; });

@@ -48,7 +48,7 @@ Deno.serve(async req => {
   const sk = skupina(v);
   const [{ data: vl }, { data: zak }, { data: tp }, { data: intervaly }, { data: motory }, { data: typy }, { data: ukony }, { data: intMot }] = await Promise.all([
     sb.from("vlastnictvi").select("zakaznik_id,vlastni_od,vlastni_do,zakaznici(jmeno,kontaktni_osoba,email,telefon)").eq("vozidlo_id", v.id).order("vlastni_od", { ascending: false }),
-    sb.from("zakazky").select("id,cislo,stav,zakaznik_id,datum_prijmu,datum_predani,km_prijem,km_predani,zavady,servisni_ukony").eq("vozidlo_id", v.id).neq("stav", "zruseno").neq("stav", "poptavka").order("datum_prijmu", { ascending: false }),
+    sb.from("zakazky").select("id,cislo,stav,zakaznik_id,datum_prijmu,datum_predani,km_prijem,km_predani,zavady,servisni_ukony,ukoly").eq("vozidlo_id", v.id).neq("stav", "zruseno").neq("stav", "poptavka").order("datum_prijmu", { ascending: false }),
     sb.from("soubory").select("klic,nazev,mime").eq("vozidlo_id", v.id).eq("druh", "tp").eq("verejne", true).is("smazano", null).order("vytvoreno"),
     sb.from("servisni_intervaly").select("ukon,poradi,interval_km,interval_mesice,zdroj").eq("skupina", sk).order("poradi"),
     sb.from("motory").select("kod,palivo,serizovani_ventilu"),
@@ -95,6 +95,8 @@ Deno.serve(async req => {
     });
     return {
       cislo: z.cislo, stav: z.stav, predchozi_majitel: !vlastni, servisni_ukony: z.servisni_ukony || [], datum_prijmu: z.datum_prijmu, datum_predani: z.datum_predani, km_prijem: z.km_prijem, km_predani: z.km_predani,
+      // postup opravy: zákazník vidí jen kolik je hotovo, ne text odrážek
+      postup: (() => { const u = (Array.isArray(z.ukoly) ? z.ukoly : []).filter((x: any) => String(x?.t || "").trim()); return u.length ? { hotovo: u.filter((x: any) => x.h).length, celkem: u.length } : null; })(),
       zavady: (z.zavady || []).filter(Boolean),
       prace: (pol || []).filter(p => p.zakazka_id === z.id && p.popis).map(p => ({ typ: p.typ, popis: p.popis })),
       dily: !vlastni ? [] : (dily || []).filter(d => d.zakazka_id === z.id).map(d => ({ nazev: d.nazev, cislo_mb: d.cislo_mb, vyrobce: d.vyrobce, mnozstvi: d.mnozstvi, jednotka: d.jednotka })),

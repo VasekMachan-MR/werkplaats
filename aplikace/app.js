@@ -1448,6 +1448,54 @@
       }, 800); });
     });
   }
+  // Postup prací: odrážky z inspekce, které se během opravy odklikávají; lišta s % vidí i zákazník v E-servisce
+  const postupProcent = u => { const p = (u || []).filter(x => String(x.t || "").trim()); return p.length ? Math.round(p.filter(x => x.h).length / p.length * 100) : 0; };
+  const listaPostupu = (u, male) => { const p = postupProcent(u), n = (u || []).filter(x => String(x.t || "").trim()).length;
+    return `<div class="postup${male ? " postup-male" : ""}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p}" title="Hotovo ${p} %"><div class="postup-lista"><div style="width:${p}%"></div></div><b>${n ? p + " %" : "–"}</b></div>`; };
+  function blokPostupu(z) {
+    const u = Array.isArray(z.ukoly) ? z.ukoly : [];
+    return `<details class="karta postup-prace" id="postup-prace"${u.length ? " open" : ""}><summary><b>🔧 Práce</b>${listaPostupu(u, true)}</summary>
+      <div id="ukoly"></div></details>`;
+  }
+  function vykresliUkoly(root, z) {
+    const el = root.querySelector("#ukoly"); if (!el) return;
+    if (!Array.isArray(z.ukoly)) z.ukoly = [];
+    const U = z.ukoly, st = () => el.querySelector("[data-stav-ukolu]");
+    const obnovListy = () => { const p = postupProcent(U); root.querySelectorAll("#postup-prace .postup").forEach(x => { x.querySelector(".postup-lista div").style.width = p + "%"; x.querySelector("b").textContent = U.some(y => String(y.t || "").trim()) ? p + " %" : "–"; x.setAttribute("aria-valuenow", p); }); };
+    const uloz = () => { obnovListy(); clearTimeout(el._u); st().textContent = "Ukládám…"; el._u = setTimeout(async () => {
+      const data = U.map(x => ({ t: String(x.t || "").trim(), h: !!x.h })).filter(x => x.t);
+      try { await db.upravit("zakazky", z.id, { ukoly: data }); st().textContent = "✓ Uloženo"; }
+      catch (e) { st().innerHTML = `<span style="color:var(--cervena)">Neuloženo – ${esc(chybaText(e))}</span>`; }
+    }, 700); };
+    const kresli = (fokus) => {
+      if (!U.length) U.push({ t: "", h: false });
+      el.innerHTML = `${listaPostupu(U)}
+        <div class="ukoly">${U.map((x, i) => `<div class="ukol${x.h ? " hotovy" : ""}">
+          <input type="checkbox" class="ukol-check" data-ukol-h="${i}" ${x.h ? "checked" : ""} aria-label="Hotovo">
+          <textarea class="vstup" rows="1" data-ukol="${i}" placeholder="${i ? "Další úkon…" : "Např. Vyměnit přední brzdové destičky"}">${esc(x.t || "")}</textarea>
+          <button type="button" class="tl smazat" data-ukol-x="${i}" aria-label="Smazat řádek">×</button></div>`).join("")}</div>
+        <div class="radek-tlacitek" style="margin-top:10px"><button type="button" class="tl tl-male" data-ukol-pridat>＋ Přidat úkon</button>
+          <span class="napoveda">Enter = další řádek. Zákazník v E-servisce vidí jen lištu a procenta, ne text.</span><span class="napoveda" data-stav-ukolu style="margin-left:auto"></span></div>
+        ${z.zavady?.length && !U.some(x => String(x.t || "").trim()) ? `<div class="cipy"><span class="napoveda" style="align-self:center">Ze zakázkového listu:</span><button type="button" class="cip" data-ukol-zavady>＋ převzít závady (${z.zavady.length})</button></div>` : ""}`;
+      el.querySelectorAll("textarea[data-ukol]").forEach(t => {
+        const roztahni = () => { t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }; roztahni();
+        t.addEventListener("input", () => { U[+t.dataset.ukol].t = t.value; roztahni(); uloz(); });
+        t.addEventListener("keydown", e => {
+          const i = +t.dataset.ukol;
+          if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); U.splice(i + 1, 0, { t: "", h: false }); kresli(i + 1); uloz(); }
+          else if (e.key === "Backspace" && !t.value && U.length > 1) { e.preventDefault(); U.splice(i, 1); kresli(Math.max(0, i - 1)); uloz(); }
+        });
+      });
+      el.querySelectorAll("[data-ukol-h]").forEach(c => c.onchange = () => { U[+c.dataset.ukolH].h = c.checked; c.closest(".ukol").classList.toggle("hotovy", c.checked); uloz(); });
+      el.querySelectorAll("[data-ukol-x]").forEach(b => b.onclick = () => { U.splice(+b.dataset.ukolX, 1); kresli(); uloz(); });
+      el.querySelector("[data-ukol-pridat]").onclick = () => { U.push({ t: "", h: false }); kresli(U.length - 1); };
+      const zz = el.querySelector("[data-ukol-zavady]");
+      if (zz) zz.onclick = () => { U.splice(0, U.length, ...z.zavady.map(t => ({ t, h: false }))); kresli(); uloz(); };
+      if (fokus != null) { const t = el.querySelector(`textarea[data-ukol="${fokus}"]`); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }
+      obnovListy();
+    };
+    kresli();
+  }
   async function detail(id) {
     const n0 = navId;
     await dokoncitUkladani();                            // překreslení zakázky nesmí předběhnout rozdělané uložení
@@ -1478,6 +1526,7 @@
         <label class="tl tl-velke">🎥 Video<input type="file" accept="video/*" capture="environment" hidden data-rychle-foto></label>
         <label class="tl tl-velke" aria-label="Vybrat z galerie">🖼<input type="file" accept="image/*,video/*" multiple hidden data-rychle-foto></label>
       </div>
+      ${blokPostupu(z)}
       <section class="karta"><h2>Doklady</h2>
         <div class="doklady">${doklady.map(d => `
           <div class="doklad"><span><b>${esc(d.cislo)}</b> · ${DRUHY[d.druh] || d.druh}${d.celkem != null ? ` · <b>${kc(d.celkem)}</b>` : ""}<br>
@@ -1501,7 +1550,7 @@
       </section>
 
       <section class="karta" id="sekce-prace">
-        <h2>Práce <span class="napoveda" id="stav-prace" style="margin-left:auto;font-weight:400"></span></h2>
+        <h2>Práce k fakturaci <span class="napoveda" id="stav-prace" style="margin-left:auto;font-weight:400"></span></h2>
         <div id="prace"></div>
       </section>
 
@@ -1567,6 +1616,7 @@
       if (!confirm(`Zakázka #${z.cislo} má vystavenou fakturu, proto ji nejde smazat (faktury se musí archivovat). Označit ji jako zrušenou?`)) return;
       try { await db.upravit("zakazky", id, { stav: "zruseno" }); hlaska("Zakázka zrušena."); detail(id); } catch (e) { hlaska(chybaText(e), true); }
     };
+    vykresliUkoly(app, z);
     vykresliPrace(); vykresliDily(); vykresliSouhrnZakazky(); vykresliServisniUkony();
     navazPoznamky(app, (tab, h) => { if (tab === "zakazky") z.poznamky = h; else v.poznamky = h; });
     vykresliDokumentyVozidla(z.vozidlo_id || v.id, app.querySelector("#dokumenty-vozidla"));

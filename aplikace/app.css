@@ -489,3 +489,21 @@ details.poznamky > summary::-webkit-details-marker { display: none; }
 details.poznamky > summary::before { content: "▸"; color: var(--sedy); }
 details.poznamky[open] > summary::before { content: "▾"; }
 details.poznamky textarea { width: 100%; min-height: 80px; resize: vertical; }
+
+/* Práce – postup opravy (odrážky z inspekce + lišta s %) */
+details.postup-prace > summary { cursor: pointer; list-style: none; display: flex; gap: 12px; align-items: center; }
+details.postup-prace > summary::-webkit-details-marker { display: none; }
+details.postup-prace > summary::before { content: "▸"; color: var(--sedy); }
+details.postup-prace[open] > summary::before { content: "▾"; }
+details.postup-prace[open] > summary .postup { display: none; }
+.postup { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; }
+.postup-lista { flex: 1 1 auto; height: 10px; background: #e3e6ea; border-radius: 5px; overflow: hidden; }
+.postup-lista > div { height: 100%; background: var(--zelena); border-radius: 5px; transition: width .35s ease; }
+.postup > b { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; }
+.postup-male .postup-lista { height: 6px; }
+#ukoly > .postup { margin: 14px 0 6px; }
+.ukoly { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.ukol { display: flex; align-items: flex-start; gap: 10px; }
+.ukol .ukol-check { flex: 0 0 auto; width: 26px; height: 26px; margin-top: 9px; accent-color: var(--zelena); cursor: pointer; }
+.ukol textarea { flex: 1 1 auto; resize: none; overflow: hidden; min-height: 44px; line-height: 1.4; }
+.ukol.hotovy textarea { text-decoration: line-through; color: var(--sedy); }

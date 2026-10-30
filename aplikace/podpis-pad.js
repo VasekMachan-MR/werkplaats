@@ -1,6 +1,6 @@
 /* Podpisové pole pro prst / Apple Pencil. Vrací PNG s průhledným pozadím, oříznuté na podpis. */
 window.PodpisPad = class PodpisPad {
-  constructor(canvas, { barva = "#0b2a6b", onZmena } = {}) {
+  constructor(canvas, { barva = "#1372e8", onZmena } = {}) {   // stejná modrá jako Vaškův podpis
     this.c = canvas; this.barva = barva; this.onZmena = onZmena;
     this.tahy = []; this.tah = null;
     this.prizpusob();
