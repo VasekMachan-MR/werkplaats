@@ -101,8 +101,10 @@ Claude udělá všechno sám. Ty jen potvrdíš přístupy a jednou se přihlás
 
 <h2>10. Jak často se zálohuje</h2>
 <ul>
-<li><b>Kód:</b> GitHub drží každou změnu. Do iCloudu se dává balíček při každé větší záloze.</li>
-<li><b>Databáze:</b> Supabase Pro dělá zálohu každý den (7 dní zpátky). Tenhle balíček je k tomu navíc mimo Supabase.</li>
-<li><b>Fotky a PDF:</b> zrcadlo v Cloudflare R2.</li>
+<li><b>Každou noc ve 2:00</b> (na GitHubu, Mac nemusí být zapnutý): celý tento balíček se uloží do <b>Cloudflare R2 → koš <code>werkplaats-zalohy</code> → složka s datem</b>. Drží se posledních 30 dní. Stáhnout: dash.cloudflare.com → R2 → <code>werkplaats-zalohy</code> → složka dne → soubory stáhnout.</li>
+<li><b>Fotky a PDF:</b> každou noc se doplní do zrcadla <b>R2 → <code>werkplaats-soubory</code></b> (krok 8).</li>
+<li><b>Databáze:</b> Supabase Pro navíc dělá vlastní zálohu každý den (7 dní zpátky).</li>
+<li><b>Kód:</b> GitHub drží každou změnu.</li>
+<li>Úlohu vidíš na GitHubu → <b>Actions → Noční záloha</b>. Když selže, GitHub pošle e-mail. Ručně spustit: tamtéž <b>Run workflow</b>.</li>
 </ul>
 </body></html>
