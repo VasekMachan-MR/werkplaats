@@ -1702,14 +1702,17 @@
   // iPhone/iPad: nabídka Sdílet (WhatsApp, Zprávy, e-mail…); jinak zkopírovat
   // odkaz k podpisu: připravený e-mail zákazníkovi (odešle se z poštovní aplikace – účet info@mercedesrest.cz); bez e-mailu sdílení jako dřív
   function poslatOdkazKPodpisu(z) {
-    const v = z.vozidla || {}, c = z.zakaznici || {}, en = z.jazyk === "en", url = odkazEservisky(v), auto = [v.typ, v.model].filter(Boolean).join(" ");
+    const v = z.vozidla || {}, c = z.zakaznici || {}, en = z.jazyk === "en", url = odkazEservisky(v);
     const email = String(c.email || "").trim();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { hlaska("Zákazník nemá e-mail – posílám odkaz jinak (WhatsApp, zprávy…)."); return sdiletOdkazEservisky(v, en, true); }
-    const kdo = uzivatel?.jmeno || "Václav Macháň";
-    const predmet = en ? `Work order no. ${z.cislo} – please sign – Mercedes Restorations` : `Zakázkový list č. ${z.cislo} – prosím o podpis – Mercedes Restorations`;
+    // typové označení jako v E-servisce: 126 → W126, 107 → R107, 124 C → C124 (bez motorizace a obchodního označení)
+    const t = String(v.typ || "").toUpperCase().replace(/\s+/g, ""), m = t.match(/^([WRC])?(\d{3})/);
+    const typ = m ? (m[1] || (m[2] === "107" ? "R" : m[2] === "124" && /C$/.test(t) ? "C" : "W")) + m[2] : String(v.typ || "").trim();
+    const vuz = ["Mercedes-Benz", typ].filter(Boolean).join(" "), kdo = uzivatel?.jmeno || "Václav Macháň";
+    const predmet = en ? `Work order no. ${z.cislo} ${vuz}` : `Zakázkový list č. ${z.cislo} ${vuz}`;
     const text = en
-      ? `Dear Sir or Madam,\n\nplease find below the link to sign the work order for your ${auto || "car"} (order no. ${z.cislo}). After opening the link you can view the work order in a preview. Please check it and, if everything is correct, sign it.\n\nYou will then find the signed version in your e-service book under “Documents for this visit” for the respective visit.\n\nLink to sign the work order and to your e-service book:\n${url}\n\nThank you for your trust, we look forward to working with you.\n\n${kdo}\nM|R`
-      : `Dobrý den,\n\nzasílám odkaz pro podepsání zakázkového listu k vašemu vozu${auto ? " " + auto : ""} (zakázka č. ${z.cislo}). Zakázkový list si po otevření odkazu zobrazíte v náhledu. Prosím o kontrolu a případně podpis.\n\nPodepsanou verzi pak naleznete v e-servisní knížce v sekci „Dokumenty k návštěvě“ u dané návštěvy.\n\nOdkaz k podpisu a do e-servisní knížky:\n${url}\n\nDěkujeme za důvěru a těšíme se na spolupráci.\n\n${kdo}\nM|R`;
+      ? `Dear Sir or Madam,\n\nplease find below the link to sign the work order for your ${vuz} (order no. ${z.cislo}). After opening the link you can view the work order in a preview. Please check and sign it.\n\nYou will then find the signed version in your e-service book under “Documents for this visit” for the respective visit.\n\nIn the e-service book you can follow the progress and photos of the work, the list of parts and further information. The content will grow as we work on the car.\n\nLink to sign the work order and to your e-service book:\n\n${url}\n\nThank you for your trust, we look forward to working with you.\n\n${kdo}\nM|R`
+      : `Dobrý den,\n\nzasílám odkaz pro podepsání zakázkového listu k vašemu vozu ${vuz} (zakázka č. ${z.cislo}). Zakázkový list si po otevření odkazu zobrazíte v náhledu. Prosím o kontrolu a podpis.\n\nPodepsanou verzi pak naleznete v e-servisní knížce v sekci „Dokumenty k návštěvě“ u dané návštěvy.\n\nV servisní knížce můžete sledovat průběh a fotky prací, seznam dílů a další informace. Obsah bude postupně přibývat, jak se na autě bude pracovat.\n\nOdkaz k podpisu a do e-servisní knížky:\n\n${url}\n\nDěkujeme za důvěru a těšíme se na spolupráci.\n\n${kdo}\nM|R`;
     const u = `mailto:${email}?subject=${encodeURIComponent(predmet)}&body=${encodeURIComponent(text).replace(/%0A/g, "%0D%0A")}`;
     if (window.__MAILTO__) window.__MAILTO__(u); else location.href = u;     // (testy si mailto zachytí)
   }
