@@ -691,7 +691,7 @@ const server = http.createServer((q, r) => {
     await p.waitForSelector("#vystavit-podepsany"); await p.click("#vystavit-podepsany");
     await p.waitForSelector("#hlaska >> text=Podepsaný zakázkový list");
     const r = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === "7377-1-2"); return d && { verze: d.verze, pod: d.data.podepsanoDalkove, ceka: d.data.cekaPodpis, zp: T.podpisy.filter(x => x.doklad_id === d.id).map(x => x.role + ":" + x.zpusob).join(","), dp: T.dalkove_podpisy[0].vystaveny_doklad_id === d.id }; });
-    kontrola(r && r.verze === 2 && /Podepsáno online v E-servisce/.test(r.pod) && !r.ceka && /zakaznik:eserviska/.test(r.zp) && r.dp, "z podpisu v E-servisce se vystaví podepsaný list 7377-1-2 (podpis zákazníka + poznámka o el. podpisu)");
+    kontrola(r && r.verze === 2 && /Podepsáno online v E-servisce/.test(r.pod) && !r.ceka && /zakaznik:dalkove/.test(r.zp) && r.dp, "z podpisu v E-servisce se vystaví podepsaný list 7377-1-2 (podpis zákazníka + poznámka o el. podpisu)");
     kontrola(await p.locator("#vystavit-podepsany, #odkaz-k-podpisu").count() === 0, "po vystavení už zakázka na podpis nečeká");
     { const b = await p.evaluate(() => Array.from(Object.entries(window.__ULOZENO__.soubory).find(([k]) => /7377-1-2-zakazkovy-list\.pdf$/.test(k))?.[1] || [])); if (b.length) require("fs").writeFileSync("testy/vystup-app/podepsany-list.pdf", Buffer.from(b)); }
   }

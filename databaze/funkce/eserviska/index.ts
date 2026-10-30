@@ -49,7 +49,7 @@ Deno.serve(async req => {
   const [{ data: vl }, { data: zak }, { data: tp }, { data: intervaly }, { data: motory }, { data: typy }, { data: ukony }, { data: intMot }] = await Promise.all([
     sb.from("vlastnictvi").select("zakaznik_id,vlastni_od,vlastni_do,zakaznici(jmeno,kontaktni_osoba,email,telefon)").eq("vozidlo_id", v.id).order("vlastni_od", { ascending: false }),
     sb.from("zakazky").select("id,cislo,stav,zakaznik_id,datum_prijmu,datum_predani,km_prijem,km_predani,zavady,servisni_ukony,ukoly").eq("vozidlo_id", v.id).neq("stav", "zruseno").neq("stav", "poptavka").order("datum_prijmu", { ascending: false }),
-    sb.from("soubory").select("klic,nazev,mime").eq("vozidlo_id", v.id).eq("druh", "tp").eq("verejne", true).is("smazano", null).order("vytvoreno"),
+    sb.from("soubory").select("klic,nazev,mime,vytvoreno").eq("vozidlo_id", v.id).eq("druh", "tp").eq("verejne", true).is("smazano", null).order("vytvoreno"),
     sb.from("servisni_intervaly").select("ukon,poradi,interval_km,interval_mesice,zdroj").eq("skupina", sk).order("poradi"),
     sb.from("motory").select("kod,palivo,serizovani_ventilu"),
     sb.from("typy_motoru").select("klic,motor"),
@@ -59,7 +59,9 @@ Deno.serve(async req => {
   const motor = urciMotor(v, motory || [], typy || []), mInfo = (motory || []).find(m => m.kod === motor);
   const palivo = mInfo ? mInfo.palivo : /\b\d{3}\s*(D|TD|SD|CD|SDL)\b/i.test(v.model || "") ? "diesel" : "benzin";
   const platne = new Set((ukony || []).filter(u => (!u.jen_palivo || u.jen_palivo === palivo) && (!u.jen_serizovani_ventilu || mInfo?.serizovani_ventilu)).map(u => u.ukon));
-  const aktualni = (vl || []).find(x => !x.vlastni_do) || null;      // bez současného majitele žádné údaje zákazníka ani doklady
+  const aktualni = (vl || []).find(x => !x.vlastni_do) || null;
+  // TP je u auta, ale je na něm jméno majitele → jen současnému majiteli a jen nahraný za jeho vlastnictví
+  const tpVidi = (tp || []).filter((f: any) => aktualni && (!aktualni.vlastni_od || String(f.vytvoreno || "").slice(0, 10) >= String(aktualni.vlastni_od)));      // bez současného majitele žádné údaje zákazníka ani doklady
   const ids = (zak || []).map(z => z.id);
 
   const [{ data: pol }, { data: dily }, { data: dok }, { data: soub }] = ids.length ? await Promise.all([
@@ -71,7 +73,7 @@ Deno.serve(async req => {
 
   // podepsané odkazy najednou
   const klice = new Set<string>();
-  (tp || []).forEach(f => klice.add(f.klic));
+  (tp || []).filter((f: any) => aktualni && (!aktualni.vlastni_od || String(f.vytvoreno || "").slice(0, 10) >= String(aktualni.vlastni_od))).forEach((f: any) => klice.add(f.klic));
   (soub || []).forEach(f => { if (f.druh === "pdf" || f.verejne !== false) klice.add(f.klic); });
   (dok || []).forEach(d => (d as any).soubory?.klic && klice.add((d as any).soubory.klic));
   const url: Record<string, string> = {};
@@ -96,7 +98,7 @@ Deno.serve(async req => {
     return {
       cislo: z.cislo, stav: z.stav, predchozi_majitel: !vlastni, servisni_ukony: z.servisni_ukony || [], datum_prijmu: z.datum_prijmu, datum_predani: z.datum_predani, km_prijem: z.km_prijem, km_predani: z.km_predani,
       // postup opravy: zákazník vidí jen kolik je hotovo, ne text odrážek
-      postup: (() => { const u = (Array.isArray(z.ukoly) ? z.ukoly : []).filter((x: any) => String(x?.t || "").trim()); return u.length ? { hotovo: u.filter((x: any) => x.h).length, celkem: u.length } : null; })(),
+      postup: !vlastni ? null : (() => { const u = (Array.isArray(z.ukoly) ? z.ukoly : []).filter((x: any) => String(x?.t || "").trim()); return u.length ? { hotovo: u.filter((x: any) => x.h).length, celkem: u.length } : null; })(),
       zavady: (z.zavady || []).filter(Boolean),
       prace: (pol || []).filter(p => p.zakazka_id === z.id && p.popis).map(p => ({ typ: p.typ, popis: p.popis })),
       dily: !vlastni ? [] : (dily || []).filter(d => d.zakazka_id === z.id).map(d => ({ nazev: d.nazev, cislo_mb: d.cislo_mb, vyrobce: d.vyrobce, mnozstvi: d.mnozstvi, jednotka: d.jednotka })),
@@ -138,7 +140,7 @@ Deno.serve(async req => {
   return odp(200, {
     vuz,
     zakaznik: aktualni?.zakaznici || null,
-    tp: (tp || []).filter(f => url[f.klic]).map(f => ({ nazev: f.nazev, url: url[f.klic], pdf: f.mime === "application/pdf" })),
+    tp: tpVidi.filter((f: any) => url[f.klic]).map(f => ({ nazev: f.nazev, url: url[f.klic], pdf: f.mime === "application/pdf" })),
     navstevy, podpis,
     servis, servis_skupina: sk, motor, palivo,
     platnost_odkazu_s: PLATNOST
@@ -152,12 +154,15 @@ async function podepsat(req: Request, sb: any, odp: (s: number, o: unknown) => R
   if (kod.length < 16 || kod.length > 40) return odp(403, { chyba: "potreba-odkaz" });
   if (b?.souhlas !== true) return odp(400, { chyba: "chybi-souhlas" });
   const png = String(b?.podpis || "");
-  if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(png) || png.length > 400000 || png.length < 500) return odp(400, { chyba: "spatny-podpis" });
+  if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(png) || png.length > 400000 || png.length < 200) return odp(400, { chyba: "spatny-podpis" });
   const { data: v } = await sb.from("vozidla").select("id").eq("eserviska_kod", kod).maybeSingle();
   if (!v) return odp(404, { chyba: "nenalezeno" });
-  const { data: d } = await sb.from("doklady").select("id,cislo,druh,data,zakazka_id,zakazky!inner(id,cislo,stav,vozidlo_id,zakaznik_id),podpisy(role),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id)")
+  const { data: d } = await sb.from("doklady").select("id,cislo,druh,verze,data,zakazka_id,zakazky!inner(id,cislo,stav,vozidlo_id,zakaznik_id),podpisy(role),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id)")
     .eq("cislo", String(b?.cislo || "")).eq("druh", "zakazkovy_list").maybeSingle();
   if (!d || d.zakazky?.vozidlo_id !== v.id || !d.data?.cekaPodpis || HOTOVO.includes(d.zakazky.stav)) return odp(404, { chyba: "nenalezeno" });
+  // podepsat jde jen poslední verzi listu (tu, kterou zákazník v E-servisce vidí)
+  const { data: novejsi } = await sb.from("doklady").select("id").eq("zakazka_id", d.zakazka_id).eq("druh", "zakazkovy_list").gt("verze", d.verze ?? 1).limit(1);
+  if (novejsi?.length) return odp(404, { chyba: "nenalezeno" });
   const { data: maj } = await sb.from("vlastnictvi").select("zakaznik_id").eq("vozidlo_id", v.id).is("vlastni_do", null).maybeSingle();
   if (!maj || maj.zakaznik_id !== d.zakazky.zakaznik_id) return odp(404, { chyba: "nenalezeno" });
   if ((d.podpisy || []).some((x: any) => x.role === "zakaznik") || (Array.isArray(d.dalkove_podpisy) ? d.dalkove_podpisy.length : d.dalkove_podpisy)) return odp(409, { chyba: "uz-podepsano" });

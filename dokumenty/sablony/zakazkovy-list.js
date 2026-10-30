@@ -180,9 +180,9 @@ function strana1(d, tx) {
   // zákazník
   const z = d.zakaznik;
   h += T(357.7, 160.8, tx.zakaznik, { b: true });
-  [z.jmeno, z.ulice, z.mesto, z.zeme].filter(Boolean).forEach((s, i) => h += T(357.7, 179.5 + i * 12.73, s));
+  [z.jmeno, z.ulice, z.mesto, z.zeme].filter(Boolean).forEach((s, i) => h += T(357.7, 179.5 + i * 12.73, s, { maxW: 180, minSize: 7 }));
   h += T(357.7, 243.2, tx.tel) + T(390.0, 243.2, z.telefon || "");
-  h += T(357.7, 255.9, tx.email) + T(390.0, 255.9, z.email || "");
+  h += T(357.7, 255.9, tx.email) + T(390.0, 255.9, z.email || "", { maxW: 148, minSize: 6.5 });
 
   // závady
   h += T(72.5, 345.1, tx.zavady, { b: true });
@@ -219,12 +219,12 @@ function strana1(d, tx) {
   h += T(392.0, 689.1, tx.odhad, { b: true });
   // „Vyhotovil“: přihlášený člověk z dílny; jméno Václav Macháň sedí přesně jako v originále, jiné jméno se vystředí do stejného místa
   const vyh = d.vyhotovil || FIRMA.vyhotovil;
-  h += T(90.2 + (sirka(FIRMA.vyhotovil, 9.8) - sirka(vyh, 9.8)) / 2, 701.8, vyh, { maxW: 138 }) + T(259.7, 701.8, z.jmeno || "", { c: true });
+  h += T(90.2 + (sirka(FIRMA.vyhotovil, 9.8) - sirka(vyh, 9.8)) / 2, 701.8, vyh, { maxW: 138 }) + T(259.7, 701.8, z.jmeno || "", { c: true, maxW: 120, minSize: 7 });
   h += T(81.3, 729.2, "…............................") + T(210.7, 729.2, "…..............................");
   if (d.druh !== "protokol" && d.odhad != null && d.odhad !== "") h += T(435.6, 712.8, `${cislo2(d.odhad)} ${tx.mena}`, { b: true, size: 15.7, c: true });
   if (d.podpisVyhotovil) h += IMG(podpisSrc(d.podpisVyhotovil), 63.0, 706.9, 220.4, 752.7);
   if (d.podpisZakaznik) h += `<img class="abs" src="${d.podpisZakaznik}" style="left:199pt;top:706.9pt;width:122pt;height:30pt;object-fit:contain">`;
-  if (d.podepsanoDalkove) h += T(259.7, 737.6, d.podepsanoDalkove, { c: true, size: 5.6, maxW: 116, minSize: 4.6 });
+  if (d.podepsanoDalkove) h += T(259.7, 734.6, d.podepsanoDalkove, { c: true, size: 5.2, maxW: 116, minSize: 4.4 });   // nad spodní čarou rámečku
 
   h += paticka(1, 2);
   return `<section class="page">${h}</section>`;

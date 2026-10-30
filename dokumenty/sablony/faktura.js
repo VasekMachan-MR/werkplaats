@@ -231,11 +231,11 @@ function strana1(d, tx) {
   // odběratel
   const z = d.zakaznik;
   h += T(344.0, 151.2, tx.odberatel, { b: true, size: 10.8 });
-  [z.jmeno, z.ulice, z.mesto, z.zeme].filter(Boolean).forEach((s, i) => h += T(344.0, 171.6 + i * 12.73, s));
+  [z.jmeno, z.ulice, z.mesto, z.zeme].filter(Boolean).forEach((s, i) => h += T(344.0, 171.6 + i * 12.73, s, { maxW: 190, minSize: 7 }));
   const firmaId = [z.ico ? `${tx.ico} ${z.ico}` : "", z.dic ? `${tx.dic} ${z.dic}` : ""].filter(Boolean).join("   ");
   h += T(344.0, 222.5, firmaId);
   h += T(344.0, 235.3, tx.tel) + T(376.3, 235.3, z.telefon);
-  h += T(344.0, 248.1, tx.email) + T(376.3, 248.1, z.email);
+  h += T(344.0, 248.1, tx.email) + T(376.3, 248.1, z.email, { maxW: 160, minSize: 6.5 });
 
   // vozidlo
   const v = d.vozidlo;
@@ -284,7 +284,7 @@ function strana1(d, tx) {
   // podpisy a celková částka
   h += T(128.0, 690.0, tx.vyhotovil, { b: true, c: true }) + T(256.9, 690.0, tx.prevzal, { b: true, c: true });
   h += T(431.9, 690.0, tx.celkovaCastka, { b: true, c: true });
-  h += T(124.7, 702.8, d.vyhotovil || FIRMA.vyhotovil, { c: true }) + T(256.4, 702.8, z.jmeno, { c: true });
+  h += T(124.7, 702.8, d.vyhotovil || FIRMA.vyhotovil, { c: true }) + T(256.4, 702.8, z.jmeno, { c: true, maxW: 120, minSize: 7 });
   h += T(81.3, 730.2, "…............................") + T(207.8, 730.2, "…..............................");
   h += T(431.5, 713.8, `${cislo2(celkem)} ${tx.mena}`, { b: true, size: 15.7, c: true });
   if (d.podpisVyhotovil) h += IMG(podpisSrc(d.podpisVyhotovil), 63.0, 707.9, 220.4, 753.7);

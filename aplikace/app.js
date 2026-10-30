@@ -142,15 +142,20 @@
         return { uroven: a.currentLevel, overeno: totp.find(x => x.status === "verified") || null, neovereno: totp.filter(x => x.status !== "verified"), naposledy: kdy ? kdy * 1000 : 0 };
       },
       async mfaNastavit() {
-        for (const x of (await this.mfaStav()).neovereno) await sb.auth.mfa.unenroll({ factorId: x.id });   // nedokončený pokus
-        return ok(await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: "Werkplaats " + new Date().toISOString().slice(0, 16), issuer: "Werkplaats" }));
+        const st = await this.mfaStav();
+        try { const ul = JSON.parse(sessionStorage.getItem("werk-mfa-nastaveni") || "null");
+          if (ul && st.neovereno.some(x => x.id === ul.id)) return ul; } catch (e) { /* bez úložiště */ }
+        for (const x of st.neovereno) await sb.auth.mfa.unenroll({ factorId: x.id });   // starý nedokončený pokus
+        const e = ok(await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: "Werkplaats " + new Date().toISOString().slice(0, 16), issuer: "Werkplaats" }));
+        try { sessionStorage.setItem("werk-mfa-nastaveni", JSON.stringify({ id: e.id, totp: e.totp })); } catch (er) { /* bez úložiště */ }
+        return e;
       },
       async mfaOverit(factorId, kod) { return ok(await sb.auth.mfa.challengeAndVerify({ factorId, code: kod })); },
       async odhlasit() { await sb.auth.signOut(); },
       async obnovitHeslo(email) { return ok(await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })); },
       async noveHeslo(heslo) { return ok(await sb.auth.updateUser({ password: heslo })); },
       async clen(id) { return ok(await sb.from("uzivatele").select("id,jmeno,role,email,aktivni,podpis_obrazek").eq("id", id).maybeSingle()); },
-      async uzivatele() { return ok(await sb.from("uzivatele").select("id,jmeno,role,email,aktivni,vytvoreno").order("vytvoreno")); },
+      async uzivatele() { return ok(await sb.from("uzivatele").select("id,jmeno,role,email,aktivni,vytvoreno,podpis_obrazek").order("vytvoreno")); },
       async ulozitMujPodpis(id, obrazek) { return ok(await sb.from("uzivatele").update({ podpis_obrazek: obrazek }).eq("id", id).select("id")); },
       async ulozitMojeJmeno(id, jmeno) { return ok(await sb.from("uzivatele").update({ jmeno }).eq("id", id).select("id")); },
       async kurzEur() { const { data, error } = await sb.functions.invoke("kurz-cnb"); if (error || !data?.kurz) throw error || new Error("kurz"); return data; },
@@ -1356,7 +1361,7 @@
     };
     app.querySelector("#ulozit").onclick = async e => {
       const b = e.currentTarget;
-      if (b.dataset.bezi) return;                          // dvojí klepnutí nesmí založit dvě zakázky
+      if (b.dataset.bezi || app.querySelector("#pozdeji")?.dataset.bezi) return;   // dvojí klepnutí nesmí založit dvě zakázky
       if (pretece) return hlaska(pretece + " – vraťte se a zkraťte text.", true, 8000);
       b.dataset.bezi = "1"; b.disabled = true;
       try {
@@ -1368,7 +1373,7 @@
       } finally { if (b.isConnected) { delete b.dataset.bezi; b.disabled = false; } }
     };
     app.querySelector("#pozdeji").onclick = async e => {   // zákazník odešel bez podpisu → podepíše z domu v E-servisce
-      const b = e.currentTarget; if (b.dataset.bezi) return;
+      const b = e.currentTarget; if (b.dataset.bezi || app.querySelector("#ulozit")?.dataset.bezi) return;
       if (pretece) return hlaska(pretece + " – vraťte se a zkraťte text.", true, 8000);
       if (!podpisVyh()) return hlaska("Nejdřív se podepište vy (Vyhotovil).", true);
       if (!confirm("Uložit zakázkový list bez podpisu zákazníka?\n\nZákazník ho podepíše z domu v E-servisce (pošlete mu odkaz). Po podpisu se v zakázce objeví tlačítko pro vystavení podepsané verze.")) return;
@@ -1676,7 +1681,7 @@
       if (!f || !f.isConnected) { f = document.createElement("iframe"); f.setAttribute("aria-hidden", "true"); f.tabIndex = -1;
         f.style.cssText = "position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;visibility:hidden"; document.body.appendChild(f); skryteRamecky["zakazkovy-list.html"] = f; }
       const { doklad } = await ulozitDoklad({ iframe: f, sablona: "zakazkovy-list.html", data, jazyk: zl.jazyk || "cs", zakazka_id: z.id, vozidlo_id: z.vozidlo_id, cisloZakazky: z.cislo,
-        druh: "zakazkovy_list", verze, vystaveno: dnes(), podpisZak, jmenoZakaznika: z.zakaznici?.jmeno || "", zpusobZak: "eserviska", prubeh: p.text });
+        druh: "zakazkovy_list", verze, vystaveno: dnes(), podpisZak, jmenoZakaznika: z.zakaznici?.jmeno || "", zpusobZak: "dalkove", prubeh: p.text });
       try { await db.upravit("dalkove_podpisy", dp.id, { vystaveny_doklad_id: doklad?.id || null }); } catch (e) { /* jen evidence */ }
       p.zavri(); hlaska(`Podepsaný zakázkový list ${data.cislo} vystaven.`); detail(z.id);
     } catch (e) { p.zavri(); hlaska("Vystavení se nepovedlo: " + chybaText(e), true, 8000); }
@@ -1806,7 +1811,8 @@
       try {
         await dokoncitUkladani();
         const klice = (z.soubory || []).filter(f => f.druh !== "tp").map(f => f.klic), slozky = [...new Set(klice.map(slozkaSouboru).filter(Boolean))];
-        await db.smazatZakazku(id); uklidSoubory({ klice, slozky }); E = null; hlaska(`Zakázka #${z.cislo} smazána.`); location.hash = "#/zakazky";
+        await db.smazatZakazku(id); uklidSoubory({ klice, slozky }); E = null;
+        uloz(FRONTA, fronta().filter(x => x.zid !== id && !(x.tabulka === "zakazky" && x.id === id))); ukazFrontu(); hlaska(`Zakázka #${z.cislo} smazána.`); location.hash = "#/zakazky";
       }
       catch (e) { hlaska("Smazat nejde: " + chybaText(e), true, 8000); }
     };
@@ -1915,23 +1921,36 @@
     const tl = app.querySelector("#odeslat-fotky"); if (tl) { tl.disabled = true; tl.textContent = "Připravuji fotky…"; }
     try {
       let soubory = [];
-      if (navigator.canShare) {
+      const klicVyberu = vybrane.map(f => f.id).join(",");
+      if (E.pripravene?.klic === klicVyberu) soubory = E.pripravene.soubory;          // druhé klepnutí: fotky už jsou stažené
+      else if (navigator.canShare) {
         soubory = await Promise.all(vybrane.map(async (f, i) => {
-          const b = await (await fetch(E.urlFotek?.[f.id] || (await db.odkaz(f.klic, 600)))).blob();
+          let r = await fetch(E.urlFotek?.[f.id] || (await db.odkaz(f.klic, 600)));
+          if (!r.ok) r = await fetch(await db.odkaz(f.klic, 600));                     // odkaz vypršel → nový
+          if (!r.ok) throw new Error("fotku se nepodařilo stáhnout");
+          const b = await r.blob();
           const pr = (b.type.split("/")[1] || (f.video ? "mp4" : "jpg")).replace("jpeg", "jpg").replace("quicktime", "mov");
           return new File([b], `${E.z.cislo}-${String(i + 1).padStart(2, "0")}.${pr}`, { type: b.type || (f.video ? "video/mp4" : "image/jpeg") });
         }));
       }
       if (soubory.length && navigator.canShare({ files: soubory })) {
-        try { await navigator.share({ files: soubory, text }); E.vyber = null; vykresliFotkyDetail(); hlaska("Odesláno."); return; }
-        catch (e) { if (e?.name === "AbortError") return; }
+        E.pripravene = { klic: klicVyberu, soubory };
+        try { await navigator.share({ files: soubory, text }); E.vyber = null; E.pripravene = null; vykresliFotkyDetail(); hlaska("Odesláno."); return; }
+        catch (e) {
+          if (e?.name === "AbortError") return;
+          if (e?.name === "NotAllowedError") {          // iPhone: stahování trvalo, Sdílet chce nové klepnutí
+            if (tl && document.body.contains(tl)) { tl.disabled = false; tl.textContent = "📤 Sdílet připravené fotky"; }
+            hlaska("Fotky jsou připravené – klepněte ještě jednou na Sdílet."); return;
+          }
+        }
       }
       // počítač: fotky nejdou přiložit – otevřít WhatsApp se zprávou (fotky vidí v E-servisce)
-      const tel = String(c.telefon || "").replace(/[^\d+]/g, "").replace(/^00/, "+").replace(/^(?!\+)/, "+420").replace(/^\+/, "");
-      window.open(`https://wa.me/${tel.length > 8 ? tel : ""}?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+      let tel = String(c.telefon || "").replace(/[^\d+]/g, "").replace(/^00/, "+");
+      tel = tel.startsWith("+") ? tel.slice(1) : /^\d{9}$/.test(tel) ? "420" + tel : /^420\d{9}$/.test(tel) ? tel : "";   // jinak číslo nehádat
+      window.open(`https://wa.me/${tel.length >= 10 ? tel : ""}?text=${encodeURIComponent(text)}`, "_blank", "noopener");
       hlaska("Na počítači nejde fotky přiložit – WhatsApp dostal zprávu s odkazem na E-servisku, kde fotky jsou.", false, 7000);
     } catch (e) { hlaska("Fotky se nepodařilo připravit: " + chybaText(e), true); }
-    finally { if (tl && document.body.contains(tl)) { tl.disabled = false; tl.textContent = "📤 Poslat (WhatsApp…)"; } }
+    finally { if (tl && document.body.contains(tl) && !E.pripravene) { tl.disabled = false; tl.textContent = "📤 Poslat (WhatsApp…)"; } else if (tl && document.body.contains(tl)) tl.disabled = false; }
   }
   async function vykresliFotkyDetail() {
     const el = document.getElementById("sekce-fotky-detail"); if (!el || !E) return;
@@ -2091,11 +2110,12 @@
 
   /* ---------- práce bez signálu: neodeslané změny se drží v zařízení a odešlou se samy ---------- */
   const FRONTA = "werk-fronta";
-  const jeVypadek = e => !navigator.onLine || /failed to fetch|networkerror|load failed|network request failed|fetch failed|timeout|ERR_INTERNET|ERR_NETWORK/i.test(chybaText(e));
+  const jeVypadek = e => !navigator.onLine || [408, 429, 500, 502, 503, 504].includes(Number(e?.status || e?.code))
+    || /failed to fetch|networkerror|load failed|network request failed|fetch failed|timeout|ERR_INTERNET|ERR_NETWORK|unexpected token|JSON|JWT|refresh token|Nepřihlášený|5\d\d|Bad Gateway|Service Unavailable/i.test(chybaText(e));
   const fronta = () => nacti(FRONTA) || [];
   let odesilamFrontu = false, casovacFronty = null;
   function doFronty(x) {                                   // x = {klic, druh: "upravit"|"prace"|"dily", ...}; novější změna téže věci nahradí starší
-    uloz(FRONTA, fronta().filter(y => y.klic !== x.klic).concat({ ...x, cas: Date.now() }));
+    uloz(FRONTA, fronta().filter(y => y.klic !== x.klic).concat({ ...x, uid: uzivatel?.id || null, cas: Date.now() }));
     ukazFrontu(); clearTimeout(casovacFronty); casovacFronty = setTimeout(() => odeslatFrontu(), navigator.onLine ? 3000 : 20000);
   }
   function ukazFrontu() {
@@ -2107,15 +2127,20 @@
     el.title = n ? "Změny uložené v tomto zařízení – odešlou se samy, až bude signál. Klepnutím zkusit hned." : "Bez připojení k internetu";
   }
   async function provedZFronty(x) {
-    if (x.druh === "upravit") return db.upravit(x.tabulka, x.id, x.zmeny);
+    if (x.druh === "upravit") {                        // 0 upravených řádků = bez oprávnění / ještě neověřeno → zkusit později
+      const r = await db.upravit(x.tabulka, x.id, x.zmeny);
+      if (Array.isArray(r) && !r.length) throw Object.assign(new Error("Failed to fetch (0 řádků)"), { opakovat: true });
+      return r;
+    }
     if (x.druh === "prace") return db.ulozitPolozky(x.zid, x.data);
     if (x.druh === "dily") return db.ulozitDily(x.zid, x.data);
   }
   async function odeslatFrontu(rucne = false) {
-    if (odesilamFrontu || !fronta().length) return ukazFrontu();
+    if (odesilamFrontu || !fronta().length || !uzivatel) return ukazFrontu();   // až po přihlášení a ověření kódem
     odesilamFrontu = true; let ok = 0;
     try {
       for (const x of fronta()) {
+        if (x.uid && x.uid !== uzivatel.id) continue;    // změny jiného člověka na tomto zařízení počkají na něj
         try { await provedZFronty(x); ok++; }
         catch (e) {
           if (jeVypadek(e)) break;                         // pořád bez signálu – zkusit později
@@ -2221,12 +2246,13 @@
   // daň se rozpustí do ceny práce a do marže dílů (nákupní cena dílu zůstane) – na nabídce a faktuře žádný řádek „daň“
   function sDani(z, polozky, dily) {
     const k = 1 + danZakazky(z) / 100;
+    if (k === 1) return [polozky.map(p => ({ ...p })), dily.map(d => ({ ...d }))];
     const P2 = polozky.map(p => (p.typ || "prace") === "prace" && p.sazba != null ? { ...p, sazba: zaokrouhli(Number(p.sazba) * k) }
       : p.typ === "pausal" && p.castka != null ? { ...p, castka: zaokrouhli(Number(p.castka) * k) } : { ...p });
     const D2 = dily.map(d => {
       if (d.nakupni_cena == null || d.prodejni_cena == null) return { ...d };
       const nakup = Number(d.nakupni_cena) * (Number(d.kurz) || 1), prodej = Number(d.prodejni_cena), marze = Math.max(0, prodej - nakup);
-      return { ...d, prodejni_cena: zaokrouhli(nakup + marze * k) };
+      return { ...d, prodejni_cena: zaokrouhli(prodej + marze * (k - 1)) };   // jen marže se navýší; sleva / díl zdarma zůstane
     });
     return [P2, D2];
   }
@@ -3246,6 +3272,7 @@
     } catch (e) { return prihlaseni("Nelze se spojit se serverem: " + chybaText(e)); }
     lista();
     navigace();
+    setTimeout(() => odeslatFrontu(), 1500);              // neodeslané změny z doby bez signálu
   }
   /* ================= nová verze aplikace ================= */
   // obnovit jen když se zrovna nic nedělá (přehled, seznamy); uprostřed příjmu, faktury nebo podpisu ukázat lištu „Obnovit“

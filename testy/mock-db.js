@@ -155,6 +155,7 @@ window.__WERK_DB__ = (() => {
     async smazatSoubory(telo) { (window.__SMAZANE_SOUBORY__ ||= []).push(telo); return { smazano: (telo.klice || []).length }; },
     async vystavitDoklad(p) {                       // jako vystavit_doklad v databázi: všechno najednou, nebo nic
       await cekej(); if (window.__OFFLINE_DOKLAD__) throw new Error("Failed to fetch");
+      for (const x of p.podpisy || []) if (!["ipad", "dalkove", "ulozeny"].includes(x.zpusob)) throw new Error('new row for relation "podpisy" violates check constraint "podpisy_zpusob_check"');   // jako v databázi
       const uz = T.doklady.find(x => x.cislo === p.cislo); if (uz) return { ...kopie(uz), uz_existoval: true };
       const ted = new Date().toISOString(), sb = p.soubory.map(x => ({ id: id(), vytvoreno: ted, zakazka_id: p.zakazka_id, vozidlo_id: p.vozidlo_id, druh: x.druh, klic: x.klic, nazev: x.nazev, velikost: x.velikost, mime: x.mime, verejne: false, _role: x.role }));
       const pdf = sb.find(x => x._role === "pdf"), podpis = sb.find(x => x._role === "podpis");
