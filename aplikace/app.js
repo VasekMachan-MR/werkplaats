@@ -1594,11 +1594,24 @@
   let kurzCnb = null, kurzCnbNacitam = null;
   const kurzEur = () => kurzCnb?.kurz ? Math.round(kurzCnb.kurz * 100) / 100 : 25;
   const nactiKurzEur = () => kurzCnbNacitam ||= (db.kurzEur ? db.kurzEur() : Promise.reject()).then(k => (kurzCnb = k)).catch(() => { kurzCnbNacitam = null; });
+  // sbalovací sekce zakázky: aplikace si pamatuje (pro každou zakázku zvlášť), co bylo rozbalené
+  const SBAL_KLIC = "werk-sbaleni", SBAL_VYCHOZI = ["sekce-prace", "sekce-dily", "sekce-servis"];
+  const sbalNacti = () => { try { return JSON.parse(localStorage.getItem(SBAL_KLIC) || "{}") || {}; } catch (e) { return {}; } };
+  const sbalOtevreno = (zid, sid) => { const x = sbalNacti()[zid]; return x && sid in x ? !!x[sid] : SBAL_VYCHOZI.includes(sid); };
+  const sbalOpen = (zid, sid) => (sbalOtevreno(zid, sid) ? " open" : "");
+  function sbalPamatuj(root, zid) {
+    root.querySelectorAll("details[data-sbal]").forEach(d => d.addEventListener("toggle", () => {
+      const vse = sbalNacti(), x = vse[zid] || {}; delete vse[zid];
+      x[d.id] = d.open; vse[zid] = x;                                    // naposledy použitá zakázka na konec
+      const k = Object.keys(vse); k.slice(0, Math.max(0, k.length - 300)).forEach(a => delete vse[a]);
+      try { localStorage.setItem(SBAL_KLIC, JSON.stringify(vse)); } catch (e) { /* bez úložiště to jen nebude pamatovat */ }
+    }));
+  }
   // F5: poznámky (k zakázce a k autu) – sbalené, ukládají se samy
   const nahledPoznamky = t => { const r = String(t || "").trim().split("\n")[0]; return r ? esc(r.length > 60 ? r.slice(0, 60) + "…" : r) : '<span class="mutted">žádné</span>'; };
-  function blokPoznamek(pole) {
+  function blokPoznamek(pole, zid) {
     const n = pole.filter(x => String(x.hodnota || "").trim()).length;
-    return `<details class="karta poznamky"${n ? "" : ""}><summary><b>📝 Poznámky</b> <span class="mutted">${n ? pole.filter(x => String(x.hodnota || "").trim()).map(x => nahledPoznamky(x.hodnota)).join(" · ") : "žádné"}</span></summary>
+    return `<details class="karta poznamky"${zid ? ` id="sekce-poznamky" data-sbal${sbalOpen(zid, "sekce-poznamky")}` : ""}><summary><b>📝 Poznámky</b> <span class="mutted">${n ? pole.filter(x => String(x.hodnota || "").trim()).map(x => nahledPoznamky(x.hodnota)).join(" · ") : "žádné"}</span></summary>
       ${pole.map(x => `<label class="pole" style="margin-top:12px">${x.popis}<textarea class="vstup" rows="3" data-poznamka="${x.tabulka}" data-id="${x.id}" placeholder="${x.napoveda || ""}">${esc(x.hodnota || "")}</textarea></label>`).join("")}
       <span class="napoveda" data-stav-poznamek></span></details>`;
   }
@@ -1617,7 +1630,7 @@
     return `<div class="postup${male ? " postup-male" : ""}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p}" title="Hotovo ${p} %"><div class="postup-lista"><div style="width:${p}%"></div></div><b>${n ? p + " %" : "–"}</b></div>`; };
   function blokPostupu(z) {
     const u = Array.isArray(z.ukoly) ? z.ukoly : [];
-    return `<details class="karta postup-prace" id="postup-prace"${u.length ? " open" : ""}><summary><b>🔧 Práce</b>${listaPostupu(u, true)}</summary>
+    return `<details class="karta postup-prace" id="postup-prace" data-sbal${sbalOpen(z.id, "postup-prace")}><summary><b>🔧 Práce</b>${listaPostupu(u, true)}</summary>
       <div id="ukoly"></div></details>`;
   }
   function vykresliUkoly(root, z) {
@@ -1753,34 +1766,36 @@
         <p class="napoveda" style="margin:10px 0 0">Nabídka i faktura se vytvoří z prací a dílů níže. Každý vystavený doklad se uzamkne; nová verze dostane další číslo (např. 7377-2-2).</p>
       </section>
 
-      <section class="karta" id="sekce-prace">
-        <h2>Práce k fakturaci <span class="napoveda" id="stav-prace" style="margin-left:auto;font-weight:400"></span></h2>
+      <details class="karta sbalovaci" id="sekce-prace" data-sbal${sbalOpen(id, "sekce-prace")}>
+        <summary><h2>Práce k fakturaci <span class="napoveda" id="stav-prace" style="margin-left:auto;font-weight:400"></span></h2></summary>
         <div id="prace"></div>
-      </section>
+      </details>
 
-      <details class="karta sbalovaci" id="sekce-dily"${E.dily.length < 6 ? " open" : ""}>
+      <details class="karta sbalovaci" id="sekce-dily" data-sbal${sbalOpen(id, "sekce-dily")}>
         <summary><h2>Díly <span class="mutted" id="souhrn-dilu" style="font-weight:400;font-size:15px"></span> <span class="napoveda" id="stav-dilu" style="margin-left:auto;font-weight:400"></span></h2></summary>
         <div id="dily"></div>
       </details>
-      <section class="karta" id="sekce-servis"></section>
+      <details class="karta sbalovaci" id="sekce-servis" data-sbal${sbalOpen(id, "sekce-servis")}><summary><h2>Servisní úkony</h2></summary></details>
       ${blokPoznamek([{ tabulka: "zakazky", id: z.id, hodnota: z.poznamky, popis: "K této zakázce", napoveda: "Co je potřeba udělat, co jsme zjistili, domluva se zákazníkem…" },
-        { tabulka: "vozidla", id: z.vozidlo_id || v.id, hodnota: v.poznamky, popis: "K autu (zůstanou u auta i pro další návštěvy)", napoveda: "Zvláštnosti auta, historie, co hlídat příště…" }])}
+        { tabulka: "vozidla", id: z.vozidlo_id || v.id, hodnota: v.poznamky, popis: "K autu (zůstanou u auta i pro další návštěvy)", napoveda: "Zvláštnosti auta, historie, co hlídat příště…" }], id)}
 
       <section class="karta souhrn-zakazky" id="souhrn"></section>
 
-      <section class="karta"><h2>Vozidlo</h2><dl class="udaje">
+      <details class="karta sbalovaci" id="sekce-vozidlo" data-sbal${sbalOpen(id, "sekce-vozidlo")}>
+        <summary><h2>Vozidlo <span class="mutted" style="font-weight:400;font-size:15px">${esc([v.typ, v.model, v.spz].filter(Boolean).join(" · "))}</span></h2></summary><dl class="udaje">
         ${[["VIN", v.vin], ["Typ", v.typ], ["Model", v.model], ["Rok", v.rok], ["SPZ", v.spz], ["Barva", v.barva], ["Verze", v.verze],
            ["Tachometr při předání", z.km_predani != null ? `${Number(z.km_predani).toLocaleString("cs-CZ")} ${jedn}` : ""]]
-          .filter(([, x]) => x != null && x !== "").map(([a, b]) => `<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join("")}</dl></section>
-      <section class="karta"><h2>Dokumenty vozidla <span class="napoveda" style="font-weight:400">(v E-servisce ke stažení)</span></h2><div class="fotky" id="dokumenty-vozidla"><span class="mutted">Načítám…</span></div>
-        <p style="margin:10px 0 0"><a href="#/vozidlo/${z.vozidlo_id || v.id}">Upravit vozidlo a TP →</a> · <a href="#/zakaznik/${z.zakaznik_id || c.id}">Upravit zákazníka →</a></p></section>
+          .filter(([, x]) => x != null && x !== "").map(([a, b]) => `<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join("")}</dl>
+        <p style="margin:16px 0 8px"><b>Dokumenty vozidla</b> <span class="napoveda">(v E-servisce ke stažení)</span></p><div class="fotky" id="dokumenty-vozidla"><span class="mutted">Načítám…</span></div>
+        <p style="margin:10px 0 0"><a href="#/vozidlo/${z.vozidlo_id || v.id}">Upravit vozidlo a TP →</a> · <a href="#/zakaznik/${z.zakaznik_id || c.id}">Upravit zákazníka →</a></p></details>
       <section class="karta"><h2>Zákazník</h2><dl class="udaje">
         ${[["Jméno", esc(c.jmeno)], ["Kontaktní osoba", esc(c.kontaktni_osoba)], ["Telefon", telOdkaz(c.telefon)], ["E-mail", mailOdkaz(c.email)], ["Adresa", esc([c.ulice, [c.psc, c.mesto].filter(Boolean).join(" "), c.zeme].filter(Boolean).join(", "))], ["IČO", esc(c.ico)], ["DIČ", esc(c.dic)]]
           .filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${b}</dd></div>`).join("")}</dl>${kontaktTlacitka(c)}</section>
       <section class="karta" id="sekce-prijem-detail"></section>
-      <section class="karta" id="sekce-archiv"></section>
+      <details class="karta sbalovaci" id="sekce-archiv" data-sbal${sbalOpen(id, "sekce-archiv")}><summary><h2>Ostatní dokumenty</h2></summary></details>
       <section class="karta" id="sekce-fotky-detail"></section>`;
     vykresliPrijemDetail(false);
+    sbalPamatuj(app, id);
     app.querySelectorAll("[data-rychle-foto]").forEach(inp => inp.addEventListener("change", e => {
       const f = [...e.target.files]; e.target.value = ""; if (!f.length) return;
       document.getElementById("sekce-fotky-detail")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2016,11 +2031,11 @@
   /* ---------- servisní úkony: zaškrtnuté úkony → E-serviska spočítá „Co je příště na řadě“ ---------- */
   async function vykresliServisniUkony() {
     const el = document.getElementById("sekce-servis"); if (!el || !E) return;
-    let K; try { K = await nactiKatalogServisu(); } catch (e) { el.innerHTML = `<h2>Servisní úkony</h2><div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+    let K; try { K = await nactiKatalogServisu(); } catch (e) { el.innerHTML = `<summary><h2>Servisní úkony</h2></summary><div class="info chyba">${esc(chybaText(e))}</div>`; return; }
     if (!document.getElementById("sekce-servis")) return;
     const v = E.z.vozidla || {}, sk = skupinaServisu(v), zvol = new Set(E.z.servisni_ukony || []), S2 = servisVozu(v, K);
     const ukony = S2.ukony.concat(K.ukony.filter(u => zvol.has(u.ukon) && !S2.ukony.includes(u)));   // už zaškrtnuté nikdy nezmizí
-    el.innerHTML = `<h2>Servisní úkony <span class="napoveda" style="margin-left:auto;font-weight:400">pro E-servisku · ${S2.motor ? `motor ${esc(S2.motor)}` : "motor neurčen"} (${S2.palivo === "diesel" ? "diesel" : "benzín"}) · intervaly ${sk}</span></h2>
+    el.innerHTML = `<summary><h2>Servisní úkony <span class="mutted" id="souhrn-servisu" style="font-weight:400;font-size:15px">${zvol.size ? `· ${zvol.size} zaškrtnut${zvol.size === 1 ? "ý" : zvol.size < 5 ? "é" : "ých"}` : ""}</span> <span class="napoveda" style="margin-left:auto;font-weight:400">pro E-servisku · ${S2.motor ? `motor ${esc(S2.motor)}` : "motor neurčen"} (${S2.palivo === "diesel" ? "diesel" : "benzín"}) · intervaly ${sk}</span></h2></summary>
       <p class="napoveda" style="margin:0 0 6px">Zaškrtněte, co se při této návštěvě provedlo. E-serviska podle toho spočítá, co je příště na řadě.${S2.motor ? "" : ` Motor jde určit v <a href="#/vozidlo/${E.z.vozidlo_id || v.id}">údajích vozidla</a>.`}</p>
       <div class="cipy">${ukony.map(u =>
         `<label class="cip zaskrt"><input type="checkbox" data-servis="${u.ukon}" ${zvol.has(u.ukon) ? "checked" : ""}> ${esc(u.nazev)}</label>`).join("")}</div>
@@ -2028,7 +2043,8 @@
     el.querySelectorAll("[data-servis]").forEach(i => i.onchange = async () => {
       const nove = [...el.querySelectorAll("[data-servis]:checked")].map(x => x.dataset.servis), stav = el.querySelector("#stav-servisu");
       stav.textContent = "Ukládám…";
-      try { await ulozitZmenu("zakazky", E.id, { servisni_ukony: nove }, stav); E.z.servisni_ukony = nove; }
+      try { await ulozitZmenu("zakazky", E.id, { servisni_ukony: nove }, stav); E.z.servisni_ukony = nove;
+        const ss = el.querySelector("#souhrn-servisu"); if (ss) ss.textContent = nove.length ? `· ${nove.length} zaškrtnut${nove.length === 1 ? "ý" : nove.length < 5 ? "é" : "ých"}` : ""; }
       catch (e) { i.checked = !i.checked; stav.textContent = ""; hlaska(chybaText(e), true); }
     });
   }
@@ -2037,7 +2053,7 @@
   function vykresliArchiv() {
     const el = document.getElementById("sekce-archiv"); if (!el || !E) return;
     const arch = (E.z.soubory || []).filter(s => s.druh === "archiv" && !s.smazano).sort((a, b) => (a.nazev || "").localeCompare(b.nazev || "", "cs"));
-    el.innerHTML = `<h2>Ostatní dokumenty${arch.length ? ` <span class="mutted" style="font-weight:400">${arch.length}</span>` : ""}</h2>
+    el.innerHTML = `<summary><h2>Ostatní dokumenty${arch.length ? ` <span class="mutted" style="font-weight:400">${arch.length}</span>` : ""}</h2></summary>
       <p class="napoveda" style="margin:0 0 10px">PDF i fotky dokumentů (JPG, HEIC…) k této zakázce, např. původní doklady ze starého systému. 👁 = zákazník je vidí v E-servisce u této návštěvy, 🚫 = skryté.</p>
       <div class="doklady">${arch.map(f => `<div class="doklad"><span>${/^image\//.test(f.mime || "") || /\.(jpe?g|png|heic|heif|webp)$/i.test(f.nazev || "") ? "🖼" : "📄"} ${esc(f.nazev || "dokument")}</span><span class="radek-tlacitek">
         <button class="tl tl-male" data-archiv-verejne="${f.id}" title="${f.verejne === false ? "Skryto v E-servisce – klepnutím zobrazit" : "Vidí zákazník v E-servisce – klepnutím skrýt"}" aria-label="Viditelnost v E-servisce">${f.verejne === false ? "🚫" : "👁"}</button>
@@ -2264,10 +2280,10 @@
     const sD = p => soucty(...sDani({ dan_pct: p }, E.polozky, E.dily)).celkem, danP = p => sD(p) - s.celkem;
     const dan = danP(pct), celkem = s.celkem + (zap ? dan : 0);
     const bezNakupu = E.dily.filter(d => d.stav !== "nepouzito" && d.prodejni_cena != null && d.nakupni_cena == null).length;
-    el.innerHTML = `<div class="souhrn-radky">
+    el.innerHTML = `<h2 style="margin:0 0 6px">Cena</h2><div class="souhrn-radky">
       <div><span>Práce${s.hodin ? ` (${mnozstviCz(s.hodin)} h)` : ""}</span><b>${kc(s.prace)}</b></div>
       <div><span>Materiál (díly)</span><b>${kc(s.material)}</b></div>
-      ${(() => { const m = marzeDilu(E.dily); return m.nakup && jeMajitel() ? `<div class="mutted" style="font-size:14px"><span>z toho marže${m.bezNakupu ? " (bez dílů bez nákupní ceny)" : ""}</span><b>${kc(m.marze)}${m.nakup ? ` · ${mnozstviCz(Math.round(m.marze / m.nakup * 1000) / 10)} %` : ""}</b></div>` : ""; })()}
+      ${(() => { const m = marzeDilu(E.dily); return m.nakup && jeMajitel() ? `<div class="mutted" style="font-size:14px"><span>z toho marže ${mnozstviCz(Math.round(m.marze / m.nakup * 1000) / 10)} %${m.bezNakupu ? " (bez dílů bez nákupní ceny)" : ""}</span><b>${kc(m.marze)}</b></div>` : ""; })()}
       <div class="${zap ? "" : "dan-vypnuta"}" id="radek-dane"><span class="dan-pole"><label class="dan-zap"><input type="checkbox" id="dan-zap" ${zap ? "checked" : ""}> Daň</label> <input class="vstup cislo" id="dan-pct" value="${mnozstviCz(pct)}" inputmode="decimal" aria-label="Daň v procentech z práce a marže" title="Navýšení práce a marže dílů o daň (výchozí 50 %)"> % z práce a marže</span><b id="dan-kc">${zap ? "" : "("}${kc(dan)}${zap ? "" : ")"}</b></div>
       <div class="celkem"><span>Celkem${zap ? "" : " bez daně"}</span><b id="souhrn-celkem">${kc(celkem)}</b></div>
       ${zap ? "" : `<div class="mutted" id="s-dani"><span>S daní by to bylo</span><b>${kc(s.celkem + dan)}</b></div>`}</div>

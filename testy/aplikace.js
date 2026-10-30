@@ -401,7 +401,7 @@ const server = http.createServer((q, r) => {
     "import: přidán jen vybraný díl – nákup 385,99 s DPH, prodej 502 Kč, Auto Kelly, Aftermarket, objednáno");
   kontrola(await p.evaluate(() => !document.getElementById("sekce-dily").open) && /díl.* · .*Kč/.test(await p.textContent("#souhrn-dilu")), "po importu se sekce Díly sbalí (v nadpisu počet dílů a částka)");
   { const t = (await p.textContent("#souhrn")).replace(/[\u00a0\u202f]/g, " ");
-    kontrola(/z toho marže/.test(t) && /116 Kč · 30,1 %/.test(t), "součet ukazuje celkovou marži na dílech (116 Kč · 30,1 %)"); }
+    kontrola(/z toho marže/.test(t) && /z toho marže 30,1 %/.test(t) && /116 Kč/.test(t), "součet ukazuje celkovou marži na dílech (30,1 % vlevo, 116 Kč vpravo)"); }
   // PDF faktura Granexu (vyrobená pro test, stejné rozložení řádků)
   {
     const { PDFDocument } = require("pdf-lib"), fontkit = require("@pdf-lib/fontkit");
@@ -465,6 +465,10 @@ const server = http.createServer((q, r) => {
   await p.check('#sekce-servis [data-servis="brzdy"]');
   await p.waitForFunction(() => (window.__ULOZENO__.tabulky.zakazky.find(z => z.cislo === 7378).servisni_ukony || []).length === 2);
   kontrola(JSON.stringify(await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky.find(z => z.cislo === 7378).servisni_ukony)) === '["olej","brzdy"]', "servisní úkony se zaškrtnou a uloží k zakázce");
+  kontrola(await p.evaluate(() => ["sekce-prace", "sekce-servis"].every(i => document.getElementById(i)?.open) && !["sekce-vozidlo", "sekce-archiv", "postup-prace", "sekce-poznamky"].some(i => document.getElementById(i)?.open)),
+    "v zakázce jsou rozbalené jen Práce k fakturaci, Díly a Servisní úkony, ostatní sekce sbalené");
+  kontrola(/z toho marže [\d,]+ %/.test(await p.textContent("#souhrn")) && /^Cena/.test(await p.textContent("#souhrn")), "souhrn má nadpis „Cena“ a procento marže je vlevo u popisu");
+  await p.click("#sekce-archiv > summary");
   // archiv (legacy): původní PDF jen jako příloha zakázky
   await p.setInputFiles("#archiv-nahrat", [{ name: "Zakazkovy_list_stary.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF") }]);
   await p.waitForSelector("#sekce-archiv [data-archiv-otevrit]", { timeout: 15000 });
@@ -483,6 +487,15 @@ const server = http.createServer((q, r) => {
   await p.setInputFiles("#archiv-nahrat", [{ name: "Zakázkový_list_W126_300SE_Jan_Novák_Cenová_nabídka_materiál.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF") }]);
   await p.waitForSelector("#sekce-archiv [data-archiv-otevrit]", { timeout: 15000 });
   kontrola(await p.evaluate(() => !window.__ULOZENO__.tabulky.soubory.some(f => f.druh === "archiv" && f.nazev === "Zakazkovy_list_stary.pdf") && (window.__SMAZANE_SOUBORY__ || []).some(t => (t.klice || []).some(k => k.startsWith("archiv/")))), "odebrané archivní PDF zmizí i z úložiště");
+  {
+    const h = await p.evaluate(() => location.hash);
+    await p.click("#sekce-servis > summary");
+    await p.evaluate(() => { location.hash = "#/zakazky"; }); await p.waitForTimeout(400);
+    await p.evaluate(x => { location.hash = x; }, h); await p.waitForSelector("#sekce-archiv");
+    kontrola(await p.evaluate(() => document.getElementById("sekce-archiv").open && !document.getElementById("sekce-servis").open && document.getElementById("sekce-prace").open),
+      "aplikace si u zakázky pamatuje, které sekce byly sbalené a rozbalené");
+    await p.click("#sekce-servis > summary");
+  }
   // smazat všechny díly (s potvrzením)
   await p.click("#smazat-dily");
   await p.waitForSelector("#stav-dilu >> text=✓ Uloženo");
