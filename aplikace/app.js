@@ -2280,6 +2280,13 @@
   const fakturyZakazky = () => (E.z.soubory || []).filter(s => s.druh === "nakupni_doklad" && !s.smazano).sort((a, b) => String(a.vytvoreno || "").localeCompare(String(b.vytvoreno || "")));
   const fakturyDilu = id => fakturyZakazky().filter(f => id && f.faze === `dil:${id}`);
   const htmlFakturDilu = fa => fa.length ? `<div class="dil-faktury">${fa.map(f => `<span class="dil-faktura">🧾 <button type="button" class="odkaz" data-faktura-otevrit="${esc(f.klic)}" title="Otevřít fakturu">${esc(f.nazev || "faktura")}</button>${jeMajitel() ? `<button type="button" class="tl-x" data-faktura-smazat="${f.id}" aria-label="Smazat fakturu" title="Smazat fakturu">×</button>` : ""}</span>`).join("")}</div>` : "";
+  // smazání dílu smaže i jeho přijaté faktury (Vašek 30.10.2026)
+  function smazatFaktury(fa) {
+    for (const f of fa) {
+      f.smazano = new Date().toISOString();
+      db.smazatZaznamSouboru(f.id).then(() => uklidSoubory({ klice: [f.klic] })).catch(e => { f.smazano = null; hlaska(`Fakturu ${f.nazev || ""} se nepodařilo smazat: ${chybaText(e)}`, true); if (E) vykresliDily(); });
+    }
+  }
   function vykresliFakturyDilu() {
     const box = document.getElementById("dily"); if (!box || !E) return;
     const el = document.getElementById("faktury-dilu");
@@ -2775,8 +2782,9 @@
     });
     el.querySelectorAll("[data-smaz-dil]").forEach(b => b.onclick = () => {
       const d = E.dily[+b.dataset.smazDil];
-      if (!confirm(`Opravdu smazat díl „${d.nazev || "bez názvu"}“?`)) return;
-      E.dily.splice(+b.dataset.smazDil, 1); vykresliDily(); vykresliSouhrnZakazky(); ulozitPozdeji("dily");
+      const fa = fakturyDilu(d.id);
+      if (!confirm(`Opravdu smazat díl „${d.nazev || "bez názvu"}“?${fa.length ? `\n\nSmaže se i ${fa.length === 1 ? "nahraná faktura" : `${fa.length} nahrané faktury`} k tomuto dílu.` : ""}`)) return;
+      E.dily.splice(+b.dataset.smazDil, 1); smazatFaktury(fa); vykresliDily(); vykresliSouhrnZakazky(); ulozitPozdeji("dily");
     });
     const plb = el.querySelector("#parts-list");
     if (plb) plb.onclick = async () => {
@@ -2808,8 +2816,9 @@
     const sd = el.querySelector("#smazat-dily");
     if (sd) sd.onclick = () => {
       const n = E.dily.length;
-      if (!confirm(`Opravdu smazat všechny díly této zakázky (${n} ${n === 1 ? "díl" : n < 5 ? "díly" : "dílů"})?\n\nUž vystavené nabídky a faktury zůstanou beze změny.`)) return;
-      E.dily = []; vykresliDily(); vykresliSouhrnZakazky(); ulozitPozdeji("dily");
+      const fa = E.dily.flatMap(d => fakturyDilu(d.id));
+      if (!confirm(`Opravdu smazat všechny díly této zakázky (${n} ${n === 1 ? "díl" : n < 5 ? "díly" : "dílů"})?${fa.length ? `\n\nSmažou se i přijaté faktury nahrané k dílům (${fa.length}).` : ""}\n\nUž vystavené nabídky a faktury zůstanou beze změny.`)) return;
+      smazatFaktury(fa); E.dily = []; vykresliDily(); vykresliSouhrnZakazky(); ulozitPozdeji("dily");
       hlaska(`Smazáno ${n} ${n === 1 ? "díl" : n < 5 ? "díly" : "dílů"}.`);
     };
     el.querySelector("#import-dilu").onclick = () => { E.imp = E.imp ? null : { text: "", vysledek: null }; vykresliDily(); if (E.imp) el.querySelector("#imp-text")?.focus(); };

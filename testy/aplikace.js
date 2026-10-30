@@ -550,6 +550,15 @@ const server = http.createServer((q, r) => {
     "přijatá faktura se nahraje k danému dílu (druh nakupni_doklad, skrytá pro zákazníka) a zobrazí se pod jeho řádkem, ne dole");
   await p.click('#dily .dil[data-i="0"] [data-faktura-smazat]');
   await p.waitForFunction(() => !document.querySelector("#dily [data-faktura-otevrit]"));
+  // smazání dílu smaže i jeho fakturu
+  const pocetDilu = await p.locator("#dily .dil[data-i]").count();
+  await p.click('#pridat-dil');
+  const posl = pocetDilu;
+  await p.setInputFiles(`#dily [data-faktura-dil="${posl}"]`, [{ name: "Faktura_k_mazani.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF") }]);
+  await p.waitForSelector(`#dily .dil[data-i="${posl}"] .dil-faktury`, { timeout: 15000 });
+  await p.click(`#dily [data-smaz-dil="${posl}"]`);
+  await p.waitForFunction(() => window.__ULOZENO__.tabulky.soubory.filter(f => f.druh === "nakupni_doklad").length === 0);
+  kontrola(await p.locator("#dily .dil[data-i]").count() === pocetDilu && !(await p.textContent("#faktury-dilu")).trim(), "smazáním dílu se smaže i jeho nahraná faktura");
   await p.click("#sekce-archiv > summary");
   // archiv (legacy): původní PDF jen jako příloha zakázky
   await p.setInputFiles("#archiv-nahrat", [{ name: "Zakazkovy_list_stary.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF") }]);
