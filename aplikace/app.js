@@ -1725,14 +1725,17 @@
   }
   // F5: poznámky (k zakázce a k autu) – sbalené, ukládají se samy
   const nahledPoznamky = t => { const r = String(t || "").trim().split("\n")[0]; return r ? esc(r.length > 60 ? r.slice(0, 60) + "…" : r) : '<span class="mutted">žádné</span>'; };
+  // pole poznámky tak vysoké, aby byla vidět celá (dlouhé poznámky z Apple Poznámek), max. 30 řádků – dál se roluje
+  const radkuPoznamky = t => Math.min(30, Math.max(4, String(t || "").split("\n").reduce((n, r) => n + Math.max(1, Math.ceil(r.length / 90)), 0) + 1));
   function blokPoznamek(pole, zid) {
     const n = pole.filter(x => String(x.hodnota || "").trim()).length;
     return `<details class="karta poznamky"${zid ? ` id="sekce-poznamky" data-sbal${sbalOpen(zid, "sekce-poznamky")}` : ""}><summary><b>📝 Poznámky</b> <span class="mutted">${n ? pole.filter(x => String(x.hodnota || "").trim()).map(x => nahledPoznamky(x.hodnota)).join(" · ") : "žádné"}</span></summary>
-      ${pole.map(x => `<label class="pole" style="margin-top:12px">${x.popis}<textarea class="vstup" rows="3" data-poznamka="${x.tabulka}" data-id="${x.id}" placeholder="${x.napoveda || ""}">${esc(x.hodnota || "")}</textarea></label>`).join("")}
+      ${pole.map(x => `<label class="pole" style="margin-top:12px">${x.popis}<textarea class="vstup poznamka-text" rows="${radkuPoznamky(x.hodnota)}" data-poznamka="${x.tabulka}" data-id="${x.id}" placeholder="${x.napoveda || ""}">${esc(x.hodnota || "")}</textarea></label>`).join("")}
       <span class="napoveda" data-stav-poznamek></span></details>`;
   }
   function navazPoznamky(root, potom) {
     root.querySelectorAll("textarea[data-poznamka]").forEach(t => {
+      t.addEventListener("input", () => { const r = radkuPoznamky(t.value); if (r > t.rows) t.rows = r; });
       const st = root.querySelector("[data-stav-poznamek]");
       t.addEventListener("input", () => { st.textContent = "Ukládám…";
         odlozitZmenu(800, t.dataset.poznamka, t.dataset.id, () => ({ poznamky: t.value.trim() || null }), () => st, () => potom?.(t.dataset.poznamka, t.value)); });

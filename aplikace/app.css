@@ -639,3 +639,6 @@ details.sbalovaci[open] > summary { margin-bottom: 14px; }
 .dil-sklad.zapnuto { color: var(--zelena, #1e7a4c); }
 .typicke-dily { margin-top: 12px; }
 .typicke-dily .cip { cursor: pointer; }
+/* poznámky: celá šířka, čitelné odrážky a odsazení (přenesené z Apple Poznámek) */
+details.poznamky .pole { display: flex; flex-direction: column; }
+textarea.poznamka-text { width: 100%; max-width: none; resize: vertical; font-size: 16px; line-height: 1.5; tab-size: 4; white-space: pre-wrap; min-height: 6em; }
