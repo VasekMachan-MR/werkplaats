@@ -1521,7 +1521,7 @@
       <div class="fajfka">✓</div>
       <div class="mutted">${esc(nazev)} uložen${["nabidka", "faktura", "zalohova"].includes(pdf?.druh) ? "a" : ""}</div>
       <div class="velke-cislo">${pdf ? esc(pdf.cislo) : ""}</div>
-      ${pdf?.cekaPodpis ? `<div class="info pozor" style="text-align:left">Zákazník ještě nepodepsal. Pošlete mu odkaz na E-servisku – zakázkový list tam podepíše prstem z domu.
+      ${pdf?.cekaPodpis ? `<div class="info pozor" style="text-align:left">Zákazník ještě nepodepsal. Pošlete mu odkaz na E-servisku – ${pdf.druh === "faktura" ? "fakturu" : pdf.druh === "zalohova" ? "zálohovou fakturu" : "zakázkový list"} tam podepíše prstem z domu.
         <div class="radek-tlacitek" style="margin-top:10px"><button class="tl tl-hlavni" id="odkaz-podpis">🔗 Poslat odkaz k podpisu</button></div></div>`
         : `<p class="mutted">PDF je uložené u zakázky. Zákazníkovi ho můžete hned poslat.</p>`}
       <div class="radek-tlacitek">
@@ -1531,7 +1531,7 @@
       </div></div>`;
     if (!pdf) return;
     const op = app.querySelector("#odkaz-podpis");
-    if (op) op.onclick = async () => { try { poslatOdkazKPodpisu(await db.detail(id)); } catch (e) { hlaska(chybaText(e), true); } };
+    if (op) op.onclick = async () => { try { poslatOdkazKPodpisu(await db.detail(id), pdf); } catch (e) { hlaska(chybaText(e), true); } };
     const soubory = [pdf, ...(pdf.prilohy || [])].map(x => new File([x.bytes], x.nazev, { type: "application/pdf" }));
     if (soubory.length > 1) app.querySelector("#otevrit").insertAdjacentHTML("afterend", soubory.slice(1).map((f, i) => `<button class="tl tl-velke" data-priloha="${i + 1}">Otevřít ${/parts-list/.test(f.name) ? "parts list" : "přílohu"}</button>`).join(""));
     app.querySelector("#otevrit").onclick = () => window.open(URL.createObjectURL(soubory[0]), "_blank");
@@ -1674,6 +1674,8 @@
   }
   // zakázkový list (poslední verze), který čeká na podpis zákazníka z E-servisky
   const cekajiciList = doklady => { const zl = (doklady || []).filter(d => d.druh === "zakazkovy_list").sort((a, b) => (b.verze || 1) - (a.verze || 1))[0]; return zl?.data?.cekaPodpis ? zl : null; };
+  // faktury / zálohové faktury vystavené s „Podepíše později“ (čekající i už podepsané v E-servisce)
+  const cekajiciFaktury = doklady => (doklady || []).filter(d => (d.druh === "faktura" || d.druh === "zalohova") && d.data?.cekaPodpis);
   const dalkovyPodpis = d => { const x = d?.dalkove_podpisy; return Array.isArray(x) ? x[0] || null : x || null; };
   const blobNaDataUrl = b => new Promise((ok, chyba) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = chyba; r.readAsDataURL(b); });
   async function vystavitPodepsanyList(z, zl) {
@@ -1701,16 +1703,23 @@
   }
   // iPhone/iPad: nabídka Sdílet (WhatsApp, Zprávy, e-mail…); jinak zkopírovat
   // odkaz k podpisu: připravený e-mail zákazníkovi (odešle se z poštovní aplikace – účet info@mercedesrest.cz); bez e-mailu sdílení jako dřív
-  function poslatOdkazKPodpisu(z) {
+  function poslatOdkazKPodpisu(z, d = null) {
     const v = z.vozidla || {}, c = z.zakaznici || {}, en = z.jazyk === "en", url = odkazEservisky(v);
     const email = String(c.email || "").trim();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { hlaska("Zákazník nemá e-mail – posílám odkaz jinak (WhatsApp, zprávy…)."); return sdiletOdkazEservisky(v, en, true); }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { hlaska("Zákazník nemá e-mail – posílám odkaz jinak (WhatsApp, zprávy…)."); return sdiletOdkazEservisky(v, en, d?.druh || true); }
     // typové označení jako v E-servisce: 126 → W126, 107 → R107, 124 C → C124 (bez motorizace a obchodního označení)
     const t = String(v.typ || "").toUpperCase().replace(/\s+/g, ""), m = t.match(/^([WRC])?(\d{3})/);
     const typ = m ? (m[1] || (m[2] === "107" ? "R" : m[2] === "124" && /C$/.test(t) ? "C" : "W")) + m[2] : String(v.typ || "").trim();
     const vuz = ["Mercedes-Benz", typ].filter(Boolean).join(" "), kdo = uzivatel?.jmeno || "Václav Macháň";
-    const predmet = en ? `Work order no. ${z.cislo} ${vuz}` : `Zakázkový list č. ${z.cislo} ${vuz}`;
-    const text = en
+    // faktura / zálohová faktura vystavená s „Podepíše později“ – stejný styl e-mailu, jiný doklad (Vašek 30.10.2026)
+    const fa = d?.druh === "faktura" || d?.druh === "zalohova", zal = d?.druh === "zalohova", cislo = fa ? d.cislo : z.cislo;
+    const co = en ? (zal ? "advance invoice" : "invoice") : null;
+    const predmet = fa ? (en ? `${zal ? "Advance invoice" : "Invoice"} no. ${cislo} ${vuz}` : `${zal ? "Zálohová faktura" : "Faktura"} č. ${cislo} ${vuz}`)
+      : en ? `Work order no. ${z.cislo} ${vuz}` : `Zakázkový list č. ${z.cislo} ${vuz}`;
+    const text = fa ? (en
+      ? `Dear Sir or Madam,\n\nplease find below the link to sign the ${co} for your ${vuz} (${co} no. ${cislo}, order no. ${z.cislo}). After opening the link you can view the ${co} in a preview. Please check and sign it.\n\nYou will then find the signed version in your e-service book in the section „Visit documents“ of the respective visit.\n\nIn the service book you can also see the photos and the list of work carried out, the parts used and further information about your car.\n\nLink to sign the ${co} and to your e-service book:\n\n${url}\n\nThank you for your trust.\n\n${kdo}\nM|R`
+      : `Dobrý den,\n\nzasílám odkaz pro podepsání ${zal ? "zálohové faktury" : "faktury"} k vašemu vozu ${vuz} (${zal ? "zálohová faktura" : "faktura"} č. ${cislo}, zakázka č. ${z.cislo}). ${zal ? "Zálohovou fakturu" : "Fakturu"} si po otevření odkazu zobrazíte v náhledu. Prosím o kontrolu a podpis.\n\nPodepsanou verzi pak naleznete v e-servisní knížce v sekci „Dokumenty k návštěvě“ u dané návštěvy.\n\nV servisní knížce najdete také fotky a přehled provedených prací, seznam použitých dílů a další informace o vašem voze.\n\nOdkaz k podpisu a do e-servisní knížky:\n\n${url}\n\nDěkujeme za důvěru.\n\n${kdo}\nM|R`)
+      : en
       ? `Dear Sir or Madam,\n\nplease find below the link to sign the work order for your ${vuz} (order no. ${z.cislo}). After opening the link you can view the work order in a preview. Please check and sign it.\n\nYou will then find the signed version in your e-service book under “Documents for this visit” for the respective visit.\n\nIn the e-service book you can follow the progress and photos of the work, the list of parts and further information. The content will grow as we work on the car.\n\nLink to sign the work order and to your e-service book:\n\n${url}\n\nThank you for your trust, we look forward to working with you.\n\n${kdo}\nM|R`
       : `Dobrý den,\n\nzasílám odkaz pro podepsání zakázkového listu k vašemu vozu ${vuz} (zakázka č. ${z.cislo}). Zakázkový list si po otevření odkazu zobrazíte v náhledu. Prosím o kontrolu a podpis.\n\nPodepsanou verzi pak naleznete v e-servisní knížce v sekci „Dokumenty k návštěvě“ u dané návštěvy.\n\nV servisní knížce můžete sledovat průběh a fotky prací, seznam dílů a další informace. Obsah bude postupně přibývat, jak se na autě bude pracovat.\n\nOdkaz k podpisu a do e-servisní knížky:\n\n${url}\n\nDěkujeme za důvěru a těšíme se na spolupráci.\n\n${kdo}\nM|R`;
     const u = `mailto:${email}?subject=${encodeURIComponent(predmet)}&body=${encodeURIComponent(text).replace(/%0A/g, "%0D%0A")}`;
@@ -1718,7 +1727,8 @@
   }
   async function sdiletOdkazEservisky(v, en = false, kPodpisu = true) {
     const url = odkazEservisky(v), auto = [v.typ, v.model].filter(Boolean).join(" ");
-    const titul = kPodpisu ? (en ? `Please sign the work order for your ${auto}: ` : `Prosím o podpis zakázkového listu k vašemu vozu ${auto}: `) : `E-servisní knížka – ${auto}`;
+    const fa = kPodpisu === "faktura" ? ["invoice", "faktury"] : kPodpisu === "zalohova" ? ["advance invoice", "zálohové faktury"] : ["work order", "zakázkového listu"];
+    const titul = kPodpisu ? (en ? `Please sign the ${fa[0]} for your ${auto}: ` : `Prosím o podpis ${fa[1]} k vašemu vozu ${auto}: `) : `E-servisní knížka – ${auto}`;
     try { if (navigator.share) { await navigator.share({ title: titul, text: titul, url }); return; } } catch (e) { if (e?.name === "AbortError") return; }
     try { await navigator.clipboard.writeText(url); hlaska("Odkaz na E-servisku zkopírován – vložte ho zákazníkovi do zprávy."); }
     catch (e) { prompt("Odkaz na E-servisku:", url); }
@@ -1764,6 +1774,10 @@
           return dp ? `<div class="info ok-podpis"><span>✍️ Zákazník podepsal zakázkový list v E-servisce ${kdy}.</span>
               <button class="tl tl-hlavni" id="vystavit-podepsany">Vystavit podepsaný list</button></div>`
             : `<div class="info pozor"><span>⏳ Zakázkový list ${esc(zl.cislo)} čeká na podpis zákazníka v E-servisce.</span>${v.vin ? ` <button class="tl tl-male" id="odkaz-k-podpisu">🔗 Poslat odkaz k podpisu</button>` : ""}</div>`; })()}
+        ${cekajiciFaktury(doklady).map(d => { const dp = dalkovyPodpis(d), co = d.druh === "zalohova" ? "Zálohová faktura" : "Faktura";
+          const kdy = dp ? esc(new Date(dp.podepsano).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })) : "";
+          if (dp) return `<div class="info ok-podpis"><span>✍️ Zákazník podepsal ${co === "Faktura" ? "fakturu" : "zálohovou fakturu"} ${esc(d.cislo)} v E-servisce ${kdy}.${dp.vystaveny_doklad_id ? " Podepsané PDF je uložené u dokladu i v E-servisce." : " Podpis je uložený, do PDF se ho vložit nepodařilo."}</span></div>`;
+          return `<div class="info pozor"><span>⏳ ${co} ${esc(d.cislo)} čeká na podpis zákazníka v E-servisce.</span>${v.vin ? ` <button class="tl tl-male" data-odkaz-faktura="${d.id}">🔗 Poslat odkaz k podpisu</button>` : ""}</div>`; }).join("")}
         <div class="doklady">${doklady.map(d => `
           <div class="doklad"><span><b>${esc(d.cislo)}</b> · ${DRUHY[d.druh] || d.druh}${d.celkem != null ? ` · <b>${kc(d.celkem)}</b>` : ""}<br>
             <small class="mutted">vystaveno ${datumCz(d.vystaveno)}${d.splatnost ? ` · ${d.druh === "nabidka" ? "platnost" : "splatnost"} ${datumCz(d.splatnost)}` : ""}${["faktura", "zalohova", "opravny"].includes(d.druh) ? (d.zaplaceno ? ` · <b style="color:var(--zelena)">${d.druh === "opravny" && Number(d.celkem) < 0 ? "vráceno" : "zaplaceno"} ${datumCz(d.zaplaceno)}</b>` : Number(d.celkem) < 0 ? " · nevráceno" : " · nezaplaceno") : ""}</small></span>
@@ -1823,11 +1837,13 @@
       document.getElementById("sekce-fotky-detail")?.scrollIntoView({ behavior: "smooth", block: "start" });
       nahratFotkyKZakazce(f);
     }));
-    E.cekaNaPodpis = !!cekajiciList(doklady) && !dalkovyPodpis(cekajiciList(doklady));
+    const cekaF = cekajiciFaktury(doklady).find(d => !dalkovyPodpis(d));
+    E.cekaNaPodpis = cekajiciList(doklady) && !dalkovyPodpis(cekajiciList(doklady)) ? "zakazkovy_list" : cekaF ? cekaF.druh : false;
     const sd = app.querySelector("#sdilet-eservisku");
     if (sd) sd.onclick = () => sdiletOdkazEservisky(v, z.jazyk === "en", E.cekaNaPodpis);
     const okp = app.querySelector("#odkaz-k-podpisu");
     if (okp) okp.onclick = () => poslatOdkazKPodpisu(z);
+    app.querySelectorAll("[data-odkaz-faktura]").forEach(b => b.onclick = () => poslatOdkazKPodpisu(z, doklady.find(d => d.id === b.dataset.odkazFaktura)));
     const vpl = app.querySelector("#vystavit-podepsany");
     if (vpl) vpl.onclick = async () => { vpl.disabled = true; try { await vystavitPodepsanyList(z, cekajiciList(doklady)); } finally { if (vpl.isConnected) vpl.disabled = false; } };
     vykresliFotkyDetail();
@@ -2667,6 +2683,8 @@
       : { vystaveno: dnes(), prevzeti: dnes(), km: z.km_predani ?? z.km_prijem ?? "", nadrz: z.nadrz_predani || z.nadrz_prijem || "1/2", tp: z.tp_prilozen ?? true,
           foto: false, jizda: true, kola: false, stav: z.stav_predani?.length ? [...z.stav_predani] : [""] };
     const podpisZakPovinny = druh === "predavaci_protokol";
+    // faktura / zálohová: zákazník spěchá nebo auto předává někdo jiný → podepíše z domu v E-servisce (Vašek 30.10.2026)
+    const lzePozdeji = (druh === "faktura" || druh === "zalohova") && !!z.vozidla?.vin;
     const titulek = `${NAZEV_DOKLADU.cs[druh]} ${cislo}`;
 
     app.innerHTML = `
@@ -2727,6 +2745,7 @@
       <div class="akce-dole"><div class="vnitrek">
         <a class="tl" href="#/zakazka/${id}">← Zpět</a>
         <span class="co-chybi" id="co-chybi" hidden></span>
+        ${lzePozdeji ? `<button type="button" class="tl tl-velke" id="pozdeji" disabled title="Zákazník spěchá nebo auto předává někdo jiný: faktura se vystaví bez jeho podpisu a zákazník ji podepíše z domu v E-servisce">✍️ Podepíše později</button>` : ""}
         <button type="button" class="tl tl-hlavni tl-velke" id="vystavit" disabled>Vystavit ${esc(cislo)}</button>
       </div></div>`;
 
@@ -2777,7 +2796,8 @@
     const kontrola = () => {
       const ku = app.querySelector("#k-uhrade"); if (ku) ku.textContent = kc(druh === "opravny" ? celkemOpravy() : s.celkem + odecty().reduce((a, o) => a + o.castka, 0));
       const ch = chybi(), b = app.querySelector("#vystavit"), i = app.querySelector("#co-chybi");
-      b.disabled = ch.length > 0; i.hidden = !ch.length; i.textContent = ch.length ? "Chybí: " + ch.join(", ") : "";
+      b.disabled = ch.length > 0; i.hidden = !ch.length;
+      const pz = app.querySelector("#pozdeji"); if (pz) pz.disabled = ch.length > 0; i.textContent = ch.length ? "Chybí: " + ch.join(", ") : "";
       i.dataset.kratce = ch.length ? `Chybí ${ch.length} ${ch.length === 1 ? "údaj" : ch.length < 5 ? "údaje" : "údajů"}` : ""; };
     let cekani = null;
     const obnov = () => { clearTimeout(cekani); cekani = setTimeout(async () => { try { await vykresliSablonu(iframe, sablona, data(), jazyk); } catch (e) { hlaska("Náhled se nepodařil: " + chybaText(e), true); } kontrola(); }, 250); };
@@ -2831,10 +2851,13 @@
     await vykresliSablonu(iframe, sablona, data(), jazyk); kontrola();
 
     let nabidkaVystaveni = null;
-    app.querySelector("#vystavit").onclick = async () => {
-      if (chybi().length) return;
+    let bezi = false;
+    const vystavit = async (pozdeji = false) => {
+      if (chybi().length || bezi) return;
+      if (pozdeji && !pad.prazdny()) return hlaska("Zákazník už se podepsal – použijte „Vystavit“ (nebo podpis smažte).", true);
       const kUhrade = druh === "zalohova" ? cisloZ(f.castka) : druh === "opravny" ? celkemOpravy() : s.celkem + odecty().reduce((a, o) => a + o.castka, 0);
-      if ((druh === "faktura" || druh === "zalohova") && !confirm(`Vystavit ${druh === "zalohova" ? "zálohovou fakturu" : "fakturu"} ${cislo} na ${kc(kUhrade)}? Vydaná faktura se už nedá změnit (oprava jen opravným dokladem).`)) return;
+      if ((druh === "faktura" || druh === "zalohova") && !confirm(`Vystavit ${druh === "zalohova" ? "zálohovou fakturu" : "fakturu"} ${cislo} na ${kc(kUhrade)}${pozdeji ? " bez podpisu zákazníka" : ""}? Vydaná faktura se už nedá změnit (oprava jen opravným dokladem).${pozdeji ? "\n\nZákazník ji podepíše z domu v E-servisce (pošlete mu odkaz). Podpis se pak do faktury doplní sám." : ""}`)) return;
+      bezi = true;
       if (druh === "opravny" && !confirm(`Vystavit opravný doklad ${cislo} k dokladu ${f.opravuje} na ${kc(kUhrade)}? Vydaný opravný doklad se už nedá změnit ani smazat.`)) return;
       const p = prekryv("Ukládám…");
       try {
@@ -2843,9 +2866,12 @@
         const nabidka_id = druh === "nabidka" ? nabidkaVystaveni : null;     // při opakovaném pokusu stejná nabídka
         const pl = dataPartsListu(z, dily, true, { druh, cislo });
         const prilohy = (druh === "nabidka" || druh === "faktura") && pl.dily.length ? [{ sablona: "parts-list.html", data: pl, nazev: "parts list", slug: "parts-list" }] : [];
-        await ulozitDoklad({ iframe, sablona, data: druh === "opravny" ? { ...data(), opravuje: f.opravuje } : data(), jazyk, zakazka_id: id, vozidlo_id: z.vozidlo_id || z.vozidla?.id, cisloZakazky: z.cislo, druh, verze, prilohy,
+        const dd = druh === "opravny" ? { ...data(), opravuje: f.opravuje } : data();
+        if (pozdeji) { delete dd.podpisZakaznik; dd.cekaPodpis = true; }
+        await ulozitDoklad({ iframe, sablona, data: dd, jazyk, zakazka_id: id, vozidlo_id: z.vozidlo_id || z.vozidla?.id, cisloZakazky: z.cislo, druh, verze, prilohy,
           vystaveno: druh === "predavaci_protokol" ? f.prevzeti : f.vystaveno, splatnost: ["faktura", "zalohova", "opravny"].includes(druh) ? f.splatnost : druh === "nabidka" ? f.platnost : null,
-          podpisZak: pad.png(), jmenoZakaznika: z.zakaznici?.jmeno || "", vyhPodepsalNaIpadu: !vyh, nabidka_id, prubeh: p.text });
+          podpisZak: pozdeji ? null : pad.png(), jmenoZakaznika: z.zakaznici?.jmeno || "", vyhPodepsalNaIpadu: !vyh, nabidka_id, prubeh: p.text });
+        if (pozdeji && posledniPdf) posledniPdf.cekaPodpis = true;
         // stav zakázky
         if (druh === "nabidka" && ["prijato", "poptavka"].includes(z.stav)) await db.upravit("zakazky", id, { stav: "nabidka" });
         if (druh === "faktura" && !["zaplaceno", "predano"].includes(z.stav)) await db.upravit("zakazky", id, { stav: "fakturovano" });
@@ -2856,7 +2882,10 @@
         }
         p.zavri(); location.hash = `#/hotovo/${id}`;
       } catch (e) { p.zavri(); hlaska("Vystavení se nepovedlo: " + chybaText(e), true, 8000); }
+      finally { bezi = false; }
     };
+    app.querySelector("#vystavit").onclick = () => vystavit(false);
+    const pozdejiTl = app.querySelector("#pozdeji"); if (pozdejiTl) pozdejiTl.onclick = () => vystavit(true);
   }
 
   /* ================= přehled dokladů (všechny zakázky) ================= */

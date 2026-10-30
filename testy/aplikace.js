@@ -224,10 +224,26 @@ const server = http.createServer((q, r) => {
   await p.click("text=💰 Zálohová faktura");
   await p.waitForSelector("#vystavit:not([disabled])");
   kontrola(await p.inputValue('[data-d="castka"]') === "13325" && /dle cenové nabídky 7377-2/.test(await p.inputValue('[data-d="popis"]')), "zálohová: předvyplněno 13 325 Kč a text „Záloha na materiál dle cenové nabídky 7377-2“");
-  await p.click("#vystavit");
+  // zákazník spěchá → „Podepíše později“: záloha se vystaví bez jeho podpisu a podepíše ji v E-servisce
+  kontrola(await p.isEnabled("#pozdeji"), "zálohová: tlačítko „✍️ Podepíše později“");
+  await p.click("#pozdeji");
   await p.waitForSelector(".velke-cislo >> text=7377-5");
+  kontrola(/zálohovou fakturu tam podepíše/.test(await p.textContent(".hotovo")) && await p.isVisible("#odkaz-podpis"), "po vystavení: záloha čeká na podpis + „Poslat odkaz k podpisu“");
+  kontrola(await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === "7377-5"); return d.data.cekaPodpis === true && !T.podpisy.some(x => x.doklad_id === d.id && x.role === "zakaznik"); }),
+    "záloha uložená s „čeká na podpis“ a bez podpisu zákazníka");
   await p.click("text=Detail zakázky");
   await p.waitForSelector("[data-zaplaceno]");
+  kontrola(/Zálohová faktura 7377-5 čeká na podpis zákazníka/.test(await p.textContent("body")), "Doklady: „Zálohová faktura 7377-5 čeká na podpis zákazníka v E-servisce“");
+  await p.evaluate(() => { window.__MAILTO__ = u => { window.__MAIL__ = u; }; window.__MAIL__ = null; });
+  await p.click("[data-odkaz-faktura]");
+  { const m = decodeURIComponent(await p.evaluate(() => window.__MAIL__ || ""));
+    kontrola(/subject=Zálohová faktura č\. 7377-5 Mercedes-Benz W126&/.test(m) && /podepsání zálohové faktury k vašemu vozu Mercedes-Benz W126 \(zálohová faktura č\. 7377-5, zakázka č\. 7377\)/.test(m) && /e-serviska\?k=[0-9a-f]{20}/.test(m),
+      "e-mail k podpisu zálohy: předmět „Zálohová faktura č. 7377-5 Mercedes-Benz W126“, text o záloze, odkaz do E-servisky"); }
+  await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === "7377-5");   // zákazník podepsal v E-servisce (server vloží podpis do PDF)
+    T.dalkove_podpisy.push({ id: "dp-za", doklad_id: d.id, soubor_id: null, podepsano: new Date().toISOString(), vystaveny_doklad_id: d.id }); });
+  await p.evaluate(() => { const h = location.hash; location.hash = "#/zakazky"; location.hash = h; });
+  await p.waitForSelector("[data-zaplaceno]");
+  kontrola(/Zákazník podepsal zálohovou fakturu 7377-5 v E-servisce/.test(await p.textContent("body")) && await p.locator("[data-odkaz-faktura]").count() === 0, "po podpisu v E-servisce: „Zákazník podepsal zálohovou fakturu…“, bez odkazu");
   // nezaplacená záloha se do faktury sama neodečte (jinak by chyběly peníze)
   await p.click("text=💳 Faktura"); await p.waitForSelector('[data-odecist="7377-5"]');
   kontrola(!(await p.isChecked('[data-odecist="7377-5"]')), "faktura: nezaplacená záloha není předvybraná k odečtu");
@@ -732,7 +748,7 @@ const server = http.createServer((q, r) => {
     await p.evaluate(id => { location.hash = "#/zakazky"; location.hash = "#/zakazka/" + id; }, zid);
     await p.waitForSelector("#vystavit-podepsany"); await p.click("#vystavit-podepsany");
     await p.waitForSelector("#hlaska >> text=Podepsaný zakázkový list");
-    const r = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === "7377-1-2"); return d && { verze: d.verze, pod: d.data.podepsanoDalkove, ceka: d.data.cekaPodpis, zp: T.podpisy.filter(x => x.doklad_id === d.id).map(x => x.role + ":" + x.zpusob).join(","), dp: T.dalkove_podpisy[0].vystaveny_doklad_id === d.id }; });
+    const r = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === "7377-1-2"); return d && { verze: d.verze, pod: d.data.podepsanoDalkove, ceka: d.data.cekaPodpis, zp: T.podpisy.filter(x => x.doklad_id === d.id).map(x => x.role + ":" + x.zpusob).join(","), dp: T.dalkove_podpisy.find(x => x.id === "dp1").vystaveny_doklad_id === d.id }; });
     kontrola(r && r.verze === 2 && /Podepsáno online v E-servisce/.test(r.pod) && !r.ceka && /zakaznik:dalkove/.test(r.zp) && r.dp, "z podpisu v E-servisce se vystaví podepsaný list 7377-1-2 (podpis zákazníka + poznámka o el. podpisu)");
     kontrola(await p.locator("#vystavit-podepsany, #odkaz-k-podpisu").count() === 0, "po vystavení už zakázka na podpis nečeká");
     // nový postup: server podpis rovnou vloží do PDF (vystaveny_doklad_id = sám doklad) → žádné „Vystavit“

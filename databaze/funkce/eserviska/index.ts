@@ -128,15 +128,17 @@ Deno.serve(async req => {
       posledni: { datum, km, cislo: z.cislo }, pristi: { datum: pDatum, km: pKm }, stav: po ? "po" : brzy ? "brzy" : "ok" };
   });
 
-  // zakázkový list čekající na podpis zákazníka (jen současný majitel, jen poslední verze listu rozpracované zakázky)
+  // doklad čekající na podpis zákazníka (jen současný majitel): zakázkový list (poslední verze, rozpracovaná zakázka)
+  // nebo faktura / zálohová faktura vystavená s „Podepíše později“ (Vašek 30.10.2026 – i u hotové zakázky)
   let podpis: any = null;
+  const ceka = (d: any) => d && d.data?.cekaPodpis && !(d.podpisy || []).some((x: any) => x.role === "zakaznik")
+    && !(Array.isArray(d.dalkove_podpisy) ? d.dalkove_podpisy[0] : d.dalkove_podpisy);   // už podepsáno – podepsané PDF je rovnou v Dokumentech k návštěvě
   for (const z of (zak || [])) {
-    if (!aktualni || z.zakaznik_id !== aktualni.zakaznik_id || HOTOVO.includes(z.stav)) continue;
-    const zl = (dok || []).filter((d: any) => d.zakazka_id === z.id && d.druh === "zakazkovy_list")[0] as any;
-    if (!zl || !zl.data?.cekaPodpis || (zl.podpisy || []).some((x: any) => x.role === "zakaznik")) continue;
-    const dp = Array.isArray(zl.dalkove_podpisy) ? zl.dalkove_podpisy[0] : zl.dalkove_podpisy;
-    if (dp) continue;   // už podepsáno – podepsaný list je rovnou v Dokumentech k návštěvě
-    podpis = { cislo: zl.cislo, zakazka: z.cislo, url: url[zl.soubory?.klic] || null, podepsano: dp?.podepsano || null, jazyk: zl.jazyk || null };
+    if (!aktualni || z.zakaznik_id !== aktualni.zakaznik_id) continue;
+    const zl = HOTOVO.includes(z.stav) ? null : (dok || []).filter((d: any) => d.zakazka_id === z.id && d.druh === "zakazkovy_list")[0] as any;
+    const d = ceka(zl) ? zl : (dok || []).find((x: any) => x.zakazka_id === z.id && (x.druh === "faktura" || x.druh === "zalohova") && ceka(x)) as any;
+    if (!d) continue;
+    podpis = { cislo: d.cislo, druh: d.druh, zakazka: z.cislo, url: url[d.soubory?.klic] || null, podepsano: null, jazyk: d.jazyk || null };
     break;
   }
   // starý zakázkový list (PDF v Ostatních dokumentech), který dílna poslala k podpisu a ještě nemá podepsanou kopii
@@ -159,7 +161,7 @@ Deno.serve(async req => {
   });
 });
 
-// POST {k, cislo, podpis: "data:image/png;base64,…", souhlas: true} – zákazník dopodepíše zakázkový list z domu
+// POST {k, cislo, druh?, podpis: "data:image/png;base64,…", souhlas: true} – zákazník dopodepíše zakázkový list z domu
 async function podepsat(req: Request, sb: any, odp: (s: number, o: unknown) => Response) {
   let b: any; try { b = await req.json(); } catch { return odp(400, { chyba: "spatny-pozadavek" }); }
   const kod = String(b?.k || "").replace(/[^0-9a-zA-Z_-]/g, "");
@@ -170,12 +172,15 @@ async function podepsat(req: Request, sb: any, odp: (s: number, o: unknown) => R
   const { data: v } = await sb.from("vozidla").select("id").eq("eserviska_kod", kod).maybeSingle();
   if (!v) return odp(404, { chyba: "nenalezeno" });
   if (b?.archiv) return podepsatArchiv(req, sb, odp, v, String(b.archiv), png);
-  const { data: d } = await sb.from("doklady").select("id,cislo,druh,verze,data,zakazka_id,zakazky!inner(id,cislo,stav,vozidlo_id,zakaznik_id),podpisy(role),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id)")
-    .eq("cislo", String(b?.cislo || "")).eq("druh", "zakazkovy_list").maybeSingle();
-  if (!d || d.zakazky?.vozidlo_id !== v.id || !d.data?.cekaPodpis || HOTOVO.includes(d.zakazky.stav)) return odp(404, { chyba: "nenalezeno" });
-  // podepsat jde jen poslední verzi listu (tu, kterou zákazník v E-servisce vidí)
-  const { data: novejsi } = await sb.from("doklady").select("id").eq("zakazka_id", d.zakazka_id).eq("druh", "zakazkovy_list").gt("verze", d.verze ?? 1).limit(1);
-  if (novejsi?.length) return odp(404, { chyba: "nenalezeno" });
+  const druh = ["faktura", "zalohova"].includes(b?.druh) ? b.druh : "zakazkovy_list", jeList = druh === "zakazkovy_list";
+  const { data: d } = await sb.from("doklady").select("id,cislo,druh,verze,data,zakazka_id,zamceno,zakazky!inner(id,cislo,stav,vozidlo_id,zakaznik_id),podpisy(role),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id)")
+    .eq("cislo", String(b?.cislo || "")).eq("druh", druh).maybeSingle();
+  if (!d || !d.zamceno || d.zakazky?.vozidlo_id !== v.id || !d.data?.cekaPodpis || (jeList && HOTOVO.includes(d.zakazky.stav))) return odp(404, { chyba: "nenalezeno" });
+  // zakázkový list: podepsat jde jen poslední verzi (tu, kterou zákazník v E-servisce vidí)
+  if (jeList) {
+    const { data: novejsi } = await sb.from("doklady").select("id").eq("zakazka_id", d.zakazka_id).eq("druh", "zakazkovy_list").gt("verze", d.verze ?? 1).limit(1);
+    if (novejsi?.length) return odp(404, { chyba: "nenalezeno" });
+  }
   const { data: maj } = await sb.from("vlastnictvi").select("zakaznik_id").eq("vozidlo_id", v.id).is("vlastni_do", null).maybeSingle();
   if (!maj || maj.zakaznik_id !== d.zakazky.zakaznik_id) return odp(404, { chyba: "nenalezeno" });
   if ((d.podpisy || []).some((x: any) => x.role === "zakaznik") || (Array.isArray(d.dalkove_podpisy) ? d.dalkove_podpisy.length : d.dalkove_podpisy)) return odp(409, { chyba: "uz-podepsano" });
@@ -195,26 +200,32 @@ async function podepsat(req: Request, sb: any, odp: (s: number, o: unknown) => R
 }
 
 // podpis zákazníka do PDF (stránka 1, políčko „Převzal“ nad tečkami – stejné místo v šabloně i ve starých listech z Excelu)
-async function razitkoPodpisu(pdfBytes: Uint8Array, png: Uint8Array, en: boolean): Promise<Uint8Array> {
+// faktura / zálohová faktura: políčko „Převzal“ je o kousek jinde (šablona faktura.js: obrázek left 200 top 707 w 115, tečky 730.2)
+const POLE_PODPISU: Record<string, { x: number; top: number; w: number; stred: number; text: number }> = {
+  zakazkovy_list: { x: 199, top: 706.9, w: 122, stred: 259.7, text: 734.6 },
+  faktura: { x: 200, top: 707, w: 115, stred: 256.8, text: 735.6 }
+};
+async function razitkoPodpisu(pdfBytes: Uint8Array, png: Uint8Array, en: boolean, druh = "zakazkovy_list"): Promise<Uint8Array> {
+  const P = POLE_PODPISU[druh === "zakazkovy_list" ? druh : "faktura"];
   const pdf = await PDFDocument.load(pdfBytes);
   const str = pdf.getPage(0), H = str.getHeight();
-  const obr = await pdf.embedPng(png), box = { x: 199, y: H - 706.9 - 30, w: 122, h: 30 };
+  const obr = await pdf.embedPng(png), box = { x: P.x, y: H - P.top - 30, w: P.w, h: 30 };
   const m = Math.min(box.w / obr.width, box.h / obr.height), w = obr.width * m, h = obr.height * m;
   str.drawImage(obr, { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, width: w, height: h });
   const kdy = new Date().toLocaleString(en ? "en-GB" : "cs-CZ", { timeZone: "Europe/Prague", day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
   const txt = (en ? "Signed online (e-service book) " : "Podepsáno online v E-servisce ") + kdy;
   const font = await pdf.embedFont(StandardFonts.Helvetica), vel = 5.2;
-  str.drawText(txt, { x: 259.7 - font.widthOfTextAtSize(txt, vel) / 2, y: H - 734.6, size: vel, font, color: rgb(0.2, 0.2, 0.2) });
+  str.drawText(txt, { x: P.stred - font.widthOfTextAtSize(txt, vel) / 2, y: H - P.text, size: vel, font, color: rgb(0.2, 0.2, 0.2) });
   return await pdf.save();
 }
 
-// nový zakázkový list: podepsané PDF nahradí původní (číslo dokladu zůstává, nepodepsané PDF se skryje)
+// nový zakázkový list / faktura: podepsané PDF nahradí původní (číslo dokladu zůstává, nepodepsané PDF se skryje)
 async function vlozitPodpisDoDokladu(sb: any, d: any, v: any, png: Uint8Array): Promise<boolean> {
   const { data: ps } = await sb.from("doklady").select("pdf_soubor_id,jazyk,soubory!doklady_pdf_soubor_id_fkey(id,klic,nazev,verejne)").eq("id", d.id).maybeSingle();
   const stary = ps?.soubory; if (!stary?.klic) return false;
   const { data: orig, error: eo } = await sb.storage.from("soubory").download(stary.klic);
   if (eo || !orig) return false;
-  const pdfBin = await razitkoPodpisu(new Uint8Array(await orig.arrayBuffer()), png, ps.jazyk === "en");
+  const pdfBin = await razitkoPodpisu(new Uint8Array(await orig.arrayBuffer()), png, ps.jazyk === "en", d.druh);
   const klicPdf = `zakazky/${d.zakazky.cislo}/doklady/${d.cislo}-podepsany-${Date.now().toString(36)}.pdf`;
   const { error: eu } = await sb.storage.from("soubory").upload(klicPdf, pdfBin, { contentType: "application/pdf", upsert: false });
   if (eu) return false;
