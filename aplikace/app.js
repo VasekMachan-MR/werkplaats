@@ -1595,7 +1595,7 @@
   const kurzEur = () => kurzCnb?.kurz ? Math.round(kurzCnb.kurz * 100) / 100 : 25;
   const nactiKurzEur = () => kurzCnbNacitam ||= (db.kurzEur ? db.kurzEur() : Promise.reject()).then(k => (kurzCnb = k)).catch(() => { kurzCnbNacitam = null; });
   // sbalovací sekce zakázky: aplikace si pamatuje (pro každou zakázku zvlášť), co bylo rozbalené
-  const SBAL_KLIC = "werk-sbaleni", SBAL_VYCHOZI = ["sekce-prace", "sekce-dily", "sekce-servis"];
+  const SBAL_KLIC = "werk-sbaleni", SBAL_VYCHOZI = ["sekce-prace", "sekce-dily", "sekce-servis", "souhrn"];
   const sbalNacti = () => { try { return JSON.parse(localStorage.getItem(SBAL_KLIC) || "{}") || {}; } catch (e) { return {}; } };
   const sbalOtevreno = (zid, sid) => { const x = sbalNacti()[zid]; return x && sid in x ? !!x[sid] : SBAL_VYCHOZI.includes(sid); };
   const sbalOpen = (zid, sid) => (sbalOtevreno(zid, sid) ? " open" : "");
@@ -1779,7 +1779,7 @@
       ${blokPoznamek([{ tabulka: "zakazky", id: z.id, hodnota: z.poznamky, popis: "K této zakázce", napoveda: "Co je potřeba udělat, co jsme zjistili, domluva se zákazníkem…" },
         { tabulka: "vozidla", id: z.vozidlo_id || v.id, hodnota: v.poznamky, popis: "K autu (zůstanou u auta i pro další návštěvy)", napoveda: "Zvláštnosti auta, historie, co hlídat příště…" }], id)}
 
-      <section class="karta souhrn-zakazky" id="souhrn"></section>
+      <details class="karta sbalovaci souhrn-zakazky" id="souhrn" data-sbal${sbalOpen(id, "souhrn")}></details>
 
       <details class="karta sbalovaci" id="sekce-vozidlo" data-sbal${sbalOpen(id, "sekce-vozidlo")}>
         <summary><h2>Vozidlo <span class="mutted" style="font-weight:400;font-size:15px">${esc([v.typ, v.model, v.spz].filter(Boolean).join(" · "))}</span></h2></summary><dl class="udaje">
@@ -2280,13 +2280,15 @@
     const sD = p => soucty(...sDani({ dan_pct: p }, E.polozky, E.dily)).celkem, danP = p => sD(p) - s.celkem;
     const dan = danP(pct), celkem = s.celkem + (zap ? dan : 0);
     const bezNakupu = E.dily.filter(d => d.stav !== "nepouzito" && d.prodejni_cena != null && d.nakupni_cena == null).length;
-    el.innerHTML = `<h2 style="margin:0 0 6px">Cena</h2><div class="souhrn-radky">
+    const nakupDilu = marzeDilu(E.dily).nakup, zisk = d => s.celkem + (zap ? d : 0) - nakupDilu - d;   // co zbyde: cena − nákup dílů − daň
+    el.innerHTML = `<summary><h2>Cena <span class="mutted" id="souhrn-cena-h" style="font-weight:400;font-size:15px">· ${kc(celkem)}</span></h2></summary><div class="souhrn-radky">
       <div><span>Práce${s.hodin ? ` (${mnozstviCz(s.hodin)} h)` : ""}</span><b>${kc(s.prace)}</b></div>
       <div><span>Materiál (díly)</span><b>${kc(s.material)}</b></div>
       ${(() => { const m = marzeDilu(E.dily); return m.nakup && jeMajitel() ? `<div class="mutted" style="font-size:14px"><span>z toho marže ${mnozstviCz(Math.round(m.marze / m.nakup * 1000) / 10)} %${m.bezNakupu ? " (bez dílů bez nákupní ceny)" : ""}</span><b>${kc(m.marze)}</b></div>` : ""; })()}
       <div class="${zap ? "" : "dan-vypnuta"}" id="radek-dane"><span class="dan-pole"><label class="dan-zap"><input type="checkbox" id="dan-zap" ${zap ? "checked" : ""}> Daň</label> <input class="vstup cislo" id="dan-pct" value="${mnozstviCz(pct)}" inputmode="decimal" aria-label="Daň v procentech z práce a marže" title="Navýšení práce a marže dílů o daň (výchozí 50 %)"> % z práce a marže</span><b id="dan-kc">${zap ? "" : "("}${kc(dan)}${zap ? "" : ")"}</b></div>
       <div class="celkem"><span>Celkem${zap ? "" : " bez daně"}</span><b id="souhrn-celkem">${kc(celkem)}</b></div>
-      ${zap ? "" : `<div class="mutted" id="s-dani"><span>S daní by to bylo</span><b>${kc(s.celkem + dan)}</b></div>`}</div>
+      ${zap ? "" : `<div class="mutted" id="s-dani"><span>S daní by to bylo</span><b>${kc(s.celkem + dan)}</b></div>`}
+      ${jeMajitel() ? `<div class="zisk" title="Celková cena − nákupní cena všech dílů − daň"><span>Zisk <small class="mutted">(cca, po odečtení nákupu dílů a daně)</small></span><b id="souhrn-zisk">${kc(zisk(dan))}</b></div>` : ""}</div>
       <p class="napoveda" style="margin:6px 0 0;text-align:right">${zap ? "Na nabídce a faktuře je daň rozpuštěná do ceny práce a dílů (bez řádku „daň“)." : "Daň je vypnutá – nabídka a faktura budou bez ní."}${bezNakupu ? ` ${bezNakupu} ${bezNakupu === 1 ? "díl nemá" : "díly nemají"} nákupní cenu – ${bezNakupu === 1 ? "jeho" : "jejich"} marži neznám, daň se k ${bezNakupu === 1 ? "němu" : "nim"} nepřičte.` : ""} <span id="stav-dane"></span></p>
       ${E.z.odhad_ceny != null ? `<p class="napoveda" style="margin:8px 0 0">Odhad při příjmu: ${kc(E.z.odhad_ceny)}${E.z.odhad_ceny && celkem > E.z.odhad_ceny * 1.15 ? ` – <b style="color:var(--oranzova)">o víc než 15 % vyšší, podle podmínek je potřeba to se zákazníkem probrat</b>` : ""}</p>` : ""}`;
     const inp = el.querySelector("#dan-pct"), zid = E.z.id;
@@ -2300,6 +2302,8 @@
       inp.classList.toggle("neplatne", !ok); if (!ok) return;
       E.z.dan_pct = n; const d = danP(n);
       el.querySelector("#dan-kc").textContent = zap ? kc(d) : `(${kc(d)})`; el.querySelector("#souhrn-celkem").textContent = kc(s.celkem + (zap ? d : 0));
+      el.querySelector("#souhrn-cena-h").textContent = "· " + kc(s.celkem + (zap ? d : 0));
+      const zi = el.querySelector("#souhrn-zisk"); if (zi) zi.textContent = kc(zisk(d));
       const sd = el.querySelector("#s-dani b"); if (sd) sd.textContent = kc(s.celkem + d);
       clearTimeout(inp._u); inp._u = setTimeout(async () => {
         const st = el.querySelector("#stav-dane");

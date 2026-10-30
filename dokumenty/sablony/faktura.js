@@ -14,7 +14,7 @@ const TEXTY = {
       "Zákazník bere na vědomí, že vliv oprav na celkový stav vozu nelze vždy předvídat. Podpisem zakázkového listu nebo faktury zákazník potvrzuje, ",
       "že byl na tato omezení upozorněn a souhlasí s nimi."
     ],
-    vystaveni: "Datum vystavení:", splatnost: "Datum splatnosti:",
+    vystaveni: "Datum vystavení:", splatnost: "Datum splatnosti:", qr: "QR platba",
     vyhotovil: "Vyhotovil:", prevzal: "Převzal:", celkovaCastka: "Celková částka", informace: "Informace",
     backpage: [
       ["Platební podmínky:", [
@@ -49,7 +49,7 @@ const TEXTY = {
       "installed parts. The customer acknowledges that the effect of repairs on the vehicle's overall condition cannot always be predicted. By signing the ",
       "work order or invoice, the customer confirms they have been informed of these limitations and agree to them."
     ],
-    vystaveni: "Date of issue:", splatnost: "Due date:",
+    vystaveni: "Date of issue:", splatnost: "Due date:", qr: "QR payment",
     vyhotovil: "Issued by:", prevzal: "Received by:", celkovaCastka: "Total amount", informace: "Information",
     backpage: [
       ["Payment terms:", [
@@ -291,7 +291,11 @@ function strana1(d, tx) {
   if (d.podpisZakaznik) h += `<img class="abs" src="${d.podpisZakaznik}" style="left:200pt;top:707pt;width:115pt;height:30pt;object-fit:contain">`;
 
   // QR Platba (český standard SPD) – zákazník naskenuje v bankovní aplikaci, vyplní se účet, částka, VS i splatnost
-  if (!d.druh || d.druh === "zalohova") h += qrPlatba(d, celkem, 272.0, 295.0, 58.0);
+  // vpravo v poli s daty (636–687 pt), na středu pod „Celková částka“; nad kódem popisek
+  if ((!d.druh || d.druh === "zalohova") && celkem > 0 && typeof qrcode === "function") {
+    h += T(431.5, 640.3, tx.qr || "QR platba", { b: true, c: true, size: 6.5 });
+    h += qrPlatba(d, celkem, 431.5 - 19.25, 647.5, 38.5);
+  }
 
   h += paticka(1, 2);
   return { html: `<section class="page">${h}</section>`, celkem };

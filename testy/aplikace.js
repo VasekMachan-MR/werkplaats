@@ -468,6 +468,7 @@ const server = http.createServer((q, r) => {
   kontrola(await p.evaluate(() => ["sekce-prace", "sekce-servis"].every(i => document.getElementById(i)?.open) && !["sekce-vozidlo", "sekce-archiv", "postup-prace", "sekce-poznamky"].some(i => document.getElementById(i)?.open)),
     "v zakázce jsou rozbalené jen Práce k fakturaci, Díly a Servisní úkony, ostatní sekce sbalené");
   kontrola(/z toho marže [\d,]+ %/.test(await p.textContent("#souhrn")) && /^Cena/.test(await p.textContent("#souhrn")), "souhrn má nadpis „Cena“ a procento marže je vlevo u popisu");
+  kontrola(await p.evaluate(() => document.getElementById("souhrn").open && /Zisk/.test(document.getElementById("souhrn").textContent) && !!document.getElementById("souhrn-zisk")), "sekce Cena je sbalovací, výchozí rozbalená, a ukazuje Zisk");
   await p.click("#sekce-archiv > summary");
   // archiv (legacy): původní PDF jen jako příloha zakázky
   await p.setInputFiles("#archiv-nahrat", [{ name: "Zakazkovy_list_stary.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF") }]);
