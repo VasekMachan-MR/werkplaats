@@ -24,12 +24,11 @@ Záloha kódu: soubor `werkplaats-kod-RRRR-MM-DD.bundle` s celou historií (`git
 
 Plánovaná úloha Clauda každou noc uloží do iCloudu `Mercedes Restorations/Zálohy Werkplaats/RRRR-MM-DD/` celý balíček (kód, data, `obnova-dat.sql`, návody).
 
-1. Vygeneruje se náhodný jednorázový klíč (`python3 -c "import secrets;print(secrets.token_hex(32))"`).
-2. Jeho otisk SHA-256 se zapíše do databáze: `insert into soukrome.zalohovaci_klice (otisk) values ('<otisk>')`. Platí 15 minut.
-3. `ZALOHA_KLIC=<klíč> zaloha/denni-zaloha.sh` stáhne data přes funkci `zaloha` (klíč se tím spotřebuje) a sestaví balíček v `/mnt/user-data/outputs/zaloha-RRRR-MM-DD/`.
-4. Soubory se zapíšou na Mac do iCloudu.
+1. Přečte klíč zálohy ze souboru `.klic-zalohy` v téže složce iCloudu (funkce `zaloha` zná jen jeho otisk SHA-256).
+2. `ZALOHA_KLIC=<klíč> zaloha/denni-zaloha.sh` stáhne data přes funkci `zaloha` a sestaví balíček v `/mnt/user-data/outputs/zaloha-RRRR-MM-DD/`.
+3. Soubory se zapíšou na Mac do iCloudu.
 
-Nikde není uložené trvalé heslo ani klíč.
+Nový klíč: vygenerovat náhodný (`python3 -c "import secrets;print(secrets.token_hex(32))"`), jeho SHA-256 dát do `OTISK` ve `databaze/funkce/zaloha/index.ts`, funkci nasadit a klíč uložit do `.klic-zalohy`.
 
 ## Co kde běží
 
@@ -59,7 +58,7 @@ Další údaje:
 3. **Serverové funkce:** nasadit každou složku z `databaze/funkce/` pod stejným názvem.
    - `eserviska` s `verify_jwt = false`.
    - Ostatní funkce s `verify_jwt = true`.
-   - `import-archivu` je jednorázová a může zůstat vypnutá; `zaloha` je denní záloha (pouští jen s jednorázovým klíčem, migrace 035).
+   - `import-archivu` je jednorázová a může zůstat vypnutá; `zaloha` je denní záloha (pouští jen s klíčem ze souboru `.klic-zalohy`, viz Denní záloha).
 
 4. **Nastavení Supabase, které není v kódu (nastavit ručně):**
    - Authentication → MFA: zapnout TOTP (aplikace vyžaduje druhý krok přihlášení).

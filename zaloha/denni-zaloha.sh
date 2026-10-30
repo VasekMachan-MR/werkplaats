@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Denní záloha (Vašek 30.10.2026, každý den ve 2:00). Spouští se v cloudovém prostředí Clauda, ne na Macu.
-# Předtím se do soukrome.zalohovaci_klice zapíše otisk jednorázového klíče (viz OBNOVA.md, „Denní záloha“).
+# Klíč zálohy je v souboru .klic-zalohy ve složce iCloud „Mercedes Restorations/Zálohy Werkplaats“ (viz OBNOVA.md, „Denní záloha“).
 # Použití:  ZALOHA_KLIC=<klíč> zaloha/denni-zaloha.sh   → balíček v /mnt/user-data/outputs/zaloha-RRRR-MM-DD/
 set -euo pipefail
 cd "$(dirname "$0")/.."
