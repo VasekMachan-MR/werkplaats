@@ -1281,21 +1281,22 @@
     return p;
   }
   // promise s časovým limitem: po limitu chyba (zpráva), nebo s null jen pokračuje
-  const sLimitem = (p, ms, zprava) => new Promise((ok, chyba) => { const t = setTimeout(() => zprava ? chyba(new Error(zprava + " – zkuste to znovu (případně obnovte stránku).")) : ok(null), ms);
+  // (el = iframe: když mezitím zmizel ze stránky – uživatel odešel jinam –, nic se nehlásí a čeká se dál jako dřív)
+  const sLimitem = (p, ms, zprava, el) => new Promise((ok, chyba) => { const t = setTimeout(() => el && !el.isConnected ? null : zprava ? chyba(new Error(zprava + " – zkuste to znovu (případně obnovte stránku).")) : ok(null), ms);
     p.then(v => { clearTimeout(t); ok(v); }, e => { clearTimeout(t); chyba(e); }); });
   function vykresliSablonu(iframe, sablona, data, jazyk) { return vFronte(iframe, () => vykresliSablonuHned(iframe, sablona, data, jazyk)); }
   async function vykresliSablonuHned(iframe, sablona, data, jazyk) {
     if (!iframe.dataset.nacteno) {
       iframe.onload = null;
-      await sLimitem(new Promise((ok, chyba) => { iframe.onload = ok; iframe.onerror = chyba; iframe.src = `sablony/${sablona}`; }), 20000, "Náhled dokladu se nenačetl");
+      await sLimitem(new Promise((ok, chyba) => { iframe.onload = ok; iframe.onerror = chyba; iframe.src = `sablony/${sablona}`; }), 20000, "Náhled dokladu se nenačetl", iframe);
       const w = iframe.contentWindow, d = iframe.contentDocument;
       for (const src of ["../vendor/pdf-lib.min.js", "../vendor/fontkit.umd.min.js", "do-pdf.js"]) {
-        await sLimitem(new Promise((ok, chyba) => { const s = d.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => chyba(new Error("Nelze načíst " + src)); d.head.appendChild(s); }), 20000, "Nelze načíst " + src);
+        await sLimitem(new Promise((ok, chyba) => { const s = d.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => chyba(new Error("Nelze načíst " + src)); d.head.appendChild(s); }), 20000, "Nelze načíst " + src, iframe);
       }
       iframe.dataset.nacteno = "1";
       if (!w.render) throw new Error("Šablona se nenačetla");
     }
-    iframe.contentWindow.__posledniVysledek = await sLimitem(Promise.resolve(iframe.contentWindow.render(data, jazyk)), 20000, "Náhled dokladu se nevykreslil");
+    iframe.contentWindow.__posledniVysledek = await sLimitem(Promise.resolve(iframe.contentWindow.render(data, jazyk)), 20000, "Náhled dokladu se nevykreslil", iframe);
     // obrázky: Safari umí u decode() zůstat viset – čeká se nejvýš 3 s
     await sLimitem(Promise.all([...iframe.contentDocument.images].map(i => (i.complete ? null : i.decode().catch(() => null)))), 3000, null);
     return iframe.contentWindow;
