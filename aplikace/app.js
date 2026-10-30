@@ -307,9 +307,11 @@
     const el = document.getElementById("lista-vpravo");
     if (!uzivatel) { el.innerHTML = ""; return; }
     // na iPhonu (úzký displej) se odkazy schovají pod ☰, na Macu a iPadu zůstávají v řadě
-    el.innerHTML = `<button type="button" class="tl tl-male menu-tl" aria-expanded="false" aria-label="Menu">☰</button>
+    el.innerHTML = `<button type="button" class="fronta-odznak" id="fronta-odznak" hidden></button><button type="button" class="tl tl-male menu-tl" aria-expanded="false" aria-label="Menu">☰</button>
       <nav class="menu-odkazy"><div class="menu-hledat jen-telefon"><input type="search" class="vstup" id="menu-hledat" placeholder="Hledat: zakázka, SPZ, VIN, zákazník" autocomplete="off" enterkeyhint="search"><div class="menu-vysledky" id="menu-vysledky"></div></div><a class="tl tl-male" href="#/">Přehled</a><a class="tl tl-male" href="#/zakazky">Zakázky</a><a class="tl tl-male" href="#/zakaznici">Zákazníci</a><a class="tl tl-male" href="#/vozidla">Vozidla</a><a class="tl tl-male" href="#/dily">Díly</a><a class="tl tl-male" href="#/doklady">Doklady</a>
       <a class="tl tl-male uzivatel-tl" href="#/ucet" title="Můj účet">👤 <span>${esc(uzivatel.jmeno)}</span></a></nav>`;
+    el.querySelector("#fronta-odznak").onclick = () => { if (!navigator.onLine) hlaska("Bez signálu – změny jsou uložené v tomto zařízení a odešlou se samy, až bude spojení."); odeslatFrontu(true); };
+    ukazFrontu();
     const hl = el.closest(".lista"), tl = el.querySelector(".menu-tl");
     tl.onclick = () => { const o = hl.classList.toggle("menu-otevrene"); tl.setAttribute("aria-expanded", o); tl.textContent = o ? "✕" : "☰"; };
     el.querySelector(".menu-odkazy").onclick = e => { if (e.target.closest("a")) zavriMenu(); };
@@ -1598,7 +1600,7 @@
     root.querySelectorAll("textarea[data-poznamka]").forEach(t => {
       const st = root.querySelector("[data-stav-poznamek]");
       t.addEventListener("input", () => { clearTimeout(t._u); st.textContent = "Ukládám…"; t._u = setTimeout(async () => {
-        try { await db.upravit(t.dataset.poznamka, t.dataset.id, { poznamky: t.value.trim() || null }); st.textContent = "✓ Uloženo"; potom?.(t.dataset.poznamka, t.value); }
+        try { await ulozitZmenu(t.dataset.poznamka, t.dataset.id, { poznamky: t.value.trim() || null }, st); potom?.(t.dataset.poznamka, t.value); }
         catch (e) { st.innerHTML = `<span style="color:var(--cervena)">Neuloženo – ${esc(chybaText(e))}</span>`; }
       }, 800); });
     });
@@ -1619,7 +1621,7 @@
     const obnovListy = () => { const p = postupProcent(U); root.querySelectorAll("#postup-prace .postup").forEach(x => { x.querySelector(".postup-lista div").style.width = p + "%"; x.querySelector("b").textContent = U.some(y => String(y.t || "").trim()) ? p + " %" : "–"; x.setAttribute("aria-valuenow", p); }); };
     const uloz = () => { obnovListy(); clearTimeout(el._u); st().textContent = "Ukládám…"; el._u = setTimeout(async () => {
       const data = U.map(x => ({ t: String(x.t || "").trim(), h: !!x.h })).filter(x => x.t);
-      try { await db.upravit("zakazky", z.id, { ukoly: data }); st().textContent = "✓ Uloženo"; }
+      try { await ulozitZmenu("zakazky", z.id, { ukoly: data }, st()); }
       catch (e) { st().innerHTML = `<span style="color:var(--cervena)">Neuloženo – ${esc(chybaText(e))}</span>`; }
     }, 700); };
     const kresli = (fokus) => {
@@ -1698,6 +1700,7 @@
     } catch (e) { app.innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
     if (!z) { app.innerHTML = `<div class="info chyba">Zakázka nenalezena.</div>`; return; }
     E = { id, z, polozky: polozky.map(p => ({ ...p, typ: p.typ || "prace" })), dily: dily.map(d => ({ ...d })), dodavatele };
+    zFronty(id, z, E);
     const v = z.vozidla || {}, c = z.zakaznici || {};
     const jedn = v.jednotka_tachometru === "mi" ? "mi" : "km";
     const doklady = (z.doklady || []).sort((a, b) => a.cislo.localeCompare(b.cislo, "cs", { numeric: true }));
@@ -2005,7 +2008,7 @@
     el.querySelectorAll("[data-servis]").forEach(i => i.onchange = async () => {
       const nove = [...el.querySelectorAll("[data-servis]:checked")].map(x => x.dataset.servis), stav = el.querySelector("#stav-servisu");
       stav.textContent = "Ukládám…";
-      try { await db.upravit("zakazky", E.id, { servisni_ukony: nove }); E.z.servisni_ukony = nove; stav.textContent = "✓ Uloženo"; }
+      try { await ulozitZmenu("zakazky", E.id, { servisni_ukony: nove }, stav); E.z.servisni_ukony = nove; }
       catch (e) { i.checked = !i.checked; stav.textContent = ""; hlaska(chybaText(e), true); }
     });
   }
@@ -2079,6 +2082,67 @@
     if (E === zak) { await vykresliFotkyDetail(); if (ok) hlaska(`Nahráno ${ok} ${ok === 1 ? "soubor" : ok < 5 ? "soubory" : "souborů"}.`); }
   }
 
+  /* ---------- práce bez signálu: neodeslané změny se drží v zařízení a odešlou se samy ---------- */
+  const FRONTA = "werk-fronta";
+  const jeVypadek = e => !navigator.onLine || /failed to fetch|networkerror|load failed|network request failed|fetch failed|timeout|ERR_INTERNET|ERR_NETWORK/i.test(chybaText(e));
+  const fronta = () => nacti(FRONTA) || [];
+  let odesilamFrontu = false, casovacFronty = null;
+  function doFronty(x) {                                   // x = {klic, druh: "upravit"|"prace"|"dily", ...}; novější změna téže věci nahradí starší
+    uloz(FRONTA, fronta().filter(y => y.klic !== x.klic).concat({ ...x, cas: Date.now() }));
+    ukazFrontu(); clearTimeout(casovacFronty); casovacFronty = setTimeout(() => odeslatFrontu(), navigator.onLine ? 3000 : 20000);
+  }
+  function ukazFrontu() {
+    const el = document.getElementById("fronta-odznak"); if (!el) return;
+    const n = fronta().length;
+    el.hidden = !n && navigator.onLine;
+    el.className = "fronta-odznak" + (n ? " ceka" : " offline");
+    el.textContent = n ? `⏳ ${n} čeká na odeslání` : "📵 Bez signálu";
+    el.title = n ? "Změny uložené v tomto zařízení – odešlou se samy, až bude signál. Klepnutím zkusit hned." : "Bez připojení k internetu";
+  }
+  async function provedZFronty(x) {
+    if (x.druh === "upravit") return db.upravit(x.tabulka, x.id, x.zmeny);
+    if (x.druh === "prace") return db.ulozitPolozky(x.zid, x.data);
+    if (x.druh === "dily") return db.ulozitDily(x.zid, x.data);
+  }
+  async function odeslatFrontu(rucne = false) {
+    if (odesilamFrontu || !fronta().length) return ukazFrontu();
+    odesilamFrontu = true; let ok = 0;
+    try {
+      for (const x of fronta()) {
+        try { await provedZFronty(x); ok++; }
+        catch (e) {
+          if (jeVypadek(e)) break;                         // pořád bez signálu – zkusit později
+          hlaska(`Změnu se nepodařilo uložit ani dodatečně: ${chybaText(e)}`, true, 9000);   // server ji odmítl – nedržet donekonečna
+        }
+        uloz(FRONTA, fronta().filter(y => !(y.klic === x.klic && y.cas === x.cas)));
+      }
+    } finally { odesilamFrontu = false; }
+    ukazFrontu();
+    if (ok && !fronta().length) { hlaska("✓ Změny z doby bez signálu jsou odeslané."); document.querySelectorAll("[data-ceka-fronta]").forEach(e => { e.textContent = "✓ Uloženo"; delete e.dataset.cekaFronta; }); }
+    else if (rucne && fronta().length && navigator.onLine) hlaska("Zatím se nepodařilo odeslat – zkusím to znovu za chvíli.", true);
+    if (fronta().length) { clearTimeout(casovacFronty); casovacFronty = setTimeout(() => odeslatFrontu(), 30000); }
+  }
+  window.addEventListener("online", () => { ukazFrontu(); odeslatFrontu(); });
+  window.addEventListener("offline", ukazFrontu);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") odeslatFrontu(); });
+  // uložit změnu řádku; bez signálu ji podržet ve frontě (vrací "fronta"), jiné chyby vyhodit
+  async function ulozitZmenu(tabulka, id, zmeny, stavEl) {
+    if (fronta().some(x => x.klic === `upravit:${tabulka}:${id}:${Object.keys(zmeny).join(",")}`)) { doFronty({ klic: `upravit:${tabulka}:${id}:${Object.keys(zmeny).join(",")}`, druh: "upravit", tabulka, id, zmeny }); }
+    else try { await db.upravit(tabulka, id, zmeny); if (stavEl) stavEl.textContent = "✓ Uloženo"; return "ok"; }
+    catch (e) { if (!jeVypadek(e)) throw e; doFronty({ klic: `upravit:${tabulka}:${id}:${Object.keys(zmeny).join(",")}`, druh: "upravit", tabulka, id, zmeny }); }
+    if (stavEl) { stavEl.textContent = "⏳ Bez signálu – odešle se samo"; stavEl.dataset.cekaFronta = "1"; }
+    return "fronta";
+  }
+  // po otevření zakázky použít neodeslané změny z fronty (ať se nepřepíšou starší verzí ze serveru)
+  function zFronty(zid, z, E2) {
+    for (const x of fronta()) {
+      if (x.druh === "upravit" && x.id === zid && x.tabulka === "zakazky") Object.assign(z, x.zmeny);
+      if (x.druh === "upravit" && x.tabulka === "vozidla" && z.vozidla && x.id === z.vozidla.id) Object.assign(z.vozidla, x.zmeny);
+      if (x.druh === "prace" && x.zid === zid) E2.polozky = x.data.map(p => ({ ...p }));
+      if (x.druh === "dily" && x.zid === zid) E2.dily = x.data.map(d => ({ ...d }));
+    }
+  }
+
   /* ---------- automatické ukládání prací a dílů ---------- */
   // naplánované (čekají 0,7 s), právě běžící a neúspěšné uložení – nic z toho se nesmí ztratit bez varování
   const cekajiciUlozeni = {}, beziciUlozeni = {}, neulozene = {};
@@ -2097,14 +2161,22 @@
     delete neulozene[co];
     const uloz = async () => {
       const E = zakazka, zid = E.id;
-      try {
-        if (co === "prace") await db.ulozitPolozky(zid, E.polozky.map(p => ({ typ: p.typ, popis: p.popis || "", mnozstvi: p.mnozstvi ?? null, jednotka: p.jednotka || null, sazba: p.sazba ?? null, castka: p.castka ?? null })));
-        else await db.ulozitDily(zid, E.dily.map(d => ({ id: d.id, nazev: d.nazev, cislo_mb: d.cislo_mb, vyrobce: d.vyrobce, dodavatel_id: d.dodavatel_id || null,
+      const data = co === "prace" ? E.polozky.map(p => ({ typ: p.typ, popis: p.popis || "", mnozstvi: p.mnozstvi ?? null, jednotka: p.jednotka || null, sazba: p.sazba ?? null, castka: p.castka ?? null }))
+        : E.dily.map(d => ({ id: d.id, nazev: d.nazev, cislo_mb: d.cislo_mb, vyrobce: d.vyrobce, dodavatel_id: d.dodavatel_id || null,
           mnozstvi: d.mnozstvi, jednotka: d.jednotka || "ks", nakupni_cena: d.nakupni_cena ?? null, mena: d.mena || "CZK", kurz: d.kurz ?? 1,
-          marze_pct: d.marze_pct ?? 30, prodejni_cena: d.prodejni_cena ?? null, stav: d.stav || "potreba", puvod: d.puvod || null, poznamka: d.poznamka || null })));
+          marze_pct: d.marze_pct ?? 30, prodejni_cena: d.prodejni_cena ?? null, stav: d.stav || "potreba", puvod: d.puvod || null, poznamka: d.poznamka || null }));
+      const klic = `${co}:${zid}`;
+      try {
+        if (fronta().some(x => x.klic === klic)) throw Object.assign(new Error("Failed to fetch"), { fronta: true });   // starší změna ještě neodešla → pořadí zachovat
+        if (co === "prace") await db.ulozitPolozky(zid, data); else await db.ulozitDily(zid, data);
         if (el && el.isConnected) el.textContent = "✓ Uloženo";
         return true;
       } catch (e) {
+        if (jeVypadek(e)) {                              // bez signálu: podržet v zařízení, odešle se samo
+          doFronty({ klic, druh: co, zid, data });
+          if (el && el.isConnected) { el.textContent = "⏳ Bez signálu – odešle se samo"; el.dataset.cekaFronta = "1"; }
+          return true;
+        }
         neulozene[co] = fn;                              // zkusí se znovu při dalším pokusu o odchod
         if (el && el.isConnected) { el.innerHTML = `<span style="color:var(--cervena)">Neuloženo – ${esc(chybaText(e))}</span> <button type="button" class="tl tl-male">Zkusit znovu</button>`;
           el.querySelector("button").onclick = () => { delete neulozene[co]; fn(); }; }

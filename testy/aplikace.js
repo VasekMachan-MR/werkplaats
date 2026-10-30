@@ -184,18 +184,20 @@ const server = http.createServer((q, r) => {
   await p.evaluate(() => { location.hash = "#/zakazky"; }); await p.waitForSelector("#seznam .zakazka-radek");
   await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid); await p.waitForSelector('.radek-pol[data-i="3"]');
   kontrola(await p.locator(".radek-pol[data-i]").count() === 4 && await p.locator(".dil[data-i]").count() === 2, "práce a díly se uložily i při rychlém odchodu ze stránky");
-  // bez signálu: změna se neuloží → odchod ze zakázky aplikace nepustí (Zrušit = zůstat), po návratu signálu se uloží
+  // bez signálu: změna se podrží v zařízení (⏳ čeká na odeslání), jde odejít, po návratu signálu se odešle sama
   {
     await p.evaluate(() => { window.__OFFLINE__ = true; });
-    odmitnoutDialog = true;
     await p.locator('.radek-pol[data-i="0"] [data-f="sazba"]').fill("1250");
-    await p.waitForSelector("#stav-prace >> text=Neuloženo");
-    await p.evaluate(() => { location.hash = "#/zakaznici"; }); await p.waitForTimeout(600);
-    kontrola(/#\/zakazka\//.test(await p.evaluate(() => location.hash)) && await p.inputValue('.radek-pol[data-i="0"] [data-f="sazba"]') === "1250", "bez signálu: odchod ze zakázky se zastaví a rozepsaná cena zůstane");
-    odmitnoutDialog = false;
-    await p.evaluate(() => { window.__OFFLINE__ = false; });
-    await p.click("#stav-prace >> text=Zkusit znovu"); await p.waitForSelector("#stav-prace >> text=✓ Uloženo");
-    kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.polozky.some(x => Number(x.sazba) === 1250)), "po návratu signálu se změna uloží");
+    await p.waitForSelector("#stav-prace >> text=Bez signálu");
+    await p.waitForSelector("#fronta-odznak:not([hidden]) >> text=1 čeká na odeslání");
+    kontrola(true, "bez signálu: změna se podrží a v liště je ⏳ 1 čeká na odeslání");
+    await p.evaluate(() => { location.hash = "#/zakaznici"; }); await p.waitForTimeout(400);
+    kontrola(/#\/zakaznici/.test(await p.evaluate(() => location.hash)), "bez signálu: ze zakázky jde normálně odejít (nic se neztratí)");
+    await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid); await p.waitForSelector('.radek-pol[data-i="0"]');
+    kontrola(await p.inputValue('.radek-pol[data-i="0"] [data-f="sazba"]') === "1250", "bez signálu: po znovuotevření zakázky je vidět neodeslaná změna (1250)");
+    await p.evaluate(() => { window.__OFFLINE__ = false; window.dispatchEvent(new Event("online")); });
+    await p.waitForSelector("#fronta-odznak", { state: "hidden" });
+    kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.polozky.some(x => Number(x.sazba) === 1250)), "po návratu signálu se změna odešle sama");
     await p.locator('.radek-pol[data-i="0"] [data-f="sazba"]').fill("1200"); await p.waitForSelector("#stav-prace >> text=✓ Uloženo");
   }
 
