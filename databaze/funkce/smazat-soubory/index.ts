@@ -7,6 +7,11 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const POVOLENE = [/^https:\/\/werk\.mercedesrestorations\.cz$/, /^https:\/\/([\w-]+\.)?werkplaats\.pages\.dev$/, /^http:\/\/localhost(:\d+)?$/];
 
+// dvoufázové přihlášení: požadavek musí mít ověřený kód z aplikace (aal2)
+function overenoKodem(token: string): boolean {
+  try { const p = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))); return p.aal === "aal2"; } catch { return false; }
+}
+
 Deno.serve(async req => {
   const origin = req.headers.get("origin");
   const h: Record<string, string> = { "content-type": "application/json; charset=utf-8", "vary": "Origin" };
@@ -22,6 +27,7 @@ Deno.serve(async req => {
   const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
   const { data: u } = await sluzba.auth.getUser(token);
   if (!u?.user) return odp(401, { chyba: "nepřihlášen" });
+  if (!overenoKodem(token)) return odp(401, { chyba: "nejdřív ověření kódem" });
   const { data: clen } = await sluzba.from("uzivatele").select("role,aktivni").eq("id", u.user.id).maybeSingle();
   if (!clen || !clen.aktivni || clen.role !== "majitel") return odp(403, { chyba: "jen majitel" });
 

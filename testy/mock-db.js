@@ -14,7 +14,11 @@ window.__WERK_DB__ = (() => {
   return {
     async relace() { return { user: { id: window.__TEST_UZIVATEL__ || "u1" } }; },
     naZmenuPrihlaseni() {},
-    async prihlasit() { return {}; }, async odhlasit() {}, async obnovitHeslo() {}, async noveHeslo() {},
+    async prihlasit() { return {}; },
+    // dvoufázové přihlášení: výchozí = ověřeno; testy přepnou přes window.__TEST_MFA__ ("nastavit" | "overit")
+    async mfaStav() { const r = window.__TEST_MFA__; return { uroven: r ? "aal1" : "aal2", overeno: r === "nastavit" ? null : { id: "f1" }, neovereno: [], naposledy: r ? 0 : Date.now() }; },
+    async mfaNastavit() { return { id: "f-novy", totp: { qr_code: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'/>", secret: "JBSWY3DPEHPK3PXP", uri: "otpauth://totp/Werkplaats?secret=JBSWY3DPEHPK3PXP" } }; },
+    async mfaOverit(fid, kod) { if (kod !== "123456") throw new Error("Invalid TOTP code entered"); window.__TEST_MFA__ = null; window.__MFA_OVERENO__ = fid; return {}; }, async odhlasit() {}, async obnovitHeslo() {}, async noveHeslo() {},
     async clen(uid) { return kopie(LIDE.find(u => u.id === uid) || null); },
     async uzivatele() { return kopie(LIDE); },
     async ulozitMujPodpis(uid, obrazek) { LIDE.find(u => u.id === uid).podpis_obrazek = obrazek; return [{ id: uid }]; },

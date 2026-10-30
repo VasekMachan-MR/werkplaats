@@ -541,3 +541,9 @@ details.postup-prace[open] > summary .postup { display: none; }
 @media (min-width: 760px) { .kal-novy { grid-template-columns: 1fr 120px 220px auto; } .kal-novy input[name=text] { grid-column: auto; } }
 @media (max-width: 420px) { .kal-den { min-height: 44px; padding: 4px 0; } .kal-novy select { grid-column: 1 / -1; } }
 .info.ok-podpis { background: var(--zelena-svetla); color: var(--zelena); display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* dvoufázové přihlášení */
+.mfa-qr { display: flex; flex-direction: column; align-items: center; gap: 10px; margin: 6px 0 16px; }
+.mfa-qr img { background: #fff; padding: 8px; border-radius: 10px; border: 1px solid #e3e6ea; }
+.mfa-klic { display: block; margin-top: 6px; font-size: 15px; letter-spacing: .06em; word-break: break-all; user-select: all; }
+.mfa-kod { font-size: 26px !important; letter-spacing: .3em; text-align: center; font-variant-numeric: tabular-nums; }

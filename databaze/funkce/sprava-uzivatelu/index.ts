@@ -29,6 +29,11 @@ function tajnyKlic(): string {
   return Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 }
 
+// dvoufázové přihlášení: požadavek musí mít ověřený kód z aplikace (aal2)
+function overenoKodem(token: string): boolean {
+  try { const p = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))); return p.aal === "aal2"; } catch { return false; }
+}
+
 Deno.serve(async (req) => {
   const h = hlavicky(req.headers.get("Origin") ?? "");
   const odpoved = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: h });
@@ -41,6 +46,7 @@ Deno.serve(async (req) => {
   const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
   const { data: kdo } = await admin.auth.getUser(token);
   if (!kdo?.user) return odpoved({ chyba: "Nepřihlášený uživatel" }, 401);
+  if (!overenoKodem(token)) return odpoved({ chyba: "Nejdřív se ověřte kódem z aplikace" }, 401);
   const { data: ja } = await admin.from("uzivatele").select("id, role, aktivni").eq("id", kdo.user.id).maybeSingle();
   if (!ja || ja.role !== "majitel" || !ja.aktivni) return odpoved({ chyba: "Tohle smí jen majitel" }, 403);
 
@@ -82,6 +88,12 @@ Deno.serve(async (req) => {
     const { error } = await admin.from("uzivatele").update({ aktivni }).eq("id", id);
     if (error) return odpoved({ chyba: error.message }, 400);
     await admin.auth.admin.updateUserById(id, { ban_duration: aktivni ? "none" : "876000h" });   // zablokovaný se nepřihlásí
+    return odpoved({ ok: true });
+  }
+  if (akce === "reset2fa") {                    // ztracený telefon: smazat ověřovací aplikaci, při příštím přihlášení si ji nastaví znovu
+    const { data: f, error } = await admin.auth.admin.mfa.listFactors({ userId: id });
+    if (error) return odpoved({ chyba: error.message }, 400);
+    for (const x of f?.factors ?? []) await admin.auth.admin.mfa.deleteFactor({ id: x.id, userId: id });
     return odpoved({ ok: true });
   }
   if (akce === "role") {

@@ -134,6 +134,18 @@
       async relace() { return ok(await sb.auth.getSession()).session; },
       naZmenuPrihlaseni(fn) { sb.auth.onAuthStateChange((_u, s) => fn(s)); },
       async prihlasit(email, heslo) { return ok(await sb.auth.signInWithPassword({ email, password: heslo })); },
+      // dvoufázové přihlášení (TOTP – Google Authenticator / Hesla na iPhonu)
+      async mfaStav() {
+        const a = ok(await sb.auth.mfa.getAuthenticatorAssuranceLevel()), f = ok(await sb.auth.mfa.listFactors());
+        const totp = (f.all || f.totp || []).filter(x => x.factor_type === "totp");
+        const kdy = Math.max(0, ...(a.currentAuthenticationMethods || []).filter(m => m.method === "totp").map(m => Number(m.timestamp) || 0));
+        return { uroven: a.currentLevel, overeno: totp.find(x => x.status === "verified") || null, neovereno: totp.filter(x => x.status !== "verified"), naposledy: kdy ? kdy * 1000 : 0 };
+      },
+      async mfaNastavit() {
+        for (const x of (await this.mfaStav()).neovereno) await sb.auth.mfa.unenroll({ factorId: x.id });   // nedokončený pokus
+        return ok(await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: "Werkplaats " + new Date().toISOString().slice(0, 16), issuer: "Werkplaats" }));
+      },
+      async mfaOverit(factorId, kod) { return ok(await sb.auth.mfa.challengeAndVerify({ factorId, code: kod })); },
       async odhlasit() { await sb.auth.signOut(); },
       async obnovitHeslo(email) { return ok(await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })); },
       async noveHeslo(heslo) { return ok(await sb.auth.updateUser({ password: heslo })); },
@@ -2902,10 +2914,15 @@
             <small class="mutted">${esc(u.email || "")} · ${u.role === "majitel" ? "majitel" : "mechanik"}${u.aktivni ? "" : " · <b style='color:var(--cervena)'>zablokovaný</b>"}</small></span>
           ${u.id === uzivatel.id ? "" : `<span class="radek-tlacitek">
             <button class="tl tl-male" data-heslo="${u.id}">Nové heslo</button>
+            <button class="tl tl-male" data-reset2fa="${u.id}" title="Ztratil telefon s ověřovací aplikací – při příštím přihlášení si ji nastaví znovu">Reset ověření</button>
             <button class="tl tl-male ${u.aktivni ? "tl-nebezpecne" : ""}" data-aktivni="${u.id}" data-hodnota="${!u.aktivni}">${u.aktivni ? "Zablokovat" : "Odblokovat"}</button></span>`}</div>`).join("");
         el.querySelectorAll("[data-heslo]").forEach(b => b.onclick = async () => {
           const h = prompt("Nové dočasné heslo (aspoň 10 znaků):"); if (!h) return;
           try { await db.sprava({ akce: "heslo", id: b.dataset.heslo, heslo: h }); hlaska("Heslo nastaveno."); } catch (e) { hlaska(chybaText(e), true); }
+        });
+        el.querySelectorAll("[data-reset2fa]").forEach(b => b.onclick = async () => {
+          if (!confirm("Zrušit ověřovací aplikaci tohoto člověka? Při příštím přihlášení si naskenuje nový QR kód.")) return;
+          try { await db.sprava({ akce: "reset2fa", id: b.dataset.reset2fa }); hlaska("Ověření zrušeno – při přihlášení si ho nastaví znovu."); } catch (e) { hlaska(chybaText(e), true); }
         });
         el.querySelectorAll("[data-aktivni]").forEach(b => b.onclick = async () => {
           const aktivni = b.dataset.hodnota === "true";
@@ -2924,6 +2941,41 @@
     };
   }
 
+  /* ================= dvoufázové přihlášení ================= */
+  async function druhyKrok(rezim, factorId) {
+    lista();
+    const nastavit = rezim === "nastavit";
+    app.innerHTML = `<div class="prihlaseni"><div class="karta">
+      <h1>${nastavit ? "Zabezpečení účtu" : "Ověření kódem"}</h1>
+      ${nastavit ? `<p class="popis">Pro přístup k datům dílny je potřeba druhý krok přihlášení. Nastavíte ho jednou: naskenujte QR kód v aplikaci <b>Google Authenticator</b> (nebo Hesla na iPhonu) a opište 6místný kód. Kód pak aplikace chce jednou za 30 dní na každém zařízení.</p>
+        <div id="qr" class="mfa-qr"><div class="nacitani">Připravuji…</div></div>`
+        : `<p class="popis">Otevřete Google Authenticator a opište 6místný kód pro Werkplaats. Na tomto zařízení se znovu zeptáme za 30 dní.</p>`}
+      <form id="f2" autocomplete="off">
+        <label class="pole">Kód z aplikace<input name="kod" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="123456" class="mfa-kod"></label>
+        <button class="tl tl-hlavni tl-velke" type="submit">${nastavit ? "Dokončit nastavení" : "Ověřit"}</button>
+        <button class="tl tl-text" type="button" id="odhlasit2">Odhlásit</button>
+        <div id="zprava2"></div>
+      </form></div></div>`;
+    const f = app.querySelector("#f2"), z = app.querySelector("#zprava2");
+    app.querySelector("#odhlasit2").onclick = async () => { try { await db.odhlasit(); } catch (e) { /* offline */ } uzivatel = null; prihlaseni(); };
+    if (nastavit) {
+      try {
+        const e = await db.mfaNastavit(); factorId = e.id;
+        app.querySelector("#qr").innerHTML = `<img src="${esc(e.totp.qr_code)}" alt="QR kód pro Google Authenticator" width="200" height="200">
+          <a class="tl tl-male jen-telefon" href="${esc(e.totp.uri)}">Otevřít v aplikaci na tomto telefonu</a>
+          <details><summary class="napoveda">Nejde naskenovat? Klíč pro ruční zadání</summary><code class="mfa-klic">${esc(String(e.totp.secret).replace(/(.{4})/g, "$1 ").trim())}</code></details>`;
+      } catch (e) { app.querySelector("#qr").innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; }
+    }
+    const pole = f.kod; pole.focus();
+    pole.oninput = () => { pole.value = pole.value.replace(/\D/g, "").slice(0, 6); if (pole.value.length === 6) f.requestSubmit(); };
+    f.onsubmit = async e => {
+      e.preventDefault(); const b = f.querySelector("button[type=submit]"); if (b.disabled) return; b.disabled = true; z.innerHTML = "";
+      try { await db.mfaOverit(factorId, pole.value); hlaska(nastavit ? "Druhý krok přihlášení je nastavený." : "Ověřeno."); await start(); }
+      catch (err) { z.innerHTML = `<div class="info chyba">${/invalid|expired|code/i.test(chybaText(err)) ? "Kód nesedí nebo už vypršel – opište aktuální kód z aplikace." : esc(chybaText(err))}</div>`; pole.value = ""; pole.focus(); }
+      finally { b.disabled = false; }
+    };
+  }
+
   /* ================= start ================= */
   async function start() {
     if (obnovaHesla) return prihlaseni();
@@ -2931,6 +2983,12 @@
     let s = null;
     try { s = await db.relace(); } catch (e) { /* offline */ }
     if (!s) { uzivatel = null; return prihlaseni(); }
+    // dvoufázové přihlášení: kód z aplikace jednou za 30 dní na každém zařízení
+    if (db.mfaStav) {
+      let m; try { m = await db.mfaStav(); } catch (e) { return prihlaseni("Nelze se spojit se serverem: " + chybaText(e)); }
+      if (!m.overeno) return druhyKrok("nastavit");
+      if (m.uroven !== "aal2" || Date.now() - m.naposledy > 30 * 864e5) return druhyKrok("overit", m.overeno.id);
+    }
     try {
       const c = await db.clen(s.user.id);
       if (!c || c.aktivni === false) { uzivatel = null; await db.odhlasit(); return prihlaseni(c ? "Tento účet je zablokovaný." : "Tento účet zatím nemá přístup do dílny."); }

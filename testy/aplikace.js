@@ -838,6 +838,19 @@ const server = http.createServer((q, r) => {
   await ex.waitForSelector("text=vypršel");
   kontrola(true, "prošlý odkaz z e-mailu ukáže srozumitelnou hlášku");
 
+  // ---------- dvoufázové přihlášení (Google Authenticator) ----------
+  for (const rezim of ["nastavit", "overit"]) {
+    const m = await ph.newPage(); await m.addInitScript(r => { window.__TEST_MFA__ = r; }, rezim); await m.goto(URL0);
+    await m.waitForSelector(".mfa-kod");
+    kontrola(rezim === "nastavit" ? await m.isVisible(".mfa-qr img") : !(await m.isVisible(".mfa-qr")), rezim === "nastavit" ? "2FA: bez nastavení se nejde dostat k datům – ukáže QR kód pro Google Authenticator" : "2FA: po 30 dnech chce aplikace znovu kód");
+    kontrola(await m.locator("a[href='#/novy']").count() === 0, "2FA: před ověřením kódem nejsou vidět žádná data");
+    await m.fill(".mfa-kod", "111111"); await m.waitForSelector("#zprava2 >> text=Kód nesedí");
+    kontrola(true, "2FA: špatný kód – srozumitelná hláška");
+    await m.fill(".mfa-kod", "123456"); await m.waitForSelector("a[href=\"#/novy\"]");
+    kontrola(await m.evaluate(r => window.__MFA_OVERENO__ === (r === "nastavit" ? "f-novy" : "f1"), rezim), "2FA: správný kód pustí do aplikace (" + rezim + ")");
+    await m.close();
+  }
+
   kontrola(chyby.length === 0, "bez chyb v konzoli" + (chyby.length ? ": " + chyby.join(" | ") : ""));
   await b.close(); server.close();
 })().catch(e => { console.error(e.message); server.close(); process.exit(1); });
