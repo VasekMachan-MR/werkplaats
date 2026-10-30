@@ -547,3 +547,13 @@ details.postup-prace[open] > summary .postup { display: none; }
 .mfa-qr img { background: #fff; padding: 8px; border-radius: 10px; border: 1px solid #e3e6ea; }
 .mfa-klic { display: block; margin-top: 6px; font-size: 15px; letter-spacing: .06em; word-break: break-all; user-select: all; }
 .mfa-kod { font-size: 26px !important; letter-spacing: .3em; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* Díly – statistika */
+.dil-stat { flex-direction: column; align-items: stretch; }
+.dil-hlava { all: unset; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; cursor: pointer; width: 100%; }
+.dil-hlava:focus-visible { outline: 2px solid var(--navy); outline-offset: 4px; }
+.dil-hlava .cipy { display: flex; flex-wrap: wrap; gap: 6px; }
+.dil-hlava .cip { cursor: default; font-size: 13px; padding: 4px 10px; }
+.dil-pocet { font-size: 22px; color: var(--navy); flex: 0 0 auto; }
+.dil-pouziti { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; border-top: 1px solid #e3e6ea; padding-top: 8px; }
+.dil-pouziti a { padding: 8px 6px; border-radius: 8px; }

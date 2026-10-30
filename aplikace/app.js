@@ -214,6 +214,10 @@
       async dily(zid) { return ok(await sb.from("dily").select("*").eq("zakazka_id", zid).order("poradi")); },
       async ulozitDily(zid, dily) { return ok(await sb.rpc("ulozit_dily", { p_zakazka: zid, p_dily: dily })); },
       async dodavatele() { return ok(await sb.from("dodavatele").select("id,nazev,web,mena").order("nazev")); },
+      async katalogVozu() { return ok(await sb.from("katalog_vozu").select("typ,rada,karoserie,model,od,do,motor,motor_popis,palivo").order("typ").limit(2000)); },
+      async vsechnyDily() {
+        return ok(await sb.from("dily").select("id,nazev,cislo_mb,vyrobce,cislo_vyrobce,mnozstvi,jednotka,nakupni_cena,mena,kurz,prodejni_cena,stav,dodavatel_id,zakazky(id,cislo,datum_prijmu,stav,vozidla(typ,model,rok,motor,vin,cislo_motoru))").neq("stav", "nepouzito").limit(10000));
+      },
       async kalendar(od, doo) { return ok(await sb.from("kalendar").select("id,datum,cas,text,zakazka_id").gte("datum", od).lte("datum", doo).order("datum").order("cas", { nullsFirst: true })); },
       async smazatRadek(tabulka, id) { return ok(await sb.from(tabulka).delete().eq("id", id).select("id")); },
       async vsechnyDoklady() {
@@ -273,6 +277,7 @@
     [/^#\/zakaznici$/, zakaznici],
     [/^#\/zakaznik\/([\w-]+)$/, zakaznikDetail],
     [/^#\/vozidla$/, vozidla],
+    [/^#\/dily$/, dilyPrehled],
     [/^#\/vozidlo\/([\w-]+)$/, vozidloDetail],
     [/^#\/hotovo\/([\w-]+)$/, hotovo],
     [/^#\/ucet$/, ucet],
@@ -303,7 +308,7 @@
     if (!uzivatel) { el.innerHTML = ""; return; }
     // na iPhonu (úzký displej) se odkazy schovají pod ☰, na Macu a iPadu zůstávají v řadě
     el.innerHTML = `<button type="button" class="tl tl-male menu-tl" aria-expanded="false" aria-label="Menu">☰</button>
-      <nav class="menu-odkazy"><div class="menu-hledat jen-telefon"><input type="search" class="vstup" id="menu-hledat" placeholder="Hledat: zakázka, SPZ, VIN, zákazník" autocomplete="off" enterkeyhint="search"><div class="menu-vysledky" id="menu-vysledky"></div></div><a class="tl tl-male" href="#/">Přehled</a><a class="tl tl-male" href="#/zakazky">Zakázky</a><a class="tl tl-male" href="#/zakaznici">Zákazníci</a><a class="tl tl-male" href="#/vozidla">Vozidla</a><a class="tl tl-male" href="#/doklady">Doklady</a>
+      <nav class="menu-odkazy"><div class="menu-hledat jen-telefon"><input type="search" class="vstup" id="menu-hledat" placeholder="Hledat: zakázka, SPZ, VIN, zákazník" autocomplete="off" enterkeyhint="search"><div class="menu-vysledky" id="menu-vysledky"></div></div><a class="tl tl-male" href="#/">Přehled</a><a class="tl tl-male" href="#/zakazky">Zakázky</a><a class="tl tl-male" href="#/zakaznici">Zákazníci</a><a class="tl tl-male" href="#/vozidla">Vozidla</a><a class="tl tl-male" href="#/dily">Díly</a><a class="tl tl-male" href="#/doklady">Doklady</a>
       <a class="tl tl-male uzivatel-tl" href="#/ucet" title="Můj účet">👤 <span>${esc(uzivatel.jmeno)}</span></a></nav>`;
     const hl = el.closest(".lista"), tl = el.querySelector(".menu-tl");
     tl.onclick = () => { const o = hl.classList.toggle("menu-otevrene"); tl.setAttribute("aria-expanded", o); tl.textContent = o ? "✕" : "☰"; };
@@ -335,7 +340,7 @@
   function oznacMenu() {
     const h = location.hash || "#/";
     const cil = h === "#/" || h === "#" ? "#/" : /^#\/(zakazk|novy|hotovo)/.test(h) ? "#/zakazky" : /^#\/zakaznik/.test(h) ? "#/zakaznici"
-      : /^#\/vozidl/.test(h) ? "#/vozidla" : /^#\/doklady/.test(h) ? "#/doklady" : /^#\/(ucet|lide)/.test(h) ? "#/ucet" : "";
+      : /^#\/vozidl/.test(h) ? "#/vozidla" : /^#\/dily/.test(h) ? "#/dily" : /^#\/doklady/.test(h) ? "#/doklady" : /^#\/(ucet|lide)/.test(h) ? "#/ucet" : "";
     document.querySelectorAll(".menu-odkazy a").forEach(a => a.getAttribute("href") === cil ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
   }
 
@@ -693,13 +698,15 @@
           ${pole("vozidlo.vin", "VIN / číslo podvozku", { sirka: "s4", povinne: true, attrs: 'class="vin" autocomplete="off" autocapitalize="characters" spellcheck="false"',
             napoveda: vin ? `Typ ${vin.typ}, kód modelu ${vin.kod}` : "" })}
           ${pole("vozidlo.spz", "SPZ", { sirka: "s2", attrs: 'autocapitalize="characters"' })}
-          ${pole("vozidlo.typ", "Typ", { sirka: "s2", attrs: 'placeholder="126"' })}
-          ${pole("vozidlo.model", "Model", { sirka: "s2", povinne: true, attrs: 'placeholder="300 SE"' })}
-          ${pole("vozidlo.rok", "Rok výroby", { sirka: "s2", attrs: 'inputmode="numeric" placeholder="1989"' })}
+          ${pole("vozidlo.typ", "Typ", { sirka: "s2", attrs: 'placeholder="126" list="dl-typ" autocomplete="off"' })}
+          ${pole("vozidlo.model", "Model", { sirka: "s2", povinne: true, attrs: 'placeholder="300 SE" list="dl-model" autocomplete="off"' })}
+          ${pole("vozidlo.rok", "Rok výroby", { sirka: "s2", attrs: 'inputmode="numeric" placeholder="1989" list="dl-rok" autocomplete="off"' })}
           ${pole("vozidlo.barva", "Barva", { sirka: "s2" })}
           <div class="s2"><label class="pole">Verze</label>${segment("vozidlo.verze", [["EU", "EU"], ["US", "US"], ["JP", "JP"]])}</div>
           <div class="s2"><label class="pole">Tachometr</label>${segment("vozidlo.jednotka_tachometru", [["km", "km"], ["mi", "míle"]])}</div>
         </div>
+        <datalist id="dl-typ"></datalist><datalist id="dl-model"></datalist><datalist id="dl-rok"></datalist>
+        <div id="info-katalog"></div>
         <div id="info-vin"></div>
         <div id="zmena-majitele"></div>
         <div class="radek-tlacitek ulozit-sekci"><button type="button" class="tl" id="ulozit-vozidlo">💾 Uložit vozidlo</button>
@@ -772,6 +779,58 @@
     vykresliFotky();
     kontrolaPripravenosti();
     if (v.vin) zkontrolujVin(false);
+    napojKatalog(app, () => P?.vozidlo, (k, h) => { P.vozidlo[k] = h; ulozKoncept(); });
+  }
+  /* ---------- katalog vozů: nabídka typu / modelu / roku podle toho, co dává smysl ---------- */
+  let katalogVozu = null, katalogNacitam = null;
+  const nactiKatalogVozu = () => katalogNacitam ||= (db.katalogVozu ? db.katalogVozu() : Promise.resolve([])).then(k => (katalogVozu = k || [])).catch(() => { katalogNacitam = null; return []; });
+  const cislaRady = t => String(t || "").replace(/\D/g, "").slice(0, 3);
+  const doRoku = r => r.do || new Date().getFullYear();
+  const normModelu = t => String(t || "").toUpperCase().replace(/\s+/g, " ").replace(/\b(COUPÉ|COUPE|CABRIOLET|KABRIOLET)\b/g, "").trim();
+  // co katalog ví o autě: podle kódu z VIN (126.024), jinak podle typu + modelu (+ roku)
+  function vuzVKatalogu(v) {
+    const K = katalogVozu || []; if (!K.length) return [];
+    const kod = rozlustitVin(v.vin)?.kod, rok = Number(v.rok) || null;
+    let r = kod ? K.filter(x => x.typ === kod) : [];
+    if (!r.length && v.model) r = K.filter(x => (!cislaRady(v.typ) || cislaRady(x.rada) === cislaRady(v.typ)) && normModelu(x.model) === normModelu(v.model));
+    if (rok && r.length > 1) { const s = r.filter(x => x.od <= rok && rok <= doRoku(x)); if (s.length) r = s; }
+    return r;
+  }
+  async function napojKatalog(root, vozidlo, nastav) {
+    await nactiKatalogVozu(); if (!katalogVozu?.length || !root.isConnected) return;
+    const inp = k => root.querySelector(`[data-pole="vozidlo.${k}"], [name="${k}"][data-katalog]`);
+    const obnov = () => {
+      const v = vozidlo(); if (!v) return;
+      const K = katalogVozu, rok = /^\d{4}$/.test(String(v.rok || "").trim()) ? Number(v.rok) : null, rada = cislaRady(v.typ);
+      // typy (řady), které se v daném roce vyráběly
+      const rady = {}; K.filter(x => !rok || (x.od <= rok && rok <= doRoku(x))).forEach(x => { const c = cislaRady(x.rada); const r = rady[c] ||= { nazvy: new Set(), od: 9999, do: 0 }; r.nazvy.add(x.rada); r.od = Math.min(r.od, x.od); r.do = Math.max(r.do, doRoku(x)); });
+      root.querySelector("#dl-typ").innerHTML = Object.entries(rady).sort().map(([c, r]) => `<option value="${c}">${esc([...r.nazvy].join("/"))} · ${r.od}–${r.do}</option>`).join("");
+      // modely dané řady (a roku)
+      const m = {}; K.filter(x => (!rada || cislaRady(x.rada) === rada) && (!rok || (x.od <= rok && rok <= doRoku(x)))).forEach(x => { (m[x.model] ||= []).push(x); });
+      root.querySelector("#dl-model").innerHTML = Object.entries(m).sort((a, b) => a[0].localeCompare(b[0], "cs", { numeric: true })).map(([n, r]) => `<option value="${esc(n)}">${esc(r[0].rada)} · ${esc([...new Set(r.map(x => x.typ))].join(", "))} · ${Math.min(...r.map(x => x.od))}–${Math.max(...r.map(doRoku))}</option>`).join("");
+      // roky podle zvoleného modelu / řady
+      const zdroj = vuzVKatalogu({ ...v, rok: null }).length ? vuzVKatalogu({ ...v, rok: null }) : rada ? K.filter(x => cislaRady(x.rada) === rada) : [];
+      const od = zdroj.length ? Math.min(...zdroj.map(x => x.od)) : null, doo = zdroj.length ? Math.max(...zdroj.map(doRoku)) : null;
+      root.querySelector("#dl-rok").innerHTML = od ? Array.from({ length: doo - od + 1 }, (_, i) => `<option value="${od + i}"></option>`).join("") : "";
+      // kontrola: sedí rok k typu / modelu?
+      const info = root.querySelector("#info-katalog"), r = vuzVKatalogu(v);
+      const mimo = rok && od && (rok < od - 1 || rok > doo + 1);
+      const ri = inp("rok");                            // červeně jen to, co označil katalog (základní kontrolu roku nerušit)
+      if (ri && mimo) { ri.classList.add("neplatne"); ri.dataset.katalogChyba = "1"; }
+      else if (ri?.dataset.katalogChyba) { delete ri.dataset.katalogChyba; ri.classList.remove("neplatne"); ri.dispatchEvent(new Event("blur")); }
+      if (mimo) info.innerHTML = `<div class="info pozor" style="margin-top:10px">${esc(r[0] ? `${r[0].model} (${r[0].rada})` : `Typ ${rada}`)} se vyráběl ${od}–${doo}. Zkontrolujte rok výroby${rozlustitVin(v.vin) ? " nebo VIN" : ""}.</div>`;
+      else if (r.length) { const x = r[0]; info.innerHTML = `<p class="napoveda" style="margin:8px 0 0">📘 Katalog: <b>${esc(x.model)}</b> · ${esc(x.rada)}${x.karoserie ? " " + esc(x.karoserie) : ""} · ${esc([...new Set(r.map(y => y.typ))].join(", "))} · ${Math.min(...r.map(y => y.od))}–${Math.max(...r.map(doRoku))}${x.motor ? ` · motor ${esc([...new Set(r.map(y => y.motor))].join(" / "))}` : ""}</p>`; }
+      else info.innerHTML = "";
+    };
+    // z VIN: doplnit typ a model, když jsou prázdné
+    const zVinu = () => {
+      const v = vozidlo(); if (!v) return; const kod = rozlustitVin(v.vin)?.kod; if (!kod) return;
+      const r = (katalogVozu || []).filter(x => x.typ === kod); if (!r.length) return;
+      if (!String(v.model || "").trim()) { nastav("model", r[0].model); const i = inp("model"); if (i) i.value = r[0].model; }
+      if (!String(v.typ || "").trim()) { const c = cislaRady(r[0].rada); nastav("typ", c); const i = inp("typ"); if (i) i.value = c; }
+    };
+    ["typ", "model", "rok", "vin"].forEach(k => { const i = inp(k); if (i) i.addEventListener("input", () => setTimeout(() => { if (k === "vin") zVinu(); obnov(); })); });
+    zVinu(); obnov();
   }
 
   /* Co ještě chybí, než jde k náhledu a podpisu: povinná pole + nedokončené nahrávání fotek a videí */
@@ -2571,6 +2630,60 @@
 
   /* ================= přehled dokladů (všechny zakázky) ================= */
   const nazevMesice = m => { const [y, mm] = m.split("-"); return `${["leden", "únor", "březen", "duben", "květen", "červen", "červenec", "srpen", "září", "říjen", "listopad", "prosinec"][+mm - 1]} ${y}`; };
+  /* ================= díly: kolikrát a na jaká auta (statistika ze zakázek) ================= */
+  async function dilyPrehled() {
+    const n0 = navId;
+    app.innerHTML = `<div class="hlavicka-prehledu"><div><h1>Díly</h1><div class="mutted">Všechny díly zadané do zakázek – kolikrát a na jaká auta</div></div></div>
+      <input class="vstup" id="filtr-dilu" type="search" placeholder="Hledat: název, číslo MB, výrobce, model auta" style="margin-bottom:10px">
+      <div class="filtry-zakazek"><select class="vstup" id="dily-rada" aria-label="Typ vozu"><option value="">Všechny typy</option></select>
+        <select class="vstup" id="dily-razeni" aria-label="Řazení"><option value="pocet">Nejpoužívanější</option><option value="datum">Naposledy použité</option><option value="nazev">Podle názvu A–Z</option></select>
+        <span class="napoveda" id="dily-pocet"></span></div>
+      <div id="seznam-dilu"><div class="nacitani">Načítám díly…</div></div>`;
+    let D = [];
+    try { [D] = await Promise.all([db.vsechnyDily(), nactiKatalogVozu()]); } catch (e) { app.querySelector("#seznam-dilu").innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+    if (navId !== n0) return;
+    const klicDilu = d => { const c = String(d.cislo_mb || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); return c ? "c:" + c : "n:" + String(d.nazev || "").trim().toLowerCase(); };
+    const popisAuta = v => { if (!v) return { text: "neznámé auto", rada: "" };
+      const k = vuzVKatalogu(v)[0], rada = k?.rada || (v.typ ? (/^\d/.test(v.typ) ? "W" : "") + v.typ : "");
+      return { text: [rada, v.model].filter(Boolean).join(" ") + (v.rok ? ` (${v.rok})` : ""), motor: v.motor || k?.motor || "", rada: cislaRady(rada) }; };
+    const G = {};
+    D.filter(d => d.nazev || d.cislo_mb).forEach(d => {
+      const g = G[klicDilu(d)] ||= { nazvy: {}, cislo: d.cislo_mb || "", vyrobci: new Set(), mnozstvi: 0, jednotka: d.jednotka || "ks", pouziti: [], ceny: [] };
+      g.nazvy[d.nazev || ""] = (g.nazvy[d.nazev || ""] || 0) + 1; if (d.vyrobce) g.vyrobci.add(d.vyrobce);
+      g.mnozstvi += Number(d.mnozstvi) || 0;
+      if (d.nakupni_cena != null) g.ceny.push(Number(d.nakupni_cena) * (Number(d.kurz) || 1));
+      const z = d.zakazky || {}, a = popisAuta(z.vozidla);
+      g.pouziti.push({ zid: z.id, cislo: z.cislo, datum: z.datum_prijmu || "", mnozstvi: d.mnozstvi, ...a });
+    });
+    const skupiny = Object.values(G).map(g => ({ ...g, nazev: Object.entries(g.nazvy).sort((a, b) => b[1] - a[1])[0][0] || g.cislo,
+      zakazek: new Set(g.pouziti.map(x => x.zid)).size, posledni: g.pouziti.map(x => x.datum).sort().pop() || "",
+      rady: new Set(g.pouziti.map(x => x.rada).filter(Boolean)) }));
+    const vsechnyRady = [...new Set(skupiny.flatMap(g => [...g.rady]))].sort();
+    app.querySelector("#dily-rada").insertAdjacentHTML("beforeend", vsechnyRady.map(r => `<option value="${r}">${r}</option>`).join(""));
+    const F = { rada: "", razeni: "pocet", ...(nacti("werk-filtr-dilu") || {}) };
+    app.querySelector("#dily-rada").value = vsechnyRady.includes(F.rada) ? F.rada : ""; app.querySelector("#dily-razeni").value = F.razeni;
+    const otevrene = new Set();
+    const vykresli = () => {
+      const q = app.querySelector("#filtr-dilu").value.trim().toLowerCase(), rada = app.querySelector("#dily-rada").value, raz = app.querySelector("#dily-razeni").value;
+      const r = skupiny.filter(g => (!rada || g.rady.has(rada)) && (!q || [g.nazev, g.cislo, ...g.vyrobci, ...g.pouziti.map(x => x.text + " " + x.motor)].some(x => String(x).toLowerCase().includes(q))))
+        .sort(raz === "nazev" ? (a, b) => a.nazev.localeCompare(b.nazev, "cs") : raz === "datum" ? (a, b) => b.posledni.localeCompare(a.posledni) : (a, b) => b.zakazek - a.zakazek || b.mnozstvi - a.mnozstvi);
+      app.querySelector("#dily-pocet").textContent = `${r.length} dílů`;
+      app.querySelector("#seznam-dilu").innerHTML = r.length ? `<div class="doklady">${r.map((g, i) => {
+        const auta = {}; g.pouziti.forEach(x => { const k = x.text + (x.motor ? " · " + x.motor : ""); auta[k] = (auta[k] || 0) + 1; });
+        const k = g.cislo || g.nazev, cena = g.ceny.length && jeMajitel() ? ` · nákup ⌀ ${kc(g.ceny.reduce((a, b) => a + b, 0) / g.ceny.length)}` : "";
+        return `<div class="doklad dil-stat"><button type="button" class="dil-hlava" data-dil="${esc(k)}" aria-expanded="${otevrene.has(k)}">
+          <span><b>${esc(g.nazev)}</b>${g.cislo ? ` <span class="mutted">· ${esc(g.cislo)}</span>` : ""}${g.vyrobci.size ? ` <small class="mutted">· ${esc([...g.vyrobci].join(", "))}</small>` : ""}
+            <br><small class="mutted">${g.zakazek}× v zakázkách · celkem ${mnozstviCz(g.mnozstvi)} ${esc(g.jednotka)}${g.posledni ? ` · naposledy ${datumCz(g.posledni)}` : ""}${cena}</small>
+            <span class="cipy" style="margin-top:6px">${Object.entries(auta).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([a, n]) => `<span class="cip">${esc(a)}${n > 1 ? ` ×${n}` : ""}</span>`).join("")}</span></span>
+          <b class="dil-pocet">${g.zakazek}×</b></button>
+          ${otevrene.has(k) ? `<div class="dil-pouziti">${g.pouziti.sort((a, b) => b.datum.localeCompare(a.datum)).map(x => `<a class="odkaz-radek" href="#/zakazka/${x.zid}">#${x.cislo} · ${esc(x.text)}${x.motor ? " · " + esc(x.motor) : ""} · ${datumCz(x.datum)} · ${mnozstviCz(Number(x.mnozstvi) || 0)} ${esc(g.jednotka)}</a>`).join("")}</div>` : ""}</div>`; }).join("")}</div>`
+        : `<div class="prazdne">${skupiny.length ? "Nic nenalezeno." : "Zatím žádné díly – přidávají se v zakázce v sekci Díly."}</div>`;
+      app.querySelectorAll("[data-dil]").forEach(b => b.onclick = () => { const k = b.dataset.dil; otevrene.has(k) ? otevrene.delete(k) : otevrene.add(k); vykresli(); });
+    };
+    vykresli();
+    app.querySelector("#filtr-dilu").oninput = vykresli;
+    ["rada", "razeni"].forEach(k => app.querySelector("#dily-" + k).onchange = e => { F[k] = e.target.value; uloz("werk-filtr-dilu", F); vykresli(); });
+  }
   async function prehledDokladu() {
     const n0 = navId;
     app.innerHTML = `<h1>Doklady</h1><div class="nacitani">Načítám doklady…</div>`;
@@ -3002,7 +3115,7 @@
   let obnoveno = false;
   function obnovitKdyzLzeTo() {
     if (!novaVerze || obnoveno) return;
-    const klid = ["", "#", "#/", "#/zakazky", "#/zakaznici", "#/vozidla", "#/doklady"].includes(location.hash)
+    const klid = ["", "#", "#/", "#/zakazky", "#/zakaznici", "#/vozidla", "#/dily", "#/doklady"].includes(location.hash)
       && !document.querySelector(".prekryv") && !Object.keys(cekajiciUlozeni).length;
     if (klid) { obnoveno = true; window.__OBNOVIT__ ? window.__OBNOVIT__() : location.reload(); return; }
     if (document.getElementById("nova-verze")) return;

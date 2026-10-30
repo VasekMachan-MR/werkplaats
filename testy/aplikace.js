@@ -22,7 +22,7 @@ const server = http.createServer((q, r) => {
   const b = await chromium.launch();
   const ctx = await b.newContext({ ...devices["iPad Pro 11"], locale: "cs-CZ", timezoneId: "Europe/Prague" });
   const podpisVasek = fs.existsSync("dokumenty/sablony/assets/podpis.png") ? "data:image/png;base64," + fs.readFileSync("dokumenty/sablony/assets/podpis.png").toString("base64") : null;
-  await ctx.addInitScript({ content: `window.__TEST_PODPIS__ = ${JSON.stringify(podpisVasek)};` + fs.readFileSync("testy/mock-db.js", "utf8") });
+  await ctx.addInitScript({ content: `window.__TEST_PODPIS__ = ${JSON.stringify(podpisVasek)}; window.__KATALOG__ = ${fs.readFileSync("testy/katalog-vozu.json", "utf8")};` + fs.readFileSync("testy/mock-db.js", "utf8") });
   const p = await ctx.newPage();
   const chyby = [];
   p.on("pageerror", e => chyby.push("pageerror: " + e.message));
@@ -71,8 +71,15 @@ const server = http.createServer((q, r) => {
   await p.waitForSelector("text=Nové auto");
   kontrola(await p.inputValue('[data-pole="vozidlo.typ"]') === "126", "z VIN se doplnil typ 126");
   kontrola(await p.isVisible("text=kód modelu 126.024"), "z VIN se rozluštil kód modelu 126.024");
-  await p.fill('[data-pole="vozidlo.model"]', "300 SE");
-  await p.fill('[data-pole="vozidlo.rok"]', "1989");
+  await p.waitForFunction(() => document.querySelector('[data-pole="vozidlo.model"]').value === "300 SE");
+  kontrola(true, "katalog: z VIN 126.024 se doplnil model 300 SE");
+  kontrola(/126\.024/.test(await p.textContent("#info-katalog")) && /M103/.test(await p.textContent("#info-katalog")), "katalog: ukáže typ, roky výroby a motor (M103)");
+  await p.fill('[data-pole="vozidlo.rok"]', "1981"); await p.waitForTimeout(50);
+  const kat = await p.evaluate(() => ({ typy: [...document.querySelectorAll("#dl-typ option")].map(o => o.value), cervena: document.querySelector('[data-pole="vozidlo.rok"]').classList.contains("neplatne"), info: document.querySelector("#info-katalog").textContent }));
+  kontrola(!kat.typy.includes("129") && kat.typy.includes("123") && kat.typy.includes("107"), "katalog: v roce 1981 nenabídne W129, nabídne W123 a R107");
+  kontrola(kat.cervena && /vyráběl 1985/.test(kat.info), "katalog: rok 1981 k 300 SE (126.024) zčervená – vyráběl se 1985–1991");
+  await p.fill('[data-pole="vozidlo.rok"]', "1989"); await p.waitForTimeout(50);
+  kontrola(!(await p.evaluate(() => document.querySelector('[data-pole="vozidlo.rok"]').classList.contains("neplatne"))), "katalog: rok 1989 je v pořádku");
   await p.fill('[data-pole="vozidlo.spz"]', "1H1 2345");
   await p.fill('[data-pole="zakazka.km_prijem"]', "123456");
   await p.fill('[data-pole="zakazka.predpoklad_dokonceni"]', "2027-01-07");
@@ -669,6 +676,20 @@ const server = http.createServer((q, r) => {
     kontrola(r && r.verze === 2 && /Podepsáno online v E-servisce/.test(r.pod) && !r.ceka && /zakaznik:eserviska/.test(r.zp) && r.dp, "z podpisu v E-servisce se vystaví podepsaný list 7377-1-2 (podpis zákazníka + poznámka o el. podpisu)");
     kontrola(await p.locator("#vystavit-podepsany, #odkaz-k-podpisu").count() === 0, "po vystavení už zakázka na podpis nečeká");
     { const b = await p.evaluate(() => Array.from(Object.entries(window.__ULOZENO__.soubory).find(([k]) => /7377-1-2-zakazkovy-list\.pdf$/.test(k))?.[1] || [])); if (b.length) require("fs").writeFileSync("testy/vystup-app/podepsany-list.pdf", Buffer.from(b)); }
+  }
+
+  // ---------- Díly: statistika ze zakázek ----------
+  {
+    const d0 = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const d = T.dily.find(x => x.stav !== "nepouzito" && x.nazev); return d && { nazev: d.nazev, n: T.dily.filter(x => x.nazev === d.nazev && x.stav !== "nepouzito").length }; });
+    await p.evaluate(() => { location.hash = "#/dily"; }); await p.waitForSelector(".dil-stat, .prazdne");
+    kontrola(await p.locator(`.dil-stat >> text=${d0.nazev}`).count() >= 1, "Díly: díl ze zakázky je v přehledu dílů");
+    const txt = await p.textContent(".dil-stat");
+    kontrola(/W126 300 SE \(1989\)/.test(txt) && /M103/.test(txt), "Díly: u dílu je vidět, na jaké auto (W126 300 SE 1989, motor M103)");
+    await p.click(".dil-stat .dil-hlava"); await p.waitForSelector(".dil-pouziti a");
+    kontrola(/#7377/.test(await p.textContent(".dil-pouziti")), "Díly: rozkliknutí ukáže zakázky, kde byl díl použit");
+    await p.screenshot({ path: "testy/vystup-app/dily.png", fullPage: false });
+    await p.fill("#filtr-dilu", "zzzz-nic"); await p.waitForSelector("text=Nic nenalezeno.");
+    kontrola(true, "Díly: hledání");
   }
 
   // ---------- Kalendář v Přehledu ----------

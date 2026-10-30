@@ -37,6 +37,11 @@ window.__WERK_DB__ = (() => {
           .map(([ukon, nazev, jen_palivo = null, jen_serizovani_ventilu = false], i) => ({ ukon, nazev, poradi: i + 1, jen_palivo, jen_serizovani_ventilu })) };
     },
     async dalsiCisloOdhad() { return window.__ULOZENO__.citac + 1; },
+    async katalogVozu() { return kopie(window.__KATALOG__ || []); },
+    async vsechnyDily() {
+      await cekej();
+      return kopie(T.dily.filter(d => d.stav !== "nepouzito").map(d => { const z = T.zakazky.find(x => x.id === d.zakazka_id); return { ...d, zakazky: z && { ...z, vozidla: T.vozidla.find(v => v.id === z.vozidlo_id) } }; }));
+    },
     async kalendar(od, doo) { await cekej(); return kopie(T.kalendar.filter(k => k.datum >= od && k.datum <= doo)); },
     async smazatRadek(tab, rid) { await cekej(); T[tab] = T[tab].filter(x => x.id !== rid); window.__ULOZENO__.tabulky[tab] = T[tab]; return [{ id: rid }]; },
     async zakazky() {
