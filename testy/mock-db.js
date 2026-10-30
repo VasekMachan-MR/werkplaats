@@ -212,6 +212,7 @@ window.__WERK_DB__ = (() => {
     async smazatZaznamSouboru(sid) { await cekej(); T.soubory = T.soubory.filter(x => x.id !== sid); return [{ id: sid }]; },
     async smazatSoubory(telo) { (window.__SMAZANE_SOUBORY__ ||= []).push(telo); return { smazano: (telo.klice || []).length }; },
     async vystavitDoklad(p) {                       // jako vystavit_doklad v databázi: všechno najednou, nebo nic
+      if (!/^(\d+-[1-6](-\d+)?|\d{4,}\d{3}[1-6])$/.test(String(p.cislo)) || !/^\d{1,10}$/.test(String(p.variabilni_symbol))) throw new Error("new row violates check constraint \"doklady_cislo_tvar\"");   // jako 038
       await cekej(); if (window.__OFFLINE_DOKLAD__) throw new Error("Failed to fetch");
       for (const x of p.podpisy || []) if (!["ipad", "dalkove", "ulozeny"].includes(x.zpusob)) throw new Error('new row for relation "podpisy" violates check constraint "podpisy_zpusob_check"');   // jako v databázi
       const uz = T.doklady.find(x => x.cislo === p.cislo); if (uz) return { ...kopie(uz), uz_existoval: true };

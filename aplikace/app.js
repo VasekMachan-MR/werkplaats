@@ -1337,7 +1337,7 @@
     const z = Q.zakaznik, v = Q.vozidlo, k = Q.zakazka, en = k.jazyk === "en";
     const odhad = cisloZ(k.odhad_ceny);
     return {
-      cislo: Q.cisloListu || (cislo ? `${cislo}-1` : null),     // zakázkový list = číslo zakázky -1 (nová verze: 7377-1-2…)
+      cislo: Q.cisloListu || (cislo ? cisloDokladu(cislo, "zakazkovy_list", 1) : null),   // zakázkový list = 7377-1 / od 1.11.2026 73770001
       zakaznik: { jmeno: z.jmeno.trim(), ulice: z.ulice.trim(), mesto: [z.psc.trim(), z.mesto.trim()].filter(Boolean).join(" "), zeme: z.zeme.trim(), telefon: z.telefon.trim(), email: z.email.trim() },
       zavady: k.zavady.map(s => s.trim()).filter(Boolean),
       vozidlo: { znacka: "Mercedes-Benz", typ: v.typ.trim(), model: v.model.trim(), rok: String(v.rok).trim(), vin: v.vin.replace(/\s/g, "") },
@@ -1546,8 +1546,17 @@
     en: { zakazkovy_list: "Work order", nabidka: "Quotation", faktura: "Invoice", predavaci_protokol: "Handover protocol", zalohova: "Advance invoice", opravny: "Credit note" }
   };
   /* 7377 + faktura (verze 1) → 7377-3; druhá faktura → 7377-3-2. VS jen číslice: 73773 / 737732 */
-  const cisloDokladu = (c, druh, verze = 1) => `${c}-${PRIPONY[druh]}${verze > 1 ? `-${verze}` : ""}`;
-  const vsDokladu = (c, druh, verze = 1) => `${c}${PRIPONY[druh]}${verze > 1 ? verze : ""}`;
+  /* Od 1. 11. 2026 nový formát čísel (Vašek 30.10.2026): číslo zakázky + verze na 3 místa (první = 000) + druh dokladu
+     7377-3 → 73770003, 7377-3-2 → 73770023, 7377-1 → 73770001 – číslo = variabilní symbol (jen číslice, platba se spáruje).
+     Přepíná se podle dne vystavení; návrat = posunout NOVA_CISLA_OD (už vydané doklady si čísla nechají). */
+  const NOVA_CISLA_OD = "2026-11-01";
+  const noveCislo = () => dnes() >= (window.__CISLA_OD__ || NOVA_CISLA_OD);
+  const cisloDokladu = (c, druh, verze = 1) => noveCislo() ? `${c}${String(verze > 1 ? verze : 0).padStart(3, "0")}${PRIPONY[druh]}`
+    : `${c}-${PRIPONY[druh]}${verze > 1 ? `-${verze}` : ""}`;
+  const vsZCisla = cislo => String(cislo).replace(/\D/g, "").slice(0, 10);            // 7377-3-2 → 737732, 73770023 → 73770023
+  const vsDokladu = (c, druh, verze = 1) => vsZCisla(cisloDokladu(c, druh, verze));
+  const TVAR_CISLA = /^(\d+-[1-6](-\d+)?|\d+\d{3}[1-6])$/;
+  window.__WERK_CISLA__ = { cisloDokladu, vsDokladu };                               // pro testy
   const ignorujDuplicitu = async fn => { try { await fn(); } catch (e) { if (!/exists|Duplicate/i.test(chybaText(e))) throw e; } };
 
   /* Mazání chybně vystaveného dokladu (jen majitel; server hlídá: poslední verze, nezaplacený, nepředaný účetní, záloha bez konečné faktury) */
@@ -1575,7 +1584,8 @@
   /* Vykreslí doklad do rámečku → PDF → uloží PDF, podpis zákazníka, doklad (zamčený) a podpisy. Vrací {doklad, bytes, cislo}. */
   async function ulozitDoklad({ iframe, sablona, data, jazyk, zakazka_id, vozidlo_id, cisloZakazky, druh, verze = 1, vystaveno, splatnost,
                                podpisZak, jmenoZakaznika, vyhPodepsalNaIpadu = false, nabidka_id = null, prubeh = () => {}, prilohy = [], zpusobZak = "ipad" }) {
-    const cislo = cisloDokladu(cisloZakazky, druh, verze);
+    const cislo = TVAR_CISLA.test(String(data?.cislo || "")) ? String(data.cislo) : cisloDokladu(cisloZakazky, druh, verze);
+    if (data && !data.cislo) data.cislo = cislo;
     prubeh(`Vytvářím ${NAZEV_DOKLADU.cs[druh].toLowerCase()}…`);
     const { bytes, otisk, vysledek } = await vFronte(iframe, async () => {          // vykreslit a hned převést na PDF – nic mezi to nevleze
       const w = await vykresliSablonuHned(iframe, sablona, data, jazyk);
@@ -1609,7 +1619,7 @@
     const podpisy = [{ role: "vyhotovil", jmeno: uzivatel.jmeno, uzivatel_id: uzivatel.id, zpusob: vyhPodepsalNaIpadu ? "ipad" : "ulozeny", otisk_dokumentu: otisk }];
     if (podpisZak) podpisy.unshift({ role: "zakaznik", jmeno: jmenoZakaznika, zpusob: zpusobZak, otisk_dokumentu: otisk });
     prubeh("Ukládám doklad…");
-    const doklad = await db.vystavitDoklad({ zakazka_id, vozidlo_id, nabidka_id, druh, verze, cislo, variabilni_symbol: vsDokladu(cisloZakazky, druh, verze), jazyk,
+    const doklad = await db.vystavitDoklad({ zakazka_id, vozidlo_id, nabidka_id, druh, verze, cislo, variabilni_symbol: vsZCisla(cislo), jazyk,
       vystaveno: vystaveno || dnes(), splatnost: splatnost || null, data: ulozenaData, celkem: vysledek.celkem ?? null, soubory, podpisy });
     posledniPdf = { zakazka_id, cislo, bytes, nazev: `${cislo}.pdf`, druh, jazyk, prilohy: hotovePrilohy };
     return { doklad, bytes, cislo };
@@ -3068,7 +3078,7 @@
     if (en) await nactiPreklady();
     const docasnePreklady = {}, tr = en ? prekladac(docasnePreklady) : (t => t);
     const verze = (z.doklady || []).filter(d => d.druh === druh).length + 1;
-    const cislo = cisloDokladu(z.cislo, druh, verze), vs = vsDokladu(z.cislo, druh, verze);
+    const cislo = cisloDokladu(z.cislo, druh, verze), vs = vsZCisla(cislo);
     const s = soucty(polozky, dily);
     const jeFaktura = druh !== "predavaci_protokol";
     // zálohové faktury této zakázky (u konečné faktury se odečtou)
