@@ -1,6 +1,6 @@
 /* Zkušební databáze v paměti prohlížeče – stejné funkce jako skutečné napojení na Supabase (app.js → vytvorDb).
    Používá se jen v testech, do aplikace se nedostane. */
-window.__ULOZENO__ = { soubory: {}, tabulky: { zakaznici: [], vozidla: [], vlastnictvi: [], zakazky: [], soubory: [], doklady: [], podpisy: [], polozky: [], dily: [], nabidky: [], kalendar: [], dalkove_podpisy: [] }, citac: 7376 };
+window.__ULOZENO__ = { soubory: {}, tabulky: { zakaznici: [], vozidla: [], vlastnictvi: [], zakazky: [], soubory: [], doklady: [], podpisy: [], polozky: [], dily: [], nabidky: [], kalendar: [], dalkove_podpisy: [], sklad: [], sklad_pohyby: [] }, citac: 7376 };
 window.__WERK_DB__ = (() => {
   const T = window.__ULOZENO__.tabulky, S = window.__ULOZENO__.soubory;
   const id = () => crypto.randomUUID();
@@ -11,6 +11,30 @@ window.__WERK_DB__ = (() => {
     { id: "u1", jmeno: "Václav Macháň", email: "info@example.cz", role: "majitel", aktivni: true, podpis_obrazek: null },
     { id: "u2", jmeno: "Petr Mechanik", email: "petr@example.cz", role: "mechanik", aktivni: true, podpis_obrazek: null }
   ];
+  // sklad jako v databázi (033_sklad.sql): klíč = číslo dílu bez mezer, jinak název
+  const klicSkladu = p => { const c = String(p.cislo_mb || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); return c ? "c:" + c : "n:" + String(p.nazev || "").trim().toLowerCase(); };
+  function pohyb(p) {
+    const s = T.sklad.find(x => x.id === p.sklad_id); if (!s) return;
+    T.sklad_pohyby.push({ id: id(), cas: new Date().toISOString(), ...p });
+    s.mnozstvi = Math.round(((Number(s.mnozstvi) || 0) + Number(p.zmena)) * 100) / 100;
+    if (p.druh === "prijem" && p.cena != null) s.nakupni_cena = p.cena;
+    if (p.druh === "inventura") s.inventura = new Date().toISOString().slice(0, 10);
+  }
+  function katalogZDilu(d, o) {                        // trigger dil_do_katalogu
+    if (!d.ze_skladu || !d.sklad_id) {
+      const k = klicSkladu(d);
+      if (k === "n:" || k === "n:(bez názvu)") { d.sklad_id = null; return d; }
+      let s = T.sklad.find(x => x.klic === k);
+      if (!s) { s = { id: id(), nazev: String(d.nazev).trim(), cislo_mb: d.cislo_mb || null, vyrobce: d.vyrobce || null, puvod: d.puvod || null, jednotka: d.jednotka || "ks", mnozstvi: 0, klic: k }; T.sklad.push(s); }
+      d.sklad_id = s.id;
+    }
+    const s = T.sklad.find(x => x.id === d.sklad_id);
+    if (s && !d.ze_skladu && (!o || o.nakupni_cena !== d.nakupni_cena || o.dodavatel_id !== d.dodavatel_id || o.sklad_id !== d.sklad_id)) {
+      if (d.nakupni_cena > 0) s.nakupni_cena = Math.round(d.nakupni_cena * (Number(d.kurz) || 1) * 100) / 100;
+      s.dodavatel_id = d.dodavatel_id || s.dodavatel_id; s.vyrobce = s.vyrobce || d.vyrobce || null; s.puvod = s.puvod || d.puvod || null;
+    }
+    return d;
+  }
   return {
     async relace() { return { user: { id: window.__TEST_UZIVATEL__ || "u1" } }; },
     naZmenuPrihlaseni() {},
@@ -93,7 +117,22 @@ window.__WERK_DB__ = (() => {
     async polozky(zid) { return kopie(T.polozky.filter(p => p.zakazka_id === zid).sort((a, b) => a.poradi - b.poradi)); },
     async ulozitPolozky(zid, pol) { await cekej(); if (window.__OFFLINE__) throw new Error("Failed to fetch"); T.polozky = T.polozky.filter(p => p.zakazka_id !== zid).concat(pol.map((p, i) => ({ ...p, zakazka_id: zid, poradi: i + 1 }))); return pol.length; },
     async dily(zid) { return kopie(T.dily.filter(d => d.zakazka_id === zid).sort((a, b) => a.poradi - b.poradi)); },
-    async ulozitDily(zid, dily) { await cekej(); if (window.__OFFLINE__) throw new Error("Failed to fetch"); T.dily = T.dily.filter(d => d.zakazka_id !== zid).concat(dily.map((d, i) => ({ ...d, zakazka_id: zid, poradi: i + 1 }))); return dily.length; },
+    async ulozitDily(zid, dily) {
+      await cekej(); if (window.__OFFLINE__) throw new Error("Failed to fetch");
+      const stare = T.dily.filter(d => d.zakazka_id === zid), nove = dily.map((d, i) => katalogZDilu({ ...d, zakazka_id: zid, poradi: i + 1 }, stare.find(x => x.id === d.id)));
+      const vydej = d => d && d.ze_skladu && d.sklad_id && d.stav !== "nepouzito" ? Number(d.mnozstvi) || 0 : 0;   // jako trigger sklad_z_dilu
+      for (const d of nove) { const o = stare.find(x => x.id === d.id), r = o && o.sklad_id === d.sklad_id ? vydej(o) - vydej(d) : 0;
+        if (r) pohyb({ sklad_id: d.sklad_id, druh: "zakazka", zmena: r, zakazka_id: zid, dil_id: d.id });
+        if (!o || o.sklad_id !== d.sklad_id) { if (vydej(o)) pohyb({ sklad_id: o.sklad_id, druh: "zakazka", zmena: vydej(o), zakazka_id: zid }); if (vydej(d)) pohyb({ sklad_id: d.sklad_id, druh: "zakazka", zmena: -vydej(d), zakazka_id: zid, dil_id: d.id }); } }
+      for (const o of stare) if (!nove.some(d => d.id === o.id) && vydej(o)) pohyb({ sklad_id: o.sklad_id, druh: "zakazka", zmena: vydej(o), zakazka_id: zid });
+      T.dily = T.dily.filter(d => d.zakazka_id !== zid).concat(nove); return dily.length;
+    },
+    async sklad() { await cekej(); return kopie(T.sklad).sort((a, b) => a.nazev.localeCompare(b.nazev, "cs")); },
+    async pohybySkladu(sid) { await cekej(); return kopie(T.sklad_pohyby.filter(p => p.sklad_id === sid).map(p => ({ ...p, zakazky: T.zakazky.find(z => z.id === p.zakazka_id) || null })).reverse()); },
+    async novaPolozkaSkladu(p) { await cekej(); const k = klicSkladu(p); if (T.sklad.some(x => x.klic === k)) throw new Error('duplicate key value violates unique constraint "sklad_klic"');
+      const r = { id: id(), jednotka: "ks", mnozstvi: 0, ...p, klic: k }; T.sklad.push(r); return kopie(r); },
+    async pohybSkladu(p) { await cekej(); pohyb(p); return [{}]; },
+    async inventura(sid, stav) { await cekej(); const s = T.sklad.find(x => x.id === sid), r = stav - s.mnozstvi; if (r) pohyb({ sklad_id: sid, druh: "inventura", zmena: r }); else s.inventura = new Date().toISOString().slice(0, 10); return r; },
     async dodavatele() { return [{ id: "d1", nazev: "Auto Kelly" }, { id: "d2", nazev: "Granex" }, { id: "d3", nazev: "MB (original)" }, { id: "d4", nazev: "Jiný" }]; },
     async smazatZakazku(zid) {
       const z = T.zakazky.find(x => x.id === zid);
@@ -181,6 +220,7 @@ window.__WERK_DB__ = (() => {
     async upravit(tab, rid, zmeny) {
       const r = T[tab].find(x => x.id === rid); if (!r) throw new Error("nenalezeno " + tab);
       if (tab === "doklady" && r.zamceno && Object.keys(zmeny).some(k => !["pdf_soubor_id", "odeslano_uol", "zaplaceno"].includes(k))) throw new Error("Doklad je vydaný a nelze ho měnit");
+      if (tab === "sklad") { const k = klicSkladu({ ...r, ...zmeny }); if (T.sklad.some(x => x.klic === k && x.id !== rid)) throw new Error('duplicate key value violates unique constraint "sklad_klic"'); Object.assign(r, zmeny, { klic: k }); return [kopie(r)]; }
       Object.assign(r, zmeny); return [kopie(r)];
     },
     async detail(zid) {

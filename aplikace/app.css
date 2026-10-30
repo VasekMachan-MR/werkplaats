@@ -601,3 +601,41 @@ details.sbalovaci[open] > summary { margin-bottom: 14px; }
 .sk-volby input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--navy); margin: 0; }
 .sk-volby .vstup { flex: 1 1 180px; min-width: 0; }
 @media (max-width: 600px) { .sady-kol { grid-template-columns: 1fr; } }
+
+/* ---------- sklad a katalog dílů ---------- */
+.taby-dilu { max-width: 520px; }
+.sklad-souhrn { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.sklad-souhrn > * { background: #fff; border: 1px solid var(--linka); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; text-align: left; font: inherit; color: inherit; }
+.sklad-souhrn b { font-size: 22px; color: var(--navy); font-variant-numeric: tabular-nums; }
+.sklad-souhrn small { color: var(--sedy); }
+.sklad-souhrn button { cursor: pointer; }
+.sklad-souhrn button.pozor { background: var(--oranzova-svetla); border-color: #f3c99b; }
+.sklad-souhrn button.pozor b { color: var(--oranzova); }
+.sklad-pol { flex-direction: column; align-items: stretch; }
+.sklad-stav { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 70px; text-align: right; }
+.sklad-stav b { font-size: 19px; font-variant-numeric: tabular-nums; color: var(--sedy); }
+.sklad-stav small { font-size: 12px; color: var(--sedy); }
+.sklad-stav.ma b { color: var(--zelena, #1e7a4c); }
+.sklad-stav.pod b, .sklad-stav.pod small { color: var(--cervena); }
+.sklad-detail { border-top: 1px solid #e3e6ea; margin-top: 10px; padding-top: 12px; }
+.sklad-akce { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0 6px; }
+.sklad-akce > div { display: flex; flex-direction: column; gap: 6px; }
+.sklad-akce .vstup.cislo { width: 96px; }
+.sklad-historie { margin-top: 10px; display: flex; flex-direction: column; gap: 2px; }
+.sklad-pohyb { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid #eef0f3; font-size: 14px; }
+.sklad-pohyb .plus { color: var(--zelena, #1e7a4c); } .sklad-pohyb .minus { color: var(--cervena); }
+.inv-radek { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.inv-radek .vstup { width: 100px; flex: 0 0 auto; }
+/* našeptávač dílů v zakázce */
+.dil { position: relative; }
+.naseptavac { position: absolute; left: 10px; right: 10px; z-index: 30; background: #fff; border: 1px solid var(--linka); border-radius: 12px; box-shadow: 0 8px 24px rgba(9, 43, 80, .14); overflow: hidden; }
+.naseptavac button { all: unset; box-sizing: border-box; display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #eef0f3; }
+.naseptavac button:last-child { border-bottom: 0; }
+.naseptavac button:hover, .naseptavac button:focus-visible { background: var(--modra-svetla); }
+.naseptavac small { color: var(--sedy); }
+.naseptavac .skladem { color: var(--zelena, #1e7a4c); font-weight: 700; white-space: nowrap; }
+.dil-sklad { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--sedy); }
+.dil-sklad input { width: 20px; height: 20px; accent-color: var(--navy); }
+.dil-sklad.zapnuto { color: var(--zelena, #1e7a4c); }
+.typicke-dily { margin-top: 12px; }
+.typicke-dily .cip { cursor: pointer; }

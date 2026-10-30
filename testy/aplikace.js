@@ -815,7 +815,7 @@ const server = http.createServer((q, r) => {
   // ---------- Díly: statistika ze zakázek ----------
   {
     const d0 = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const d = T.dily.find(x => x.stav !== "nepouzito" && x.nazev); return d && { nazev: d.nazev, n: T.dily.filter(x => x.nazev === d.nazev && x.stav !== "nepouzito").length }; });
-    await p.evaluate(() => { location.hash = "#/dily"; }); await p.waitForSelector(".dil-stat, .prazdne");
+    await p.evaluate(() => { location.hash = "#/dily/pouzite"; }); await p.waitForSelector(".dil-stat, .prazdne");
     kontrola(await p.locator(`.dil-stat >> text=${d0.nazev}`).count() >= 1, "Díly: díl ze zakázky je v přehledu dílů");
     const txt = await p.textContent(".dil-stat");
     kontrola(/W126 300 SE \(1989\)/.test(txt) && /M103/.test(txt), "Díly: u dílu je vidět, na jaké auto (W126 300 SE 1989, motor M103)");
@@ -824,6 +824,58 @@ const server = http.createServer((q, r) => {
     await p.screenshot({ path: "testy/vystup-app/dily.png", fullPage: false });
     await p.fill("#filtr-dilu", "zzzz-nic"); await p.waitForSelector("text=Nic nenalezeno.");
     kontrola(true, "Díly: hledání");
+
+    // ---------- Sklad = katalog dílů (Vašek 30.10.2026) ----------
+    await p.evaluate(() => { location.hash = "#/dily"; }); await p.waitForSelector(".sklad-pol, .prazdne");
+    kontrola(await p.locator(`.sklad-pol >> text=${d0.nazev}`).count() >= 1, "Sklad: díly, které prošly zakázkami, jsou v katalogu samy");
+    await p.click("#sklad-novy");
+    await p.fill('#form-novy [data-n="nazev"]', "Olejový filtr MANN"); await p.fill('#form-novy [data-n="cislo_mb"]', "A 103 184 03 01");
+    await p.fill('#form-novy [data-n="mnozstvi"]', "5"); await p.fill('#form-novy [data-n="cena"]', "180"); await p.fill('#form-novy [data-n="umisteni"]', "regál A2");
+    await p.click("#novy-ulozit"); await p.waitForSelector(".sklad-pol >> text=Olejový filtr MANN");
+    const sk = () => p.evaluate(() => window.__ULOZENO__.tabulky.sklad.find(s => s.cislo_mb === "A 103 184 03 01"));
+    kontrola((await sk()).mnozstvi === 5 && (await sk()).umisteni === "regál A2" && (await sk()).nakupni_cena === 180, "Sklad: naskladnění nového dílu (5 ks, 180 Kč, regál A2)");
+    await p.click("#sklad-novy"); await p.fill('#form-novy [data-n="nazev"]', "filtr"); await p.fill('#form-novy [data-n="cislo_mb"]', "A1031840301");
+    await p.waitForSelector("#novy-shoda >> text=už v katalogu je"); await p.fill('#form-novy [data-n="mnozstvi"]', "2"); await p.click("#novy-ulozit");
+    await p.waitForFunction(() => window.__ULOZENO__.tabulky.sklad.find(s => s.cislo_mb === "A 103 184 03 01").mnozstvi === 7);
+    kontrola((await p.evaluate(() => window.__ULOZENO__.tabulky.sklad.filter(s => s.klic === "c:A1031840301").length)) === 1, "Sklad: stejné číslo dílu (i bez mezer) se přičte k existujícímu dílu (7 ks), nevznikne duplikát");
+    // zakázka: našeptávač z katalogu + vzít ze skladu → stav se odečte
+    const zid = await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky.find(z => z.cislo === 7377).id);
+    await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid); await p.waitForSelector("#pridat-dil", { state: "attached" });
+    await p.evaluate(() => { const s = document.getElementById("sekce-dily"); if (s) s.open = true; });
+    await p.waitForFunction(() => document.querySelector("#dily") && true); await p.waitForTimeout(400);
+    await p.click("#pridat-dil"); const nz = p.locator('.dil [data-f="nazev"]').last();
+    await nz.fill("olejový"); await p.waitForSelector(".naseptavac:not([hidden]) >> text=Olejový filtr MANN");
+    kontrola(/📦 7 ks/.test(await p.textContent(".naseptavac:not([hidden])")), "Zakázka: našeptávač nabídne díl z katalogu i se stavem skladu (📦 7 ks)");
+    await p.click(".naseptavac:not([hidden]) >> text=Olejový filtr MANN");
+    await p.waitForFunction(() => window.__ULOZENO__.tabulky.sklad.find(s => s.cislo_mb === "A 103 184 03 01").mnozstvi === 6, null, { timeout: 5000 });
+    const dil = await p.evaluate(id => window.__ULOZENO__.tabulky.dily.find(d => d.zakazka_id === id && d.cislo_mb === "A 103 184 03 01"), zid);
+    kontrola(dil.ze_skladu && dil.nakupni_cena === 180 && dil.stav === "mam", "Zakázka: díl ze skladu – doplní se číslo, cena 180 Kč, stav „Mám“ a ze skladu se odečte 1 ks (7 → 6)");
+    await p.locator('.dil [data-f="mnozstvi"]').last().fill("3");
+    await p.waitForFunction(() => window.__ULOZENO__.tabulky.sklad.find(s => s.cislo_mb === "A 103 184 03 01").mnozstvi === 4, null, { timeout: 5000 });
+    kontrola(true, "Zakázka: změna počtu na 3 ks → sklad 4 ks");
+    await p.locator("[data-ze-skladu]").last().uncheck();
+    await p.waitForFunction(() => window.__ULOZENO__.tabulky.sklad.find(s => s.cislo_mb === "A 103 184 03 01").mnozstvi === 7, null, { timeout: 5000 });
+    kontrola(true, "Zakázka: odškrtnutí „Ze skladu“ vrátí díly na sklad (7 ks)");
+    await p.locator("[data-ze-skladu]").last().check();
+    await p.waitForFunction(() => window.__ULOZENO__.tabulky.sklad.find(s => s.cislo_mb === "A 103 184 03 01").mnozstvi === 4, null, { timeout: 5000 });
+    // nový díl v zakázce se sám zapíše do katalogu
+    await p.click("#pridat-dil"); await p.locator('.dil [data-f="nazev"]').last().fill("Těsnění víka ventilů"); await p.locator('.dil [data-f="cislo_mb"]').last().fill("A 103 016 13 21");
+    await p.waitForFunction(() => window.__ULOZENO__.tabulky.sklad.some(s => s.klic === "c:A1030161321"), null, { timeout: 5000 });
+    kontrola(true, "Zakázka: nový díl se do katalogu dílů zapíše sám");
+    await p.screenshot({ path: "testy/vystup-app/zakazka-dily-sklad.png", fullPage: false });
+    // sklad: historie, minimum → doobjednat, inventura
+    await p.evaluate(() => { location.hash = "#/dily"; }); await p.waitForSelector(".sklad-pol >> text=Olejový filtr MANN");
+    await p.fill("#sklad-hledat", "103 184"); await p.click(".sklad-pol >> text=Olejový filtr MANN");
+    await p.waitForSelector(".sklad-historie >> text=#7377");
+    kontrola(/naskladněno/.test(await p.textContent(".sklad-historie")), "Sklad: historie pohybů (naskladněno, zakázka #7377)");
+    await p.fill('.sklad-detail [data-u="min_mnozstvi"]', "6");
+    await p.waitForFunction(() => window.__ULOZENO__.tabulky.sklad.find(s => s.cislo_mb === "A 103 184 03 01").min_mnozstvi === 6, null, { timeout: 5000 });
+    await p.click("#sklad-objednat"); await p.waitForSelector("#objednavka");
+    kontrola(/A 103 184 03 01\tOlejový filtr MANN\t2 ks/.test(await p.inputValue("#objednavka")), "Sklad: pod minimem → v seznamu „Doobjednat“ (A 103 184 03 01, 2 ks)");
+    await p.fill(".sklad-detail [data-inv-pocet]", "3"); await p.click(".sklad-detail [data-inv]");
+    await p.waitForFunction(() => window.__ULOZENO__.tabulky.sklad.find(s => s.cislo_mb === "A 103 184 03 01").mnozstvi === 3, null, { timeout: 5000 });
+    kontrola(true, "Sklad: inventura (spočítáno 3 ks → stav 3 ks, rozdíl v historii)");
+    await p.screenshot({ path: "testy/vystup-app/sklad.png", fullPage: true });
   }
 
   // ---------- výchozí řazení zakázek podle stavu; smazání řádku práce se potvrzuje ----------
