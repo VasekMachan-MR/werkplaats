@@ -72,7 +72,16 @@ end $$;
 set session_replication_role = origin;
 select 'Obnova dat dokončena' as vysledek;""")
     open(os.path.join(vystup, "data", "obnova-dat.sql"), "w", encoding="utf-8").write("\n".join(s) + "\n")
-    shutil.copy(os.path.join(KOREN, "zaloha", "JAK-OBNOVIT.html"), vystup)
+    den = (d.get("vytvoreno") or "")[:10]
+    datum = f"{int(den[8:10])}. {int(den[5:7])}. {den[:4]}" if len(den) == 10 else den
+    pocty = {t: len(v) for t, v in tab.items()}
+    souhrn = (f"zakázky {pocty.get('zakazky', 0)}, zákazníci {pocty.get('zakaznici', 0)}, auta {pocty.get('vozidla', 0)}, "
+              f"díly {pocty.get('dily', 0)}, doklady {pocty.get('doklady', 0)}, fotky a dokumenty v úložišti {len(d.get('soubory', []))}")
+    navod = open(os.path.join(KOREN, "zaloha", "JAK-OBNOVIT.html"), encoding="utf-8").read()
+    open(os.path.join(vystup, "JAK-OBNOVIT.html"), "w", encoding="utf-8").write(navod.replace("{{DATUM}}", datum).replace("{{SOUHRN}}", souhrn))
+    os.makedirs(os.path.join(vystup, "web"), exist_ok=True)
+    for f in ("e-serviska-head.html", "e-serviska-footer.html"):
+        shutil.copy(os.path.join(KOREN, "web", f), os.path.join(vystup, "web", f))
     shutil.copy(os.path.join(KOREN, "OBNOVA.md"), vystup)
     print(f"OK: {sum(len(v) for v in tab.values())} řádků v {len(tab)} tabulkách, {len(d.get('soubory', []))} souborů v úložišti")
 

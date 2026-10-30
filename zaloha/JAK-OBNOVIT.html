@@ -11,7 +11,7 @@ ol li,ul li{margin:6px 0}table{border-collapse:collapse;width:100%;margin:10px 0
 .mutted{color:#5b6672}
 </style></head><body>
 <h1>Jak obnovit Werkplaats a E-servisku</h1>
-<p class="mutted">Návod pro případ, že by se cokoli ztratilo nebo rozbilo. Záloha z 30. 10. 2026.</p>
+<p class="mutted">Návod pro případ, že by se cokoli ztratilo nebo rozbilo. <b>Tato záloha je ze dne {{DATUM}}</b> – podle návodu se vše vrátí přesně do stavu k tomuto dni.</p>
 
 <div class="box ok"><b>Nejjednodušší cesta (doporučeno):</b> otevři Clauda (aplikace Claude na Macu), propoj ho s Macem a napiš:<br>
 <i>„Obnov prosím Werkplaats a E-servisku ze zálohy v iCloudu: Mercedes Restorations → Zálohy Werkplaats → (nejnovější datum). Postupuj podle souboru JAK-OBNOVIT.html.“</i><br>
@@ -24,6 +24,7 @@ Claude udělá všechno sám. Ty jen potvrdíš přístupy a jednou se přihlás
 <tr><td><code>data/</code></td><td><b>Všechna data:</b> zákazníci, auta, zakázky, práce, díly, doklady, podpisy, nastavení, katalogy, sklad. Každá tabulka má jeden soubor.</td></tr>
 <tr><td><code>data/obnova-dat.sql</code></td><td><b>Hotový skript</b>, který všechna data nahraje zpátky jedním kliknutím (krok 5).</td></tr>
 <tr><td><code>data/_seznam-souboru-v-uloisti.json</code></td><td>Seznam všech fotek, videí a PDF. Samotné soubory jsou zrcadlené v <b>Cloudflare R2</b> (krok 8).</td></tr>
+<tr><td><code>web/</code></td><td>Přesný kód stránky <b>E-serviska</b> na webu ke dni zálohy (<code>e-serviska-head.html</code> a <code>e-serviska-footer.html</code>) – krok 7.</td></tr>
 <tr><td><code>OBNOVA.md</code></td><td>Technický popis pro programátora nebo Clauda.</td></tr>
 </table>
 
@@ -66,7 +67,7 @@ Claude udělá všechno sám. Ty jen potvrdíš přístupy a jednou se přihlás
 <li>Otevři <code>data/obnova-dat.sql</code> (třeba v TextEditu), označ všechno (⌘A), zkopíruj (⌘C) a vlož do editoru (⌘V).</li>
 <li>Klikni <b>Run</b>. Na konci se objeví „<b>Obnova dat dokončena</b>“.</li>
 </ol>
-<p class="mutted">Skript nejdřív smaže, co v tabulkách je, a nahraje data ze zálohy. Vyzkoušeno 30. 10. 2026 na čisté databázi: všech 10 zakázek, 9 zákazníků, 9 aut, 37 dílů, doklady, podpisy i nastavení se nahrály.</p>
+<p class="mutted">Skript nejdřív smaže, co v tabulkách je, a nahraje data ze zálohy. V této záloze: {{SOUHRN}}. Postup byl vyzkoušen na čisté databázi.</p>
 
 <h2>6. Aplikace Werkplaats (Cloudflare)</h2>
 <ol>
@@ -80,7 +81,7 @@ Claude udělá všechno sám. Ty jen potvrdíš přístupy a jednou se přihlás
 <ol>
 <li>Webflow → web Mercedes Restorations → <b>Pages</b> → stránka <b>E-serviska</b> (adresa <code>/e-serviska</code>). Pokud chybí, vytvoř prázdnou stránku s tímto názvem a adresou.</li>
 <li>Ozubené kolečko stránky → <b>Custom code</b>:
-  <ul><li><b>Inside &lt;head&gt; tag</b> ← celý obsah souboru <code>web/e-serviska-head.html</code></li>
+  <ul><li><b>Inside &lt;head&gt; tag</b> ← celý obsah souboru <code>web/e-serviska-head.html</code> (je přímo v této záloze)</li>
   <li><b>Before &lt;/body&gt; tag</b> ← celý obsah souboru <code>web/e-serviska-footer.html</code></li></ul></li>
 <li>SEO title: <i>E-servisní knížka | Mercedes Restorations</i>, description: <i>Servisní historie vozu Mercedes-Benz z dílny Mercedes Restorations.</i></li>
 <li><b>Publish</b> na obě domény (mercedesrestorations.cz i www).</li>
