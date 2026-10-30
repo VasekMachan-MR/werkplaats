@@ -492,12 +492,11 @@ const server = http.createServer((q, r) => {
   const ar = await p.evaluate(() => window.__ULOZENO__.tabulky.soubory.filter(f => f.druh === "archiv"));
   kontrola(ar.length === 1 && /^archiv\/7378\/.+\.pdf$/.test(ar[0].klic) && ar[0].nazev === "Zakazkovy_list_stary.pdf" && !ar[0].doklad_id && /Zakazkovy_list_stary\.pdf/.test(await p.textContent("#sekce-archiv")),
     "archivní PDF se přiloží k zakázce (druh archiv, bez dokladu) a zobrazí v Ostatních dokumentech");
-  await p.evaluate(() => { window.__MAILTO__ = u => { window.__MAIL__ = u; }; window.__MAIL__ = null; });
+  await p.evaluate(() => { navigator.share = async d => { window.__SDILENO__ = d.url; }; window.__SDILENO__ = null; });
   await p.click("#sekce-archiv [data-archiv-podpis]");
   await p.waitForSelector("#sekce-archiv >> text=čeká na podpis zákazníka");
-  { const m = decodeURIComponent(await p.evaluate(() => window.__MAIL__ || ""));
-    kontrola(await p.evaluate(() => !!window.__ULOZENO__.tabulky.soubory.find(f => f.druh === "archiv").podpis_pozadan) && /^mailto:jan\.novak@example\.cz\?subject=/.test(m) && /e-serviska\?k=[0-9a-f]{20}/.test(m) && /(Děkujeme za důvěru|Thank you for your trust)/.test(m),
-      "„Nechat podepsat“ označí PDF k podpisu a připraví zákazníkovi e-mail s odkazem do E-servisky"); }
+  kontrola(await p.evaluate(() => !!window.__ULOZENO__.tabulky.soubory.find(f => f.druh === "archiv").podpis_pozadan && /e-serviska\?k=/.test(window.__SDILENO__ || "")),
+    "u starého PDF jde „Nechat podepsat“ – označí se k podpisu a otevře se sdílení odkazu do E-servisky");
   await p.click("#sekce-archiv [data-archiv-podpis-zrusit]");
   await p.waitForSelector("#sekce-archiv [data-archiv-podpis]");
   await p.click("#sekce-archiv [data-archiv-smazat]");
@@ -717,6 +716,11 @@ const server = http.createServer((q, r) => {
     await p.evaluate(id => { location.hash = "#/zakazky"; location.hash = "#/zakazka/" + id; }, zid);
     await p.waitForSelector("#odkaz-k-podpisu");
     kontrola(true, "zakázka ukazuje, že list čeká na podpis zákazníka (+ odkaz k podpisu)");
+    await p.evaluate(() => { window.__MAILTO__ = u => { window.__MAIL__ = u; }; window.__MAIL__ = null; });
+    await p.click("#odkaz-k-podpisu");
+    { const m = decodeURIComponent(await p.evaluate(() => window.__MAIL__ || ""));
+      kontrola(/^mailto:[^?]+@[^?]+\?subject=/.test(m) && /e-serviska\?k=[0-9a-f]{20}/.test(m) && /(Děkujeme za důvěru|Thank you for your trust)/.test(m),
+        "„Poslat odkaz k podpisu“ připraví zákazníkovi e-mail s odkazem do E-servisky"); }
     await p.evaluate(async () => {        // zákazník podepsal v E-servisce (to dělá serverová funkce)
       const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.druh === "zakazkovy_list");
       const c = document.createElement("canvas"); c.width = 200; c.height = 60; const x = c.getContext("2d"); x.strokeStyle = "#1372e8"; x.lineWidth = 3; x.beginPath(); x.moveTo(10, 40); x.bezierCurveTo(60, 0, 120, 70, 190, 20); x.stroke();

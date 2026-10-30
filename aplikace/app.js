@@ -2101,9 +2101,9 @@
     const zadejPodpis = async (id, kdy) => { const s = E.z.soubory.find(x => x.id === id); if (!s) return;
       try { await db.upravit("soubory", id, { podpis_pozadan: kdy }); s.podpis_pozadan = kdy; vykresliArchiv(); return true; } catch (e) { hlaska(chybaText(e), true); } };
     el.querySelectorAll("[data-archiv-podpis]").forEach(b => b.onclick = async () => {
-      if (await zadejPodpis(b.dataset.archivPodpis, new Date().toISOString())) { hlaska("Zákazník uvidí v E-servisce výzvu k podpisu."); poslatOdkazKPodpisu(E.z); }
+      if (await zadejPodpis(b.dataset.archivPodpis, new Date().toISOString())) { hlaska("Zákazník uvidí v E-servisce výzvu k podpisu. Pošlete mu odkaz."); sdiletOdkazEservisky(v, E.z.jazyk === "en", true); }
     });
-    el.querySelectorAll("[data-archiv-podpis-odkaz]").forEach(b => b.onclick = () => poslatOdkazKPodpisu(E.z));
+    el.querySelectorAll("[data-archiv-podpis-odkaz]").forEach(b => b.onclick = () => sdiletOdkazEservisky(v, E.z.jazyk === "en", true));
     el.querySelectorAll("[data-archiv-podpis-zrusit]").forEach(b => b.onclick = async () => {
       if (!confirm("Zrušit žádost o podpis? Zákazník už v E-servisce výzvu neuvidí.")) return;
       if (await zadejPodpis(b.dataset.archivPodpisZrusit, null)) hlaska("Žádost o podpis zrušena.");
