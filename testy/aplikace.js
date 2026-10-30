@@ -972,6 +972,21 @@ const server = http.createServer((q, r) => {
   await q.click('.menu-odkazy a[href="#/"]'); await q.waitForSelector(".dlazdice-k, .prazdne");
   kontrola(!(await q.isVisible('.menu-odkazy a[href="#/zakazky"]')), "iPhone: menu se po výběru zavře");
   await q.screenshot({ path: path.join(OUT, "08-iphone-prehled.png"), fullPage: false });
+  { // iPhone: náhled zakázkového listu celý (ne useknutý napůl) a všechna tlačítka dole vidět
+    const qp = await ph.newPage();
+    await qp.addInitScript(() => { try { localStorage.setItem("werk-koncept-prijmu", JSON.stringify({
+      zakaznik: { id: null, je_firma: false, jmeno: "Test Telefon", kontaktni_osoba: "", ico: "", dic: "", ulice: "", psc: "", mesto: "", zeme: "Česká Republika", telefon: "", email: "t@example.cz", jazyk: "cs" },
+      vozidlo: { vin: "WDB1260241A000009", typ: "126", model: "300 SE", rok: "1989", spz: "", barva: "", verze: "EU", jednotka_tachometru: "km" },
+      zakazka: { datum_prijmu: "2026-10-30", predpoklad_dokonceni: "2026-12-29", km_prijem: "100000", nadrz_prijem: "1/2", tp_prilozen: false, zavady: ["Inspekce vozidla a diagnostika"], stav_prijem: [""], odhad_ceny: "5000", jazyk: "cs" },
+      fotky: [], tp: {}, vysledek: null, krok: "podpis", rucne: { datum: true, dokonceni: true } })); } catch (e) {} });
+    await qp.goto(URL0 + "#/novy"); await qp.waitForSelector("#nahled"); await qp.waitForTimeout(800);
+    const r = await qp.evaluate(() => { const f = document.querySelector("#nahled"), ram = document.querySelector("#ram").getBoundingClientRect(), fr = f.getBoundingClientRect();
+      return { pomer: fr.width / ram.width, tlacitka: [...document.querySelectorAll(".akce-dole .tl")].every(b => { const x = b.getBoundingClientRect(); return x.left >= 0 && x.right <= window.innerWidth + 0.5; }) }; });
+    kontrola(r.pomer > 0.98, `iPhone: náhled listu je celý, ne useknutý (${Math.round(r.pomer * 100)} % šířky)`);
+    kontrola(r.tlacitka, "iPhone: všechna tlačítka dole (Zpět, Později, Uložit) jsou vidět");
+    await qp.screenshot({ path: path.join(OUT, "08-iphone-podpis.png"), fullPage: false });
+    await qp.close();
+  }
 
   // ---------- odkaz „zapomenuté heslo“ z e-mailu ----------
   const ob = await ph.newPage(); await ob.goto(URL0 + "#access_token=x&expires_in=3600&refresh_token=y&token_type=bearer&type=recovery");

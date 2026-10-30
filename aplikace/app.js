@@ -1324,10 +1324,10 @@
         <div class="radek-tlacitek" style="margin-top:10px"><button type="button" class="tl tl-male" id="smazat-muj-podpis">Smazat</button></div>
       </section>
       <div class="akce-dole"><div class="vnitrek">
-        <button type="button" class="tl" id="zpet">${P.vysledek ? "Ukončit příjem" : "← Upravit údaje"}</button>
+        <button type="button" class="tl" id="zpet">${P.vysledek ? `Ukončit<span class="jen-siroke"> příjem</span>` : `← <span class="jen-siroke">Upravit údaje</span><span class="jen-uzke">Zpět</span>`}</button>
         <span class="stav-ulozeni" id="stav-ulozeni">${P.vysledek ? `Zakázka #${P.vysledek.cislo} je založená – dokončete uložení listu.` : ""}</span>
-        <button type="button" class="tl tl-velke" id="pozdeji" title="Zákazník spěchá: list se uloží bez jeho podpisu a zákazník ho podepíše z domu v E-servisce">✍️ Podepíše později</button>
-        <button type="button" class="tl tl-hlavni tl-velke" id="ulozit" disabled>Podepsat a uložit</button>
+        <button type="button" class="tl tl-velke" id="pozdeji" title="Zákazník spěchá: list se uloží bez jeho podpisu a zákazník ho podepíše z domu v E-servisce">✍️ <span class="jen-siroke">Podepíše později</span><span class="jen-uzke">Později</span></button>
+        <button type="button" class="tl tl-hlavni tl-velke" id="ulozit" disabled><span class="jen-siroke">Podepsat a uložit</span><span class="jen-uzke">Uložit</span></button>
       </div></div>`;
 
     const iframe = app.querySelector("#nahled"), ram = app.querySelector("#ram");
@@ -2767,7 +2767,7 @@
       <div class="akce-dole"><div class="vnitrek">
         <a class="tl" href="#/zakazka/${id}">← Zpět</a>
         <span class="co-chybi" id="co-chybi" hidden></span>
-        ${lzePozdeji ? `<button type="button" class="tl tl-velke" id="pozdeji" disabled title="Zákazník spěchá nebo auto předává někdo jiný: faktura se vystaví bez jeho podpisu a zákazník ji podepíše z domu v E-servisce">✍️ Podepíše později</button>` : ""}
+        ${lzePozdeji ? `<button type="button" class="tl tl-velke" id="pozdeji" disabled title="Zákazník spěchá nebo auto předává někdo jiný: faktura se vystaví bez jeho podpisu a zákazník ji podepíše z domu v E-servisce">✍️ <span class="jen-siroke">Podepíše později</span><span class="jen-uzke">Později</span></button>` : ""}
         <button type="button" class="tl tl-hlavni tl-velke" id="vystavit" disabled>Vystavit ${esc(cislo)}</button>
       </div></div>`;
 
