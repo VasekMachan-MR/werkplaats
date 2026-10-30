@@ -457,7 +457,7 @@ const server = http.createServer((q, r) => {
   // dlouhý název bez mezer (jako skutečné archivní PDF) – na iPhonu nesmí roztáhnout stránku
   await p.setInputFiles("#archiv-nahrat", [{ name: "Zakázkový_list_W126_300SE_Jan_Novák_Cenová_nabídka_materiál.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF") }]);
   await p.waitForSelector("#sekce-archiv [data-archiv-otevrit]", { timeout: 15000 });
-  kontrola(await p.evaluate(() => !!window.__ULOZENO__.tabulky.soubory.find(f => f.druh === "archiv").smazano), "archivní PDF jde odebrat (jen do koše)");
+  kontrola(await p.evaluate(() => !window.__ULOZENO__.tabulky.soubory.some(f => f.druh === "archiv" && f.nazev === "Zakazkovy_list_stary.pdf") && (window.__SMAZANE_SOUBORY__ || []).some(t => (t.klice || []).some(k => k.startsWith("archiv/")))), "odebrané archivní PDF zmizí i z úložiště");
   // smazat všechny díly (s potvrzením)
   await p.click("#smazat-dily");
   await p.waitForSelector("#stav-dilu >> text=✓ Uloženo");
@@ -608,6 +608,17 @@ const server = http.createServer((q, r) => {
   await p.click("#zrusit-zakazku"); await p.waitForFunction(() => document.querySelector("#stav-zakazky")?.value === "zruseno");
   kontrola(true, "zakázka s fakturou označena jako zrušená");
   odpovedPrompt = "2026-11-05";
+
+  // ---------- E2 + D1: fotku jde skrýt v E-servisce; smazaná fotka zmizí i z úložiště ----------
+  {
+    const zf = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const f = T.soubory.find(x => x.druh === "foto" && x.zakazka_id && !x.smazano); return f && { z: f.zakazka_id, id: f.id, klic: f.klic }; });
+    await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zf.z); await p.waitForSelector(`[data-verejne="${zf.id}"]`);
+    await p.click(`[data-verejne="${zf.id}"]`); await p.waitForSelector(`.fotka.skryto [data-verejne="${zf.id}"]`);
+    kontrola(await p.evaluate(id => window.__ULOZENO__.tabulky.soubory.find(x => x.id === id).verejne === false, zf.id), "fotku jde jedním klepnutím skrýt v E-servisce (🚫)");
+    await p.click(`[data-verejne="${zf.id}"]`); await p.waitForSelector(`.fotka:not(.skryto) [data-verejne="${zf.id}"]`);
+    await p.click(`[data-smazat-fotku="${zf.id}"]`); await p.waitForSelector("#hlaska >> text=Smazáno");
+    kontrola(await p.evaluate(id => !window.__ULOZENO__.tabulky.soubory.some(x => x.id === id), zf.id) && await p.evaluate(k => (window.__SMAZANE_SOUBORY__ || []).some(t => (t.klice || []).includes(k)), zf.klic), "smazaná fotka zmizí ze zakázky i z úložiště");
+  }
 
   // ---------- C1/D3: přijel nový majitel známého auta → aplikace se zeptá „Auto změnilo majitele?“ ----------
   {

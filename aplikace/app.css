@@ -477,3 +477,8 @@ input.chybi, .vstup.chybi { border-color: var(--cervena) !important; box-shadow:
 .tl-skupina { display: inline-flex; gap: 0; }
 .tl-skupina > .tl:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .tl-skupina > .tl-ikona { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-width: 0; min-width: 44px; padding-left: 10px; padding-right: 10px; }
+
+/* E2: viditelnost fotky v E-servisce (👁 vidí zákazník / 🚫 skryto) */
+.fotka .viditelnost { position: absolute; left: 6px; bottom: 6px; width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(255,255,255,.92); font-size: 17px; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+.fotka.skryto img, .fotka.skryto video { opacity: .45; }
+.fotka.skryto::after { content: "skryto v E-servisce"; position: absolute; left: 48px; bottom: 12px; font-size: 11px; font-weight: 700; color: #fff; background: rgba(9,42,79,.85); padding: 2px 6px; border-radius: 6px; }

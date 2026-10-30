@@ -175,6 +175,8 @@
       },
       async zalozitZakazku(p) { return ok(await sb.rpc("zalozit_zakazku", { p })); },
       async zmenitMajitele(vid, zid) { return ok(await sb.rpc("zapsat_vlastnictvi", { p_vozidlo: vid, p_zakaznik: zid, p_zmena: true })); },
+      async smazatZaznamSouboru(id) { return ok(await sb.from("soubory").delete().eq("id", id).select("id")); },
+      async smazatSoubory(telo) { const { data, error } = await sb.functions.invoke("smazat-soubory", { body: telo }); if (error) throw error; return data; },
       async vystavitDoklad(p) { return ok(await sb.rpc("vystavit_doklad", { p })); },
       async smazatZakazku(id) { return ok(await sb.rpc("smazat_zakazku", { p_id: id })); },
       async smazatDoklad(id) { return ok(await sb.rpc("smazat_doklad", { p_id: id })); },
@@ -236,7 +238,7 @@
       async upravit(tabulka, id, zmeny) { return ok(await sb.from(tabulka).update(zmeny).eq("id", id).select()); },
       async detail(id) {
         return ok(await sb.from("zakazky")
-          .select("*,vozidla(*),zakaznici(*),doklady(id,druh,cislo,verze,vystaveno,splatnost,zamceno,celkem,zaplaceno,odeslano_uol,data,pdf_soubor_id,soubory!doklady_pdf_soubor_id_fkey(klic)),soubory!soubory_zakazka_id_fkey(id,druh,faze,klic,nazev,vytvoreno,smazano,doklad_id)")
+          .select("*,vozidla(*),zakaznici(*),doklady(id,druh,cislo,verze,vystaveno,splatnost,zamceno,celkem,zaplaceno,odeslano_uol,data,pdf_soubor_id,soubory!doklady_pdf_soubor_id_fkey(klic)),soubory!soubory_zakazka_id_fkey(id,druh,faze,klic,nazev,vytvoreno,smazano,doklad_id,verejne)")
           .eq("id", id).maybeSingle());
       }
     };
@@ -1251,11 +1253,14 @@
     if (["faktura", "zalohova"].includes(d.druh) && vsechny.some(x => x.druh === "opravny" && x.zakazka_id === d.zakazka_id)) return false;
     return !vsechny.some(x => x.druh === d.druh && x.zakazka_id === d.zakazka_id && (x.verze || 0) > d.verze);
   }
+  // D1: soubory v úložišti se mažou spolu se záznamem (na pozadí; když se to nepovede, uklidí se příště)
+  const slozkaSouboru = k => (String(k || "").match(/^(zakazky\/\d+\/[\w-]+)\/[^/]+$/) || [])[1] || null;
+  const uklidSoubory = telo => { if (jeMajitel()) db.smazatSoubory?.(telo)?.catch?.(() => {}); };
   async function smazatDokladDotaz(d, potom) {
     if (!d) return;
     const fa = ["faktura", "zalohova"].includes(d.druh);
     if (!confirm(`Smazat ${(DRUHY[d.druh] || "doklad").toLowerCase()} ${d.cislo}?\n\nSmaže se i jeho PDF a podpisy. Číslo ${d.cislo} se uvolní a dostane ho další vystavený doklad.${fa ? "\n\nPoužívejte jen pro chybně vytvořené faktury, které ještě nikdo nedostal." : ""}`)) return;
-    try { await db.smazatDoklad(d.id); hlaska(`Doklad ${d.cislo} smazán.`); potom?.(); }
+    try { await db.smazatDoklad(d.id); uklidSoubory({ slozky: [slozkaSouboru(d.soubory?.klic)].filter(Boolean), klice: d.soubory?.klic ? [d.soubory.klic] : [] }); hlaska(`Doklad ${d.cislo} smazán.`); potom?.(); }
     catch (e) { hlaska("Smazat nejde: " + chybaText(e), true, 9000); }
   }
 
@@ -1529,7 +1534,11 @@
       const odp = prompt(`Smazat zakázku #${z.cislo} včetně zakázkového listu, nabídek, protokolu, prací, dílů a fotek? Nejde to vrátit.\n\nPro potvrzení napište číslo zakázky:`);
       if (odp == null) return;
       if (odp.trim() !== String(z.cislo)) return hlaska("Číslo nesouhlasí – nic se nesmazalo.", true);
-      try { await dokoncitUkladani(); await db.smazatZakazku(id); E = null; hlaska(`Zakázka #${z.cislo} smazána.`); location.hash = "#/zakazky"; }
+      try {
+        await dokoncitUkladani();
+        const klice = (z.soubory || []).filter(f => f.druh !== "tp").map(f => f.klic), slozky = [...new Set(klice.map(slozkaSouboru).filter(Boolean))];
+        await db.smazatZakazku(id); uklidSoubory({ klice, slozky }); E = null; hlaska(`Zakázka #${z.cislo} smazána.`); location.hash = "#/zakazky";
+      }
       catch (e) { hlaska("Smazat nejde: " + chybaText(e), true, 8000); }
     };
     const zr = app.querySelector("#zrusit-zakazku");
@@ -1650,12 +1659,21 @@
         const u = odk[i]?.signedUrl; if (!u) return;
         box.innerHTML = (f.video ? `<video src="${esc(u)}#t=0.5" controls playsinline preload="metadata"></video>`
           : `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="" loading="lazy"></a>`)
-          + (uzivatel.role === "majitel" ? `<button type="button" class="odebrat" data-smazat-fotku="${f.id}" aria-label="Smazat">×</button>` : "");
+          + (uzivatel.role === "majitel" ? `<button type="button" class="odebrat" data-smazat-fotku="${f.id}" aria-label="Smazat">×</button>` : "")
+          + `<button type="button" class="viditelnost" data-verejne="${f.id}" aria-pressed="${f.verejne !== false}" title="${f.verejne === false ? "Skryto v E-servisce – klepnutím zobrazit" : "Vidí zákazník v E-servisce – klepnutím skrýt"}">${f.verejne === false ? "🚫" : "👁"}</button>`;
+        box.classList.toggle("skryto", f.verejne === false);
+      });
+      el.querySelectorAll("[data-verejne]").forEach(b => b.onclick = async () => {      // E2: fotka v E-servisce ano / ne
+        const s = E.z.soubory.find(x => x.id === b.dataset.verejne); if (!s) return;
+        const nove = s.verejne === false;
+        try { await db.upravit("soubory", s.id, { verejne: nove }); s.verejne = nove; vykresliFotkyDetail(); hlaska(nove ? "Fotka se zákazníkovi zobrazí v E-servisce." : "Fotka je v E-servisce skrytá."); }
+        catch (e) { hlaska(chybaText(e), true); }
       });
       el.querySelectorAll("[data-smazat-fotku]").forEach(b => b.onclick = async () => {
         if (!confirm("Smazat tuto fotku / video ze zakázky?")) return;
-        try { await db.upravit("soubory", b.dataset.smazatFotku, { smazano: new Date().toISOString() });
-          const s = E.z.soubory.find(x => x.id === b.dataset.smazatFotku); if (s) s.smazano = new Date().toISOString(); vykresliFotkyDetail(); hlaska("Smazáno."); }
+        try { const s = E.z.soubory.find(x => x.id === b.dataset.smazatFotku);
+          await db.smazatZaznamSouboru(b.dataset.smazatFotku); if (s) { uklidSoubory({ klice: [s.klic] }); s.smazano = new Date().toISOString(); }
+          vykresliFotkyDetail(); hlaska("Smazáno."); }
         catch (e) { hlaska(chybaText(e), true); }
       });
     } catch (e) { el.insertAdjacentHTML("beforeend", `<div class="info chyba">${esc(chybaText(e))}</div>`); }
@@ -1685,8 +1703,9 @@
     const el = document.getElementById("sekce-archiv"); if (!el || !E) return;
     const arch = (E.z.soubory || []).filter(s => s.druh === "archiv" && !s.smazano).sort((a, b) => (a.nazev || "").localeCompare(b.nazev || "", "cs"));
     el.innerHTML = `<h2>Archiv (legacy)${arch.length ? ` <span class="mutted" style="font-weight:400">${arch.length} PDF</span>` : ""}</h2>
-      <p class="napoveda" style="margin:0 0 10px">Původní doklady ze starého systému – jen k nahlédnutí, nečíslují se a nejsou v E-servisce.</p>
+      <p class="napoveda" style="margin:0 0 10px">Původní doklady ze starého systému – nečíslují se. 👁 = zákazník je vidí v E-servisce u této návštěvy, 🚫 = skryté.</p>
       <div class="doklady">${arch.map(f => `<div class="doklad"><span>📄 ${esc(f.nazev || "dokument.pdf")}</span><span class="radek-tlacitek">
+        <button class="tl tl-male" data-archiv-verejne="${f.id}" title="${f.verejne === false ? "Skryto v E-servisce – klepnutím zobrazit" : "Vidí zákazník v E-servisce – klepnutím skrýt"}" aria-label="Viditelnost v E-servisce">${f.verejne === false ? "🚫" : "👁"}</button>
         <button class="tl tl-male" data-archiv-otevrit="${esc(f.klic)}">Otevřít</button>
         ${uzivatel.role === "majitel" ? `<button class="tl tl-male tl-kos" data-archiv-smazat="${f.id}" aria-label="Odebrat z archivu">🗑</button>` : ""}</span></div>`).join("")
         || `<p class="mutted" style="margin:0">Žádné archivní dokumenty.</p>`}</div>
@@ -1697,10 +1716,17 @@
       try { const u = await db.odkaz(b.dataset.archivOtevrit, 600); if (okno) okno.location = u; else location.href = u; }
       catch (e) { okno?.close(); hlaska(chybaText(e), true); }
     });
+    el.querySelectorAll("[data-archiv-verejne]").forEach(b => b.onclick = async () => {    // E5: původní doklad v E-servisce ano / ne
+      const s = E.z.soubory.find(x => x.id === b.dataset.archivVerejne); if (!s) return;
+      const nove = s.verejne === false;
+      try { await db.upravit("soubory", s.id, { verejne: nove }); s.verejne = nove; vykresliArchiv(); hlaska(nove ? "Zákazník dokument uvidí v E-servisce." : "Dokument je v E-servisce skrytý."); }
+      catch (e) { hlaska(chybaText(e), true); }
+    });
     el.querySelectorAll("[data-archiv-smazat]").forEach(b => b.onclick = async () => {
       if (!confirm("Odebrat tento dokument z archivu zakázky?")) return;
-      try { const t = new Date().toISOString(); await db.upravit("soubory", b.dataset.archivSmazat, { smazano: t });
-        const s = E.z.soubory.find(x => x.id === b.dataset.archivSmazat); if (s) s.smazano = t; vykresliArchiv(); hlaska("Odebráno."); }
+      try { const s = E.z.soubory.find(x => x.id === b.dataset.archivSmazat);
+        await db.smazatZaznamSouboru(b.dataset.archivSmazat); if (s) { uklidSoubory({ klice: [s.klic] }); s.smazano = new Date().toISOString(); }
+        vykresliArchiv(); hlaska("Odebráno."); }
       catch (e) { hlaska(chybaText(e), true); }
     });
     el.querySelector("#archiv-nahrat").onchange = async e => {
