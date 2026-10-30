@@ -42,7 +42,7 @@ Deno.serve(async req => {
   const kod = (new URL(req.url).searchParams.get("k") || "").replace(/[^0-9a-zA-Z_-]/g, "");
   if (kod.length < 16 || kod.length > 40) return odp(403, { chyba: "potreba-odkaz" });
   const { data: v } = await sb.from("vozidla")
-    .select("id,vin,spz,znacka,typ,model,rok,mesic,verze,cislo_motoru,prevodovka,barva,rafky,pneu_letni,pneu_zimni,kody_vybavy,km_posledni,jednotka_tachometru,servisni_skupina,motor,eserviska_kod")
+    .select("id,vin,spz,znacka,typ,model,rok,mesic,verze,cislo_motoru,prevodovka,barva,rafky,pneu_letni,pneu_zimni,sady_kol,kody_vybavy,km_posledni,jednotka_tachometru,servisni_skupina,motor,eserviska_kod")
     .eq("eserviska_kod", kod).maybeSingle();
   if (!v) return odp(404, { chyba: "nenalezeno" });
 

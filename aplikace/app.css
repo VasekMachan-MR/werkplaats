@@ -591,3 +591,13 @@ details.sbalovaci[open] > summary { margin-bottom: 14px; }
 
 /* profilová fotka auta z dřívější návštěvy */
 .fotka .od-auta { position: absolute; left: 6px; bottom: 6px; background: rgba(9,43,80,.85); color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 4px; pointer-events: none; }
+
+/* sady kol (vozidlo, příjem) */
+.sady-kol { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; }
+.sada-kol { border: 1px solid var(--linka); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.sada-kol .pole { margin: 0; }
+.sk-volby { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; font-size: 14px; }
+.sk-volby label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.sk-volby input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--navy); margin: 0; }
+.sk-volby .vstup { flex: 1 1 180px; min-width: 0; }
+@media (max-width: 600px) { .sady-kol { grid-template-columns: 1fr; } }

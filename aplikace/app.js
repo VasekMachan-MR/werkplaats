@@ -181,7 +181,7 @@
         if (t.length < 2) return [];
         const vzor = `%${t}%`;
         return ok(await sb.from("zakaznici")
-          .select("*,vlastnictvi(vlastni_do,vozidla(id,vin,typ,model,rok,spz,barva,verze,jednotka_tachometru,km_posledni,cislo_motoru,prevodovka,baterie,pneu_letni,pneu_zimni))")
+          .select("*,vlastnictvi(vlastni_do,vozidla(id,vin,typ,model,rok,spz,barva,verze,jednotka_tachometru,km_posledni,cislo_motoru,prevodovka,baterie,sady_kol))")
           .or(`jmeno.ilike.${vzor},telefon.ilike.${vzor},email.ilike.${vzor},kontaktni_osoba.ilike.${vzor}`)
           .order("jmeno").limit(12));
       },
@@ -609,7 +609,7 @@
   function novyPrijem() {
     return {
       zakaznik: { id: null, je_firma: false, jmeno: "", kontaktni_osoba: "", ico: "", dic: "", ulice: "", psc: "", mesto: "", zeme: "Česká Republika", telefon: "", email: "", jazyk: "cs" },
-      vozidlo: { vin: "", typ: "", model: "", rok: "", spz: "", barva: "", cislo_motoru: "", prevodovka: "", baterie: "", pneu_letni: "", pneu_zimni: "", verze: "EU", jednotka_tachometru: "km" },
+      vozidlo: { vin: "", typ: "", model: "", rok: "", spz: "", barva: "", cislo_motoru: "", prevodovka: "", baterie: "", sady_kol: null, verze: "EU", jednotka_tachometru: "km" },
       zakazka: { datum_prijmu: dnes(), predpoklad_dokonceni: plusDni(dnes(), DNI_DOKONCENI), km_prijem: "", nadrz_prijem: "1/2", tp_prilozen: true, zavady: [""], stav_prijem: [""], odhad_ceny: "", jazyk: "cs" },
       fotky: [], tp: { predni: null, zadni: null }, podpisZakaznik: null, vysledek: null, krok: "formular",
       rucne: { datum: false, dokonceni: false }       // true = datum změněné ručně, pak ho aplikace sama nepřepisuje
@@ -716,8 +716,7 @@
           ${pole("vozidlo.cislo_motoru", "Číslo motoru", { sirka: "s2", attrs: 'autocapitalize="characters" autocomplete="off"' })}
           ${pole("vozidlo.prevodovka", "Převodovka", { sirka: "s2", attrs: 'autocapitalize="characters" autocomplete="off"' })}
           ${pole("vozidlo.baterie", "Baterie", { sirka: "s2", attrs: 'autocomplete="off"' })}
-          ${pole("vozidlo.pneu_letni", "Pneu letní", { sirka: "s2", attrs: 'autocomplete="off"' })}
-          ${pole("vozidlo.pneu_zimni", "Pneu zimní", { sirka: "s2", attrs: 'autocomplete="off"' })}
+          ${htmlSadKol(v.sady_kol)}
           <div class="s2"><label class="pole">Verze</label>${segment("vozidlo.verze", [["EU", "EU"], ["US", "US"], ["JP", "JP"]])}</div>
           <div class="s2"><label class="pole">Tachometr</label>${segment("vozidlo.jednotka_tachometru", [["km", "km"], ["mi", "míle"]])}</div>
         </div>
@@ -792,6 +791,7 @@
       </div></div>`;
 
     vazbyFormulare();
+    napojSadyKol(app.querySelector("#sekce-vozidlo"), sady => { P.vozidlo.sady_kol = sady; ulozKoncept(); });
     vykresliFotky();
     kontrolaPripravenosti();
     if (v.vin) zkontrolujVin(false);
@@ -1014,10 +1014,42 @@
       vykresliFormularZachovatPozici();
     } catch (e) { hlaska("Zákazníka se nepodařilo uložit: " + chybaText(e), true); b.disabled = false; }
   }
+  /* Sady kol (Vašek 30.10.2026): 2 sady – pneu (rozměr, značka), letní / zimní / celoroční, disky originál nebo popis */
+  const TYPY_PNEU = [["letni", "Letní"], ["zimni", "Zimní"], ["celorocni", "Celoroční"]];
+  function htmlSadKol(sady) {
+    const S2 = Array.isArray(sady) ? sady : [];
+    return `<div class="s6 sady-kol">${[0, 1].map(i => { const x = S2[i] || {}, orig = x.disky_original !== false;
+      return `<div class="sada-kol" data-sada="${i}"><div class="pole"><span>Sada kol ${i + 1}</span>
+        <input class="vstup" name="sk-pneu-${i}" data-sk="pneu" value="${esc(x.pneu || "")}" placeholder="Pneu – rozměr a značka, např. 205/65 R15 Michelin" autocomplete="off"></div>
+        <div class="sk-volby">${TYPY_PNEU.map(([k, t]) => `<label><input type="checkbox" name="sk-typ-${i}" data-sk-typ="${k}" ${x.typ === k ? "checked" : ""}> ${t}</label>`).join("")}</div>
+        <div class="sk-volby"><label><input type="checkbox" name="sk-orig-${i}" data-sk="orig" ${orig ? "checked" : ""}> Disky originál</label>
+          <input class="vstup" name="sk-disky-${i}" data-sk="disky" value="${esc(x.disky || "")}" placeholder="Jaké disky, např. Ronal 7J×15, ATS…" autocomplete="off" ${orig ? "hidden" : ""}></div></div>`; }).join("")}</div>`;
+  }
+  function nactiSadyKol(root) {
+    const r = [...root.querySelectorAll(".sada-kol")].map(el => {
+      const pneu = el.querySelector('[data-sk="pneu"]').value.trim(), typ = el.querySelector("[data-sk-typ]:checked")?.dataset.skTyp || null;
+      const orig = el.querySelector('[data-sk="orig"]').checked, disky = orig ? "" : el.querySelector('[data-sk="disky"]').value.trim();
+      return pneu || typ || disky || !orig ? { pneu: pneu || null, typ, disky_original: orig, disky: disky || null } : null;
+    });
+    while (r.length && !r[r.length - 1]) r.pop();            // prázdná druhá sada se neukládá
+    return r.length ? r.map(x => x || { pneu: null, typ: null, disky_original: true, disky: null }) : null;
+  }
+  function napojSadyKol(root, priZmene) {
+    if (!root) return;
+    root.querySelectorAll(".sada-kol").forEach(el => {
+      el.querySelectorAll("[data-sk-typ]").forEach(ch => ch.addEventListener("change", () => {   // letní / zimní / celoroční – jen jedno
+        if (ch.checked) el.querySelectorAll("[data-sk-typ]").forEach(o => { if (o !== ch) o.checked = false; });
+        priZmene?.(nactiSadyKol(root)); }));
+      const orig = el.querySelector('[data-sk="orig"]'), disky = el.querySelector('[data-sk="disky"]');
+      orig.addEventListener("change", () => { disky.hidden = orig.checked; if (!orig.checked) disky.focus(); priZmene?.(nactiSadyKol(root)); });
+      el.querySelectorAll('[data-sk="pneu"], [data-sk="disky"]').forEach(i => i.addEventListener("input", () => priZmene?.(nactiSadyKol(root))));
+    });
+  }
   // pole vozu, která funkce pro založení zakázky / uložení auta neukládá – zapíší se k autu hned potom (Vašek 30.10.2026)
-  const DALSI_POLE_VOZU = ["cislo_motoru", "prevodovka", "baterie", "pneu_letni", "pneu_zimni"];
+  const DALSI_POLE_VOZU = ["cislo_motoru", "prevodovka", "baterie"];
   async function dopsatPoleVozu(vid) {
     const d = {}; DALSI_POLE_VOZU.forEach(k => { const h = String(P.vozidlo[k] ?? "").trim(); if (h) d[k] = h; });
+    if (Array.isArray(P.vozidlo.sady_kol) && P.vozidlo.sady_kol.length) d.sady_kol = P.vozidlo.sady_kol;
     if (vid && Object.keys(d).length) await db.upravit("vozidla", vid, d);
   }
   async function ulozitVozidloSamostatne() {
@@ -1084,7 +1116,7 @@
   }
   function vyplnAuto(a) {
     const n = novyPrijem().vozidlo;
-    for (const k of Object.keys(n)) P.vozidlo[k] = a[k] == null ? n[k] : String(a[k]);
+    for (const k of Object.keys(n)) P.vozidlo[k] = a[k] == null ? n[k] : k === "sady_kol" ? a[k] : String(a[k]);
     ulozKoncept(); vykresliFormularZachovatPozici(); zkontrolujVin(false);
   }
   // C1/D3: přijel někdo jiný než majitel, kterého máme v systému → zeptat se, jestli auto změnilo majitele
@@ -1109,6 +1141,7 @@
       const a = await db.vozidloPodleVin(vin);
       if (!a) { P.majiteleVozu = []; ulozKoncept(); el.innerHTML = `<div class="info">Nové auto – v systému ho zatím nemáme.</div>`; return; }
       if (doplnit) for (const k of ["typ", "model", "rok", "spz", "barva", ...DALSI_POLE_VOZU, "verze", "jednotka_tachometru"]) if (a[k] != null && !String(P.vozidlo[k] || "").trim()) P.vozidlo[k] = String(a[k]);
+      if (doplnit && Array.isArray(a.sady_kol) && a.sady_kol.length && !(P.vozidlo.sady_kol || []).length) { P.vozidlo.sady_kol = a.sady_kol; vykresliFormularZachovatPozici(); }
       const majitele = (a.vlastnictvi || []).filter(x => !x.vlastni_do && x.zakaznici).map(x => x.zakaznici);
       P.majiteleVozu = majitele.map(m => ({ id: m.id, jmeno: m.jmeno })); ulozKoncept();
       const posledni = (a.zakazky || []).sort((x, y) => y.cislo - x.cislo)[0];
@@ -3198,7 +3231,7 @@
     const motorAuto = K ? urciMotor({ ...v, motor: null }, K) : null;
     const majitele = (v.vlastnictvi || []).filter(x => x.zakaznici).sort((a, b) => (a.vlastni_do ? 1 : 0) - (b.vlastni_do ? 1 : 0));
     const VP = [["vin", "VIN / číslo podvozku", "s4"], ["spz", "SPZ", "s2"], ["typ", "Typ", "s2"], ["model", "Model", "s2"], ["rok", "Rok výroby", "s2"], ["barva", "Barva", "s2"],
-      ["cislo_motoru", "Číslo motoru", "s2"], ["prevodovka", "Převodovka", "s2"], ["km_posledni", "Poslední stav tachometru", "s2"], ["baterie", "Baterie", "s2"], ["pneu_letni", "Pneu letní", "s2"], ["pneu_zimni", "Pneu zimní", "s2"]];
+      ["cislo_motoru", "Číslo motoru", "s2"], ["prevodovka", "Převodovka", "s2"], ["km_posledni", "Poslední stav tachometru", "s2"], ["baterie", "Baterie", "s2"]];
     app.innerHTML = `
       <div class="mutted"><a href="#/vozidla">← Vozidla</a></div>
       <h1>${esc([v.typ, v.model].filter(Boolean).join(" ") || "Mercedes-Benz")}${v.rok ? ` (${v.rok})` : ""}</h1>
@@ -3209,6 +3242,7 @@
             ${(K?.motory || []).map(m => `<option value="${m.kod}" ${v.motor === m.kod ? "selected" : ""}>${m.kod} · ${m.palivo === "diesel" ? "diesel" : "benzín"}${m.popis ? " · " + esc(m.popis) : ""}</option>`).join("")}</select></label>
           <div class="s2"><label class="pole">Verze</label><div class="segment" id="verze">${["EU", "US", "JP"].map(x => `<button type="button" data-h="${x}" aria-pressed="${(v.verze || "EU") === x}">${x}</button>`).join("")}</div></div>
           <div class="s2"><label class="pole">Tachometr</label><div class="segment" id="jedn">${[["km", "km"], ["mi", "míle"]].map(([x, t]) => `<button type="button" data-h="${x}" aria-pressed="${(v.jednotka_tachometru || "km") === x}">${t}</button>`).join("")}</div></div>
+          ${htmlSadKol(v.sady_kol)}
           <label class="pole s6">Poznámka<textarea name="poznamka" rows="2">${esc(v.poznamka || "")}</textarea></label>
           <label class="pole s6">Výbava – SA kódy <span class="napoveda">(zobrazí se v E-servisce v „Údajích o voze“; vložte z datové karty v MB B2B Connect – každý kód na řádek, např. „410 SCHIEBEDACH ELEKTRISCH“)</span>
             <textarea name="kody_vybavy" rows="${Math.min(12, Math.max(3, kodyVybavyText(v.kody_vybavy).split("\n").length + 1))}" spellcheck="false" placeholder="410 SCHIEBEDACH ELEKTRISCH&#10;440 TEMPOMAT">${esc(kodyVybavyText(v.kody_vybavy))}</textarea>
@@ -3248,12 +3282,14 @@
     seg("#verze", h => { verze = h; if (h === "US" && jedn !== "mi") { jedn = "mi"; app.querySelectorAll("#jedn button").forEach(x => x.setAttribute("aria-pressed", x.dataset.h === "mi")); } });
     seg("#jedn", h => (jedn = h));
     const f = app.querySelector("#f");
-    f.addEventListener("input", e => { if (e.target.name) zkontrolujPole(e.target, e.target.name); });
+    napojSadyKol(f);
+    f.addEventListener("input", e => { if (e.target.name && !e.target.name.startsWith("sk-")) zkontrolujPole(e.target, e.target.name); });
     f.onsubmit = async e => {
       e.preventDefault();
-      const d = Object.fromEntries(new FormData(f)); for (const k in d) { d[k] = d[k].trim(); if (!d[k]) d[k] = null; }
+      const d = Object.fromEntries([...new FormData(f)].filter(([k]) => !k.startsWith("sk-"))); for (const k in d) { d[k] = d[k].trim(); if (!d[k]) d[k] = null; }
+      d.sady_kol = nactiSadyKol(f);
       if (!d.vin || d.vin.replace(/\s/g, "").length < 8) return hlaska("Vyplňte VIN.", true);
-      const chyby = [...f.querySelectorAll("input[name]")].map(i => zkontrolujPole(i, i.name)).filter(Boolean);
+      const chyby = [...f.querySelectorAll("input[name]:not([name^='sk-'])")].map(i => zkontrolujPole(i, i.name)).filter(Boolean);
       if (chyby.length) return hlaska("Opravte červená pole: " + chyby.join(", "), true);
       d.rok = d.rok ? parseInt(d.rok, 10) : null; d.km_posledni = cisloZ(d.km_posledni); d.verze = verze; d.jednotka_tachometru = jedn;
       d.kody_vybavy = kodyVybavyZTextu(d.kody_vybavy);

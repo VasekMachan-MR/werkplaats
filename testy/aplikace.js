@@ -87,7 +87,11 @@ const server = http.createServer((q, r) => {
   kontrola(/odhadovaná cena/.test(await p.textContent("#co-chybi")), "odhadovaná cena je povinná");
   await p.fill('[data-pole="zakazka.odhad_ceny"]', "40 000");
   await p.fill('[data-pole="vozidlo.cislo_motoru"]', "103.983-12-012345"); await p.fill('[data-pole="vozidlo.prevodovka"]', "722.350");
-  await p.fill('[data-pole="vozidlo.pneu_letni"]', "205/65 R15");
+  await p.fill('#sekce-vozidlo .sada-kol[data-sada="0"] [data-sk="pneu"]', "205/65 R15");
+  await p.check('#sekce-vozidlo .sada-kol[data-sada="0"] [data-sk-typ="letni"]');
+  await p.check('#sekce-vozidlo .sada-kol[data-sada="1"] [data-sk-typ="zimni"]'); await p.check('#sekce-vozidlo .sada-kol[data-sada="1"] [data-sk-typ="celorocni"]');
+  await p.uncheck('#sekce-vozidlo .sada-kol[data-sada="1"] [data-sk="orig"]');
+  await p.fill('#sekce-vozidlo .sada-kol[data-sada="1"] [data-sk="disky"]', "Ronal 7J×15");
   await p.click('.cip[data-cip="zavady"] >> nth=0');
   await p.click('.cip[data-cip="zavady"] >> nth=1');
   await p.click('[data-pridat="zavady"]');
@@ -137,7 +141,8 @@ const server = http.createServer((q, r) => {
   kontrola(ulozeno.t.doklady.length === 1 && ulozeno.t.doklady[0].cislo === "7377-1" && ulozeno.t.doklady[0].variabilni_symbol === "73771" && ulozeno.t.doklady[0].zamceno, "doklad 7377-1, VS 73771, uzamčený");
   kontrola(ulozeno.t.podpisy.length === 2 && ulozeno.t.podpisy.every(x => /^[0-9a-f]{64}$/.test(x.otisk_dokumentu)), "2 podpisy s otiskem SHA-256");
   kontrola(ulozeno.t.soubory.filter(s => s.druh === "foto").length === 2 && ulozeno.t.soubory.filter(s => s.druh === "video" && s.mime === "video/webm" && /^videa\/.*\.webm$/.test(s.klic)).length === 1, "2 fotky a 1 video přiřazené k zakázce");
-  kontrola(ulozeno.t.vozidla[0].cislo_motoru === "103.983-12-012345" && ulozeno.t.vozidla[0].prevodovka === "722.350" && ulozeno.t.vozidla[0].pneu_letni === "205/65 R15", "číslo motoru, převodovka a pneu z příjmu uložené k autu");
+  kontrola(ulozeno.t.vozidla[0].cislo_motoru === "103.983-12-012345" && ulozeno.t.vozidla[0].prevodovka === "722.350" && JSON.stringify(ulozeno.t.vozidla[0].sady_kol) === JSON.stringify([{ pneu: "205/65 R15", typ: "letni", disky_original: true, disky: null }, { pneu: null, typ: "celorocni", disky_original: false, disky: "Ronal 7J×15" }]),
+    "číslo motoru, převodovka a sady kol (letní / celoroční – jen jedna volba, disky originál / vlastní) z příjmu uložené k autu");
   kontrola(ulozeno.t.soubory.filter(s => s.druh === "foto" && s.faze === "profil").length === 1, "první fotka z příjmu je profilová");
   kontrola(ulozeno.t.zakazky[0].zavady.length === 5 && ulozeno.t.zakazky[0].km_prijem === 123456 && ulozeno.t.zakazky[0].odhad_ceny === 40000, "závady, km a odhad uložené");
   fs.writeFileSync(path.join(OUT, "7377-1.pdf"), Buffer.from(ulozeno.pdf[0][1]));
