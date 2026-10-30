@@ -1725,17 +1725,47 @@
   }
   // F5: poznámky (k zakázce a k autu) – sbalené, ukládají se samy
   const nahledPoznamky = t => { const r = String(t || "").trim().split("\n")[0]; return r ? esc(r.length > 60 ? r.slice(0, 60) + "…" : r) : '<span class="mutted">žádné</span>'; };
+  // malé tlačítko „zkopírovat“ (VIN v zakázce)
+  function napojKopirovani(root) {
+    root.querySelectorAll("[data-kopirovat]").forEach(b => b.onclick = async e => {
+      e.preventDefault(); e.stopPropagation();
+      const t = b.dataset.kopirovat;
+      try { await navigator.clipboard.writeText(t); }
+      catch (er) { const x = document.createElement("textarea"); x.value = t; document.body.appendChild(x); x.select(); try { document.execCommand("copy"); } catch (e2) { /* nic */ } x.remove(); }
+      b.textContent = "✓"; b.classList.add("hotovo"); hlaska(`Zkopírováno: ${t}`);
+      setTimeout(() => { if (b.isConnected) { b.textContent = "⧉"; b.classList.remove("hotovo"); } }, 1500);
+    });
+  }
+  // poznámky na celou obrazovku – velký editor; píše se rovnou do pole poznámky (ukládá se samo)
+  function poznamkaNaCelouObrazovku(t, nazev) {
+    const ov = document.createElement("div");
+    ov.className = "prekryv editor-poznamek"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-modal", "true");
+    ov.innerHTML = `<div class="editor-okno"><div class="editor-hlava"><b>📝 ${esc(nazev)}</b><span class="napoveda" data-stav-editoru></span>
+      <button type="button" class="tl tl-hlavni" data-zavrit>Hotovo</button></div>
+      <textarea class="vstup" spellcheck="true"></textarea></div>`;
+    document.body.appendChild(ov);
+    const e = ov.querySelector("textarea"), st = ov.querySelector("[data-stav-editoru]");
+    e.value = t.value; e.focus(); e.setSelectionRange(0, 0); e.scrollTop = 0;
+    const puv = document.documentElement.style.overflow; document.documentElement.style.overflow = "hidden";
+    e.addEventListener("input", () => { t.value = e.value; t.dispatchEvent(new Event("input", { bubbles: true })); st.textContent = "Ukládá se samo…"; });
+    const zavri = () => { document.documentElement.style.overflow = puv; ov.remove(); document.removeEventListener("keydown", kl, true); t.rows = Math.max(t.rows, radkuPoznamky(t.value)); };
+    const kl = ev => { if (ev.key === "Escape") { ev.stopPropagation(); zavri(); } };
+    document.addEventListener("keydown", kl, true);
+    ov.querySelector("[data-zavrit]").onclick = zavri;
+  }
   // pole poznámky tak vysoké, aby byla vidět celá (dlouhé poznámky z Apple Poznámek), max. 30 řádků – dál se roluje
-  const radkuPoznamky = t => Math.min(30, Math.max(4, String(t || "").split("\n").reduce((n, r) => n + Math.max(1, Math.ceil(r.length / 90)), 0) + 1));
+  const radkuPoznamky = t => Math.min(40, Math.max(12, String(t || "").split("\n").reduce((n, r) => n + Math.max(1, Math.ceil(r.length / 90)), 0) + 1));
   function blokPoznamek(pole, zid) {
     const n = pole.filter(x => String(x.hodnota || "").trim()).length;
     return `<details class="karta poznamky"${zid ? ` id="sekce-poznamky" data-sbal${sbalOpen(zid, "sekce-poznamky")}` : ""}><summary><b>📝 Poznámky</b> <span class="mutted">${n ? pole.filter(x => String(x.hodnota || "").trim()).map(x => nahledPoznamky(x.hodnota)).join(" · ") : "žádné"}</span></summary>
-      ${pole.map(x => `<label class="pole" style="margin-top:12px">${x.popis}<textarea class="vstup poznamka-text" rows="${radkuPoznamky(x.hodnota)}" data-poznamka="${x.tabulka}" data-id="${x.id}" placeholder="${x.napoveda || ""}">${esc(x.hodnota || "")}</textarea></label>`).join("")}
+      ${pole.map(x => `<label class="pole" style="margin-top:12px"><span class="popis-poznamky">${x.popis}<button type="button" class="tl tl-male" data-cela-obrazovka title="Otevřít poznámku přes celou obrazovku">⤢ Celá obrazovka</button></span><textarea class="vstup poznamka-text" rows="${radkuPoznamky(x.hodnota)}" data-poznamka="${x.tabulka}" data-id="${x.id}" placeholder="${x.napoveda || ""}">${esc(x.hodnota || "")}</textarea></label>`).join("")}
       <span class="napoveda" data-stav-poznamek></span></details>`;
   }
   function navazPoznamky(root, potom) {
     root.querySelectorAll("textarea[data-poznamka]").forEach(t => {
       t.addEventListener("input", () => { const r = radkuPoznamky(t.value); if (r > t.rows) t.rows = r; });
+      const cela = t.closest("label")?.querySelector("[data-cela-obrazovka]");
+      if (cela) cela.onclick = e => { e.preventDefault(); poznamkaNaCelouObrazovku(t, t.closest("label").querySelector(".popis-poznamky").firstChild.textContent.trim()); };
       const st = root.querySelector("[data-stav-poznamek]");
       t.addEventListener("input", () => { st.textContent = "Ukládám…";
         odlozitZmenu(800, t.dataset.poznamka, t.dataset.id, () => ({ poznamky: t.value.trim() || null }), () => st, () => potom?.(t.dataset.poznamka, t.value)); });
@@ -1947,7 +1977,7 @@
         <div class="podsekce"><h3 class="podnadpis">🚗 Vozidlo <a class="tl tl-male" href="#/vozidlo/${z.vozidlo_id || v.id}" style="margin-left:auto">✏️ Upravit vozidlo a TP</a></h3><dl class="udaje">
         ${[["VIN", v.vin], ["Typ", v.typ], ["Model", v.model], ["Rok", v.rok], ["SPZ", v.spz], ["Barva", v.barva], ["Verze", v.verze],
            ["Tachometr při předání", z.km_predani != null ? `${Number(z.km_predani).toLocaleString("cs-CZ")} ${jedn}` : ""]]
-          .filter(([, x]) => x != null && x !== "").map(([a, b]) => `<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join("")}</dl>
+          .filter(([, x]) => x != null && x !== "").map(([a, b]) => `<div><dt>${a}</dt><dd>${esc(b)}${a === "VIN" ? ` <button type="button" class="tl-kopirovat" data-kopirovat="${esc(b)}" aria-label="Kopírovat VIN" title="Kopírovat VIN">⧉</button>` : ""}</dd></div>`).join("")}</dl>
           <p style="margin:14px 0 8px"><b>Dokumenty vozidla</b> <span class="napoveda">(v E-servisce ke stažení)</span></p><div class="fotky" id="dokumenty-vozidla"><span class="mutted">Načítám…</span></div></div>
         <div class="podsekce" id="sekce-prijem-detail"></div>
       </details>
@@ -1955,6 +1985,7 @@
       <details class="karta sbalovaci" id="sekce-fotky-detail" data-sbal${sbalOpen(id, "sekce-fotky-detail")}><summary><h2>Fotky a videa</h2></summary></details>`;
     vykresliPrijemDetail(false);
     sbalPamatuj(app, id);
+    napojKopirovani(app);
     app.querySelectorAll("[data-rychle-foto]").forEach(inp => inp.addEventListener("change", e => {
       const f = [...e.target.files]; e.target.value = ""; if (!f.length) return;
       document.getElementById("sekce-fotky-detail")?.scrollIntoView({ behavior: "smooth", block: "start" });

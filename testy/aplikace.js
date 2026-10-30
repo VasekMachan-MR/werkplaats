@@ -743,6 +743,21 @@ const server = http.createServer((q, r) => {
     kontrola(vFronte, "zavření okna hned po napsání: poznámka se okamžitě zapíše do zařízení");
     await p.waitForFunction(() => window.__ULOZENO__.tabulky.vozidla.some(v => v.poznamky === "Pozor: zadní levé kolo – zrezlý šroub, objednat nový") && !(JSON.parse(localStorage.getItem("werk-fronta")) || []).length);
     kontrola(!(await p.isVisible("text=Změny z doby bez signálu jsou odeslané")), "…a sama se odešle (bez hlášky o výpadku signálu)");
+    // poznámka přes celou obrazovku
+    await p.locator('textarea[data-poznamka="vozidla"]').locator("xpath=..").locator("[data-cela-obrazovka]").click();
+    await p.waitForSelector(".editor-poznamek textarea");
+    const ed = p.locator(".editor-poznamek textarea");
+    kontrola((await ed.boundingBox()).height > 400, "Poznámky: editor přes celou obrazovku (velké pole)");
+    await ed.fill("Celá obrazovka:\n☐ úkol 1\n    ☑ podúkol");
+    await p.click(".editor-poznamek [data-zavrit]");
+    await p.waitForFunction(() => window.__ULOZENO__.tabulky.vozidla.some(v => v.poznamky === "Celá obrazovka:\n☐ úkol 1\n    ☑ podúkol"), null, { timeout: 5000 });
+    kontrola(await p.inputValue('textarea[data-poznamka="vozidla"]') === "Celá obrazovka:\n☐ úkol 1\n    ☑ podúkol", "Poznámky: text z editoru je v poli a uloží se (i s odsazením)");
+    kontrola(await p.evaluate(() => document.querySelector('textarea[data-poznamka="vozidla"]').rows >= 12), "Poznámky: pole je velké (aspoň 12 řádků)");
+    // VIN se dá jedním klepnutím zkopírovat
+    await p.evaluate(() => { const s = document.getElementById("sekce-udaje"); if (s) s.open = true; });
+    kontrola(await p.locator('#sekce-udaje [data-kopirovat]').count() === 1, "Zakázka: u VIN je tlačítko Kopírovat");
+    await p.click('#sekce-udaje [data-kopirovat]'); await p.waitForSelector("text=Zkopírováno:");
+    kontrola(true, "Zakázka: klepnutí zkopíruje VIN");
   }
 
   // ---------- Práce: odrážky z inspekce, odklikávání a lišta s procenty ----------
