@@ -917,6 +917,28 @@ const server = http.createServer((q, r) => {
     await p.evaluate(id => { window.__ULOZENO__.tabulky.zakazky.find(z => z.id === id).dan_zapnuto = false; location.hash = "#/zakazky"; }, zid);
   }
 
+  // ---------- anglický zákazník: vlastní texty na dokladu přeložené, opravy se pamatují ----------
+  {
+    const zid = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const z = T.zakazky.find(x => T.polozky.some(y => y.zakazka_id === x.id && y.popis)); z.jazyk = "en";
+      const pol = T.polozky.filter(y => y.zakazka_id === z.id); pol.push({ zakazka_id: z.id, typ: "prace", popis: "Inspekce", mnozstvi: 1, jednotka: "h", sazba: 1200, poradi: 99 },
+        { zakazka_id: z.id, typ: "prace", popis: "Výměna přední brzdové destičky", mnozstvi: 1, jednotka: "h", sazba: 1500, poradi: 100 }, { zakazka_id: z.id, typ: "prace", popis: "Leštění chromu", mnozstvi: 1, jednotka: "h", sazba: 1500, poradi: 101 });
+      T.polozky.push(...pol.slice(-3)); return z.id; });
+    await p.evaluate(id => { location.hash = "#/zakazka/" + id + "/nabidka"; }, zid);
+    await p.waitForSelector("#preklad-radky .preklad-radek");
+    const pr = async cs => p.inputValue(`#preklad-radky [data-cs="${cs}"]`);
+    kontrola(await pr("Inspekce") === "Inspection", "EN doklad: známý text přeložen ze slovníku (Inspekce → Inspection)");
+    kontrola(/front/i.test(await pr("Výměna přední brzdové destičky")) && await p.isVisible('#preklad-radky .preklad-radek:has([data-cs="Výměna přední brzdové destičky"]) >> text=návrh – zkontrolujte'), "EN doklad: nový text dostane návrh překladu označený „zkontrolujte“");
+    kontrola(await pr("Leštění chromu") === "" && await p.isVisible("text=nepřeloženo"), "EN doklad: neznámý text je označený „nepřeloženo“");
+    await p.fill('#preklad-radky [data-cs="Leštění chromu"]', "Chrome polishing");
+    for (let i = 0; i < 40 && !(await p.evaluate(() => (document.querySelector("#nahled").contentDocument?.body?.innerText || "").includes("Chrome polishing"))); i++) await p.waitForTimeout(250);
+    const txt = await p.evaluate(() => document.querySelector("#nahled").contentDocument.body.innerText);
+    kontrola(txt.includes("Inspection") && !txt.includes("Leštění chromu"), "EN doklad: v náhledu nabídky jsou anglické texty");
+    await p.waitForFunction(() => window.__ULOZENO__.tabulky.preklady.some(r => r.klic === "leštění chromu" && r.en === "Chrome polishing"), null, { timeout: 5000 });
+    kontrola(true, "EN doklad: opravený překlad se zapamatuje (příště se nabídne sám)");
+    await p.screenshot({ path: "testy/vystup-app/preklad-en.png", fullPage: false });
+    await p.evaluate(id => { const T = window.__ULOZENO__.tabulky; T.zakazky.find(z => z.id === id).jazyk = "cs"; T.polozky = T.polozky.filter(y => !(y.zakazka_id === id && y.poradi >= 99)); window.__ULOZENO__.tabulky.polozky = T.polozky; location.hash = "#/zakazky"; }, zid);
+  }
+
   // ---------- Kalendář v Přehledu ----------
   {
     await p.evaluate(() => { location.hash = "#/"; }); await p.waitForSelector("#kalendar .kal-den");

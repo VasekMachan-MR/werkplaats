@@ -230,6 +230,9 @@
       async vsechnyDily() {
         return ok(await sb.from("dily").select("id,nazev,cislo_mb,vyrobce,cislo_vyrobce,mnozstvi,jednotka,nakupni_cena,mena,kurz,prodejni_cena,stav,dodavatel_id,sklad_id,ze_skladu,zakazky(id,cislo,datum_prijmu,stav,vozidla(typ,model,rok,motor,vin,cislo_motoru))").neq("stav", "nepouzito").limit(10000));
       },
+      // anglické překlady vlastních textů (co jednou opravím, platí pro další doklady)
+      async preklady() { return ok(await sb.from("preklady").select("klic,en").limit(20000)); },
+      async ulozitPreklady(radky) { return ok(await sb.from("preklady").upsert(radky.map(r => ({ ...r, upraveno: new Date().toISOString() }))).select("klic")); },
       // sklad = katalog dílů (každý díl ze zakázek) + stav skladu
       async sklad() { return ok(await sb.from("sklad").select("*").order("nazev").limit(10000)); },
       async pohybySkladu(sid) { return ok(await sb.from("sklad_pohyby").select("id,druh,zmena,cena,poznamka,cas,zakazka_id,zakazky(cislo)").eq("sklad_id", sid).order("cas", { ascending: false }).limit(200)); },
@@ -1352,16 +1355,33 @@
     });
   }
   /* Parts list (příloha nabídky a faktury) – díly kromě nepoužitých; cena = prodejní cena × množství */
-  function dataPartsListu(z, dily, ceny = true, odkaz = null) {
+  function dataPartsListu(z, dily, ceny = true, odkaz = null, tr = t => t) {
     const mn = d => { const n = Number(d.mnozstvi); if (!d.jednotka || d.jednotka === "ks") return isNaN(n) ? d.mnozstvi : n; return `${mnozstviCz(n)} ${d.jednotka}`; };
     const v = z.vozidla || {}, c = z.zakaznici || {};
     return { cislo: z.cislo, ceny, datum: dnes(), odkaz,
       vozidlo: { znacka: v.znacka, typ: v.typ, model: v.model, rok: v.rok, vin: v.vin, spz: v.spz }, zakaznik: { jmeno: c.jmeno || "" },
       dily: dily.filter(d => d.stav !== "nepouzito" && (d.nazev || d.cislo_mb)).map(d => ({
-        nazev: d.nazev || "", mnozstvi: mn(d), cislo: d.cislo_mb || "",
+        nazev: tr(d.nazev || ""), mnozstvi: mn(d), cislo: d.cislo_mb || "",
         cenaKs: ceny && d.prodejni_cena != null ? Number(d.prodejni_cena) : null,
         cena: ceny && d.prodejni_cena != null ? zaokrouhli(Number(d.prodejni_cena) * (Number(d.mnozstvi) || 0)) : null,
-        poznamka: d.poznamka || "", puvod: d.puvod || null })) };
+        poznamka: tr(d.poznamka || ""), puvod: d.puvod || null })) };
+  }
+
+  /* ---------- anglické doklady: překlad vlastních textů (práce, díly, závady) ---------- */
+  let ulozenePreklady = null;
+  const nactiPreklady = async () => ulozenePreklady ||= Object.fromEntries(((db.preklady ? await db.preklady().catch(() => []) : []) || []).map(r => [r.klic, r.en]));
+  // překladač pro jeden doklad: opravy z panelu > uložené > slovník > návrh; bez překladu zůstane česky
+  function prekladac(docasne = {}) {
+    return t => { const s = String(t ?? ""); if (!s.trim()) return s; const k = klicPrekladu(s);
+      if (k in docasne) return docasne[k] || s; return prelozitEn(s, ulozenePreklady || {}).en || s; };
+  }
+  async function zapamatujPreklady(texty, docasne) {        // použité překlady do slovníku (příště se nabídnou samy)
+    if (!db.ulozitPreklady) return;
+    const radky = [...new Set(texty.map(t => String(t || "").trim()).filter(Boolean))].map(cs => { const k = klicPrekladu(cs);
+      const en = k in docasne ? docasne[k] : prelozitEn(cs, ulozenePreklady || {}).en; return { klic: k, cs, en: String(en || "").trim() }; })
+      .filter(r => r.en && r.en !== r.cs && (ulozenePreklady || {})[r.klic] !== r.en);
+    if (!radky.length) return;
+    try { await db.ulozitPreklady(radky); radky.forEach(r => { (ulozenePreklady ||= {})[r.klic] = r.en; }); } catch (e) { /* zkusí se příště */ }
   }
 
   /* Vykreslování do jednoho rámečku jde vždy po jednom (náhled se nesmí přepsat uprostřed tvorby PDF) */
@@ -1690,15 +1710,15 @@
     };
   }
   /* Data pro předávací protokol (šablona zakázkového listu, druh „protokol“) */
-  function dataProtokolu({ z, cislo, f, podpisVyh, podpisZak }) {
+  function dataProtokolu({ z, cislo, f, podpisVyh, podpisZak, tr = t => t }) {
     const c = z.zakaznici || {}, v = z.vozidla || {}, en = z.jazyk === "en";
     return {
       druh: "protokol", cislo,
       zakaznik: { jmeno: c.jmeno || "", ulice: c.ulice || "", mesto: [c.psc, c.mesto].filter(Boolean).join(" "), zeme: c.zeme || "", telefon: c.telefon || "", email: c.email || "" },
-      zavady: z.zavady || [],
+      zavady: (z.zavady || []).map(tr),
       vozidlo: { znacka: v.znacka || "Mercedes-Benz", typ: v.typ || "", model: v.model || "", rok: v.rok ? String(v.rok) : "", vin: v.vin || "" },
       nadrz: en ? (NADRZ_EN[f.nadrz] || f.nadrz) : f.nadrz, tp: !!f.tp, foto: !!f.foto,
-      stav: f.stav.map(s => s.trim()).filter(Boolean), datum: f.vystaveno, prevzeti: f.prevzeti,
+      stav: f.stav.map(s => s.trim()).filter(Boolean).map(tr), datum: f.vystaveno, prevzeti: f.prevzeti,
       kolaDotazena: !!f.kola, zkusebniJizda: !!f.jizda,
       vyhotovil: uzivatel?.jmeno, podpisVyhotovil: podpisVyh || undefined, podpisZakaznik: podpisZak || undefined
     };
@@ -2710,7 +2730,8 @@
       const okno = window.open("", "_blank");
       try {
         await dokoncitUkladani();
-        const b = await pdfZeSablony("parts-list.html", dataPartsListu(E.z, sDani(E.z, [], E.dily)[1], el.querySelector("#parts-ceny").checked), "cs", { nazev: `Parts list ${E.z.cislo}` });
+        if (E.z.jazyk === "en") await nactiPreklady();
+        const b = await pdfZeSablony("parts-list.html", dataPartsListu(E.z, sDani(E.z, [], E.dily)[1], el.querySelector("#parts-ceny").checked, null, E.z.jazyk === "en" ? prekladac() : undefined), "cs", { nazev: `Parts list ${E.z.cislo}` });
         const u = URL.createObjectURL(new Blob([b], { type: "application/pdf" }));
         if (okno) okno.location = u; else window.open(u, "_blank");
       } catch (e) { okno?.close(); hlaska("Parts list se nepodařil: " + chybaText(e), true); }
@@ -2920,6 +2941,8 @@
     if (!z) { app.innerHTML = `<div class="info chyba">Zakázka nenalezena.</div>`; return; }
     if (druh === "nabidka" || druh === "faktura") [polozky, dily] = sDani(z, polozky, dily);   // daň v ceně práce a marže dílů
     const jazyk = z.jazyk || "cs", en = jazyk === "en";
+    if (en) await nactiPreklady();
+    const docasnePreklady = {}, tr = en ? prekladac(docasnePreklady) : (t => t);
     const verze = (z.doklady || []).filter(d => d.druh === druh).length + 1;
     const cislo = cisloDokladu(z.cislo, druh, verze), vs = vsDokladu(z.cislo, druh, verze);
     const s = soucty(polozky, dily);
@@ -3005,6 +3028,9 @@
             <div class="seznam-radku" id="stav-predani"></div>
             <div class="cipy">${(en ? ["Car drivable, starts and drives", "Repairs carried out according to the work order", "Car cleaned"] : ["Auto pojízdné, startuje, jede", "Opravy provedeny dle zakázkového listu", "Vůz předán umytý"]).map(t => `<button type="button" class="cip" data-cip-stav>${esc(t)}</button>`).join("")}</div></div>` : ""}
       </div></section>
+      ${en ? `<section class="karta" id="preklad"><h2>🇬🇧 Anglický překlad</h2>
+        <p class="napoveda" style="margin:0 0 10px">Zákazník má doklady v angličtině. Vaše texty jsou přeložené – zkontrolujte je. Co opravíte, aplikace si zapamatuje a příště nabídne sama.</p>
+        <div id="preklad-radky"></div></section>` : ""}
       <div class="nahled-obal"><div class="nahled-ram" id="ram"><iframe id="nahled" title="Náhled dokladu"></iframe></div></div>
       <section class="karta" style="margin-top:16px">
         <h2>Podpis zákazníka – ${esc(z.zakaznici?.jmeno || "")}${podpisZakPovinny ? "" : ` <span class="napoveda" style="font-weight:400">(nepovinný – jen když je zákazník u vás)</span>`}</h2>
@@ -3040,10 +3066,11 @@
         ...f.radky.filter(r => String(r.popis).trim() || cisloZ(r.castka)).map(r => ({ typ: "pausal", popis: String(r.popis).trim(), castka: cisloZ(r.castka) || 0 }))];
     };
     const celkemOpravy = () => f.radky.reduce((a, r) => a + (cisloZ(r.castka) || 0), 0);
+    const prelozPol = pp => en ? pp.map(p => ({ ...p, popis: tr(p.popis) })) : pp;
     const data = () => jeFaktura
-      ? dataFaktury({ z, polozky: druh === "zalohova" ? [{ typ: "pausal", popis: f.popis, castka: cisloZ(f.castka) || 0 }] : druh === "opravny" ? polozkyOpravy() : polozky, dily, druh, cislo, vs,
+      ? dataFaktury({ z, polozky: prelozPol(druh === "zalohova" ? [{ typ: "pausal", popis: f.popis, castka: cisloZ(f.castka) || 0 }] : druh === "opravny" ? polozkyOpravy() : polozky), dily, druh, cislo, vs,
           vystaveno: f.vystaveno, splatnost: druh === "nabidka" ? f.platnost : f.splatnost, platnost: f.platnost, podpisVyh: podpisVyh(), podpisZak: pad?.png(), odecty: odecty() })
-      : dataProtokolu({ z, cislo, f, podpisVyh: podpisVyh(), podpisZak: pad?.png() });
+      : dataProtokolu({ z, cislo, f, podpisVyh: podpisVyh(), podpisZak: pad?.png(), tr });
     const chybi = () => {
       const ch = [];
       const rl = sablona === "zakazkovy-list.html" ? iframe.contentWindow?.__posledniVysledek?.radky : null;   // protokol: nic se nesmí oříznout
@@ -3118,6 +3145,28 @@
       if (f.stav.includes(b.textContent)) return; const i = f.stav.findIndex(t => !t.trim()); if (i >= 0) f.stav[i] = b.textContent; else f.stav.push(b.textContent); vykresliStav(); obnov();
     });
 
+    // anglický překlad: všechny vlastní texty dokladu (práce, závady, díly v parts listu)
+    function textyKPrekladu() {
+      const t = [];
+      if (jeFaktura && !["zalohova", "opravny"].includes(druh)) polozky.forEach(p => { if (p.typ !== "prazdny" && String(p.popis || "").trim()) t.push(p.popis); });
+      if (druh === "predavaci_protokol") (z.zavady || []).forEach(x => t.push(x));
+      if (druh === "nabidka" || druh === "faktura") dily.filter(d => d.stav !== "nepouzito").forEach(d => { if (d.nazev) t.push(d.nazev); if (d.poznamka) t.push(d.poznamka); });
+      const vid = new Set(); return t.filter(x => { const k = klicPrekladu(x); if (!k || vid.has(k)) return false; vid.add(k); return true; });
+    }
+    const prEl = app.querySelector("#preklad-radky");
+    if (prEl) {
+      const T = textyKPrekladu();
+      if (!T.length) app.querySelector("#preklad").hidden = true;
+      prEl.innerHTML = T.map(cs => { const r = prelozitEn(cs, ulozenePreklady || {}), k = klicPrekladu(cs);
+        const stitek = r.zdroj === "navrh" ? `<span class="preklad-stitek navrh">návrh – zkontrolujte</span>` : !r.en ? `<span class="preklad-stitek chybi">nepřeloženo</span>` : "";
+        return `<div class="preklad-radek"><div class="preklad-cs">${esc(cs)}${stitek}</div>
+          <input class="vstup" data-preklad="${esc(k)}" data-cs="${esc(cs)}" value="${esc(r.en)}" placeholder="Anglicky…" lang="en" spellcheck="true"></div>`; }).join("");
+      prEl.querySelectorAll("[data-preklad]").forEach(inp => inp.addEventListener("input", () => {
+        docasnePreklady[inp.dataset.preklad] = inp.value.trim(); inp.closest(".preklad-radek").querySelector(".preklad-stitek")?.remove(); obnov();
+        clearTimeout(inp._u); inp._u = setTimeout(() => zapamatujPreklady([inp.dataset.cs], docasnePreklady), 900);
+      }));
+    }
+
     pad = new PodpisPad(app.querySelector("#podpis"), { onZmena: obnov });
     app.querySelector("#smazat-podpis").onclick = () => pad.smazat();
     if (!vyh) { app.querySelector("#muj-podpis-sekce").hidden = false; mujPad = new PodpisPad(app.querySelector("#muj-podpis"), { onZmena: obnov }); }
@@ -3139,7 +3188,8 @@
         if (!vyh && mujPad && !mujPad.prazdny()) { const png = mujPad.png(); await db.ulozitMujPodpis(uzivatel.id, png); uzivatel.podpis_obrazek = png; }
         if (druh === "nabidka" && !nabidkaVystaveni) { const [n] = await db.vlozit("nabidky", [{ zakazka_id: id, verze, stav: "odeslano", platnost: f.platnost }]); nabidkaVystaveni = n.id; }
         const nabidka_id = druh === "nabidka" ? nabidkaVystaveni : null;     // při opakovaném pokusu stejná nabídka
-        const pl = dataPartsListu(z, dily, true, { druh, cislo });
+        const pl = dataPartsListu(z, dily, true, { druh, cislo }, tr);
+        if (en) await zapamatujPreklady(textyKPrekladu(), docasnePreklady);
         const prilohy = (druh === "nabidka" || druh === "faktura") && pl.dily.length ? [{ sablona: "parts-list.html", data: pl, nazev: "parts list", slug: "parts-list" }] : [];
         const dd = druh === "opravny" ? { ...data(), opravuje: f.opravuje } : data();
         if (pozdeji) { delete dd.podpisZakaznik; dd.cekaPodpis = true; }

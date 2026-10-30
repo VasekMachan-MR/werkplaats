@@ -651,3 +651,10 @@ textarea.poznamka-text { width: 100%; max-width: none; resize: vertical; font-si
 .editor-hlava { display: flex; align-items: center; gap: 14px; padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top)); border-bottom: 1px solid var(--linka); }
 .editor-hlava b { flex: 1 1 auto; }
 .editor-okno textarea { flex: 1 1 auto; border: 0; border-radius: 0; resize: none; padding: 18px 22px calc(18px + env(safe-area-inset-bottom)); font-size: 17px; line-height: 1.55; tab-size: 4; white-space: pre-wrap; }
+/* anglický překlad textů na dokladu */
+.preklad-radek { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 14px; align-items: center; padding: 8px 0; border-top: 1px solid #eef0f3; }
+.preklad-cs { color: var(--sedy); font-size: 15px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.preklad-stitek { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.preklad-stitek.navrh { background: var(--oranzova-svetla); color: var(--oranzova); }
+.preklad-stitek.chybi { background: #fde8e6; color: var(--cervena); }
+@media (max-width: 700px) { .preklad-radek { grid-template-columns: 1fr; } }

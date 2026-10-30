@@ -1,6 +1,6 @@
 /* Zkušební databáze v paměti prohlížeče – stejné funkce jako skutečné napojení na Supabase (app.js → vytvorDb).
    Používá se jen v testech, do aplikace se nedostane. */
-window.__ULOZENO__ = { soubory: {}, tabulky: { zakaznici: [], vozidla: [], vlastnictvi: [], zakazky: [], soubory: [], doklady: [], podpisy: [], polozky: [], dily: [], nabidky: [], kalendar: [], dalkove_podpisy: [], sklad: [], sklad_pohyby: [] }, citac: 7376 };
+window.__ULOZENO__ = { soubory: {}, tabulky: { zakaznici: [], vozidla: [], vlastnictvi: [], zakazky: [], soubory: [], doklady: [], podpisy: [], polozky: [], dily: [], nabidky: [], kalendar: [], dalkove_podpisy: [], sklad: [], sklad_pohyby: [], preklady: [] }, citac: 7376 };
 window.__WERK_DB__ = (() => {
   const T = window.__ULOZENO__.tabulky, S = window.__ULOZENO__.soubory;
   const id = () => crypto.randomUUID();
@@ -127,6 +127,8 @@ window.__WERK_DB__ = (() => {
       for (const o of stare) if (!nove.some(d => d.id === o.id) && vydej(o)) pohyb({ sklad_id: o.sklad_id, druh: "zakazka", zmena: vydej(o), zakazka_id: zid });
       T.dily = T.dily.filter(d => d.zakazka_id !== zid).concat(nove); return dily.length;
     },
+    async preklady() { await cekej(); return kopie(T.preklady.map(r => ({ klic: r.klic, en: r.en }))); },
+    async ulozitPreklady(radky) { await cekej(); for (const r of radky) { T.preklady = T.preklady.filter(x => x.klic !== r.klic); T.preklady.push({ ...r }); } return radky.map(r => ({ klic: r.klic })); },
     async sklad() { await cekej(); return kopie(T.sklad).sort((a, b) => a.nazev.localeCompare(b.nazev, "cs")); },
     async pohybySkladu(sid) { await cekej(); return kopie(T.sklad_pohyby.filter(p => p.sklad_id === sid).map(p => ({ ...p, zakazky: T.zakazky.find(z => z.id === p.zakazka_id) || null })).reverse()); },
     async novaPolozkaSkladu(p) { await cekej(); const k = klicSkladu(p); if (T.sklad.some(x => x.klic === k)) throw new Error('duplicate key value violates unique constraint "sklad_klic"');
