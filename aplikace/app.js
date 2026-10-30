@@ -469,7 +469,7 @@
       <div id="uvod"><div class="nacitani">Načítám přehled…</div></div>`;
     app.querySelector("#uvod").onclick = e => { const a = e.target.closest("[data-filtr]"); if (a) uloz("werk-filtr-zakazek", { ...(nacti("werk-filtr-zakazek") || {}), stav: a.dataset.filtr }); };
     let zak = [], dok = [];
-    try { [zak, dok] = await Promise.all([db.zakazky(), db.vsechnyDoklady().catch(() => [])]); }
+    try { [zak, dok] = await Promise.all([db.zakazky(), db.vsechnyDoklady().then(bezStarychListu).catch(() => [])]); }
     catch (e) { app.querySelector("#uvod").innerHTML = `<div class="info chyba">${esc(chybaText(e))}</div>`; return; }
     if (navId !== n0) return;                         // mezitím se přešlo jinam – nepřekreslovat cizí stránku
     const D = dnes(), za7 = plusDni(D, 7), mesic = D.slice(0, 7);
@@ -1879,6 +1879,11 @@
       } catch (e) { p.zavri(); hlaska("Vystavení se nepovedlo: " + chybaText(e) + " – zkuste to znovu.", true, 8000); }
     } });
   }
+  // starší verze zakázkového listu se nikde neukazují – platí jen poslední (po podpisu podepsaná oběma); v databázi zůstávají jako záznam (Vašek 30.10.2026)
+  const bezStarychListu = doklady => {
+    const max = {}; for (const d of doklady || []) if (d.druh === "zakazkovy_list") max[d.zakazka_id] = Math.max(max[d.zakazka_id] || 1, d.verze || 1);
+    return (doklady || []).filter(d => d.druh !== "zakazkovy_list" || (d.verze || 1) >= (max[d.zakazka_id] || 1));
+  };
   // zakázkový list (poslední verze), který čeká na podpis zákazníka z E-servisky
   const cekajiciList = doklady => { const zl = (doklady || []).filter(d => d.druh === "zakazkovy_list").sort((a, b) => (b.verze || 1) - (a.verze || 1))[0]; return zl?.data?.cekaPodpis ? zl : null; };
   // faktury / zálohové faktury vystavené s „Podepíše později“ (čekající i už podepsané v E-servisce)
@@ -1964,7 +1969,7 @@
     }).catch(() => {}); }
     const v = z.vozidla || {}, c = z.zakaznici || {};
     const jedn = v.jednotka_tachometru === "mi" ? "mi" : "km";
-    const doklady = (z.doklady || []).sort((a, b) => a.cislo.localeCompare(b.cislo, "cs", { numeric: true }));
+    const doklady = bezStarychListu((z.doklady || []).map(d => ({ ...d, zakazka_id: d.zakazka_id || z.id }))).sort((a, b) => a.cislo.localeCompare(b.cislo, "cs", { numeric: true }));
     app.innerHTML = `
       <div class="hlavicka-prehledu">
         <div><div class="mutted">Zakázka · ${esc(c.jmeno || "")}</div><h1 style="margin:0">#${z.cislo} · ${esc([v.typ, v.model].filter(Boolean).join(" ") || "Mercedes-Benz")}</h1></div>
@@ -3710,7 +3715,7 @@
     const n0 = navId;
     app.innerHTML = `<h1>Doklady</h1><div class="nacitani">Načítám doklady…</div>`;
     let vse = [];
-    try { vse = await db.vsechnyDoklady(); } catch (e) { app.innerHTML = `<h1>Doklady</h1><div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+    try { vse = bezStarychListu(await db.vsechnyDoklady()); } catch (e) { app.innerHTML = `<h1>Doklady</h1><div class="info chyba">${esc(chybaText(e))}</div>`; return; }
     if (navId !== n0) return;                         // mezitím se přešlo jinam – nepřekreslovat cizí stránku
     const F = { druh: "vse", mesic: "", nezaplacene: false };          // po otevření z menu vždy „Vše“
     const mesice = [...new Set(vse.map(d => String(d.vystaveno).slice(0, 7)))].sort().reverse();
@@ -3751,7 +3756,7 @@
         try { const u = await db.odkaz(b.dataset.pdf, 600); if (okno) okno.location = u; else location.href = u; } catch (e) { okno?.close(); hlaska(chybaText(e), true); }
       });
       app.querySelectorAll("[data-smazat-doklad]").forEach(b => b.onclick = () => smazatDokladDotaz(vse.find(x => x.id === b.dataset.smazatDoklad), async () => {
-        try { vse = await db.vsechnyDoklady(); } catch (e) { hlaska(chybaText(e), true); } vykresli();
+        try { vse = bezStarychListu(await db.vsechnyDoklady()); } catch (e) { hlaska(chybaText(e), true); } vykresli();
       }));
     };
     app.querySelector("#f-druh").onclick = e => { const b = e.target.closest("button"); if (!b) return; F.druh = b.dataset.k;

@@ -998,6 +998,10 @@ const server = http.createServer((q, r) => {
       `Vystavit k podpisu: vznikla nová verze ${cisloNove} s novými údaji, čeká na podpis zákazníka (Podepíše později)`);
     await p.waitForSelector("#odkaz-podpis");
     kontrola(true, "Vystavit k podpisu: po uložení je hned tlačítko „Poslat odkaz k podpisu“");
+    await p.evaluate(() => { location.hash = "#/doklady"; }); await p.waitForSelector("#f-druh");
+    await p.click('#f-druh >> text=Zakázkové listy');
+    const listy = await p.$$eval("#seznam-dokladu .doklad b", b => b.map(x => x.textContent).filter(t => /^7377-1/.test(t)));
+    kontrola(listy.length === 1 && listy[0] === cisloNove, `Doklady: ze zakázkového listu je vidět jen poslední verze (${cisloNove}), starší se nezobrazují`);
   }
 
   // ---------- výchozí řazení zakázek podle stavu; smazání řádku práce se potvrzuje ----------
