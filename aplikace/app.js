@@ -1754,7 +1754,9 @@
               ${d.soubory?.klic ? `<button class="tl tl-male" data-pdf="${esc(d.soubory.klic)}">Otevřít PDF</button>` : ""}
               ${(z.soubory || []).filter(f => f.doklad_id === d.id && f.klic !== d.soubory?.klic && f.druh === "pdf").map(f => `<button class="tl tl-male" data-pdf="${esc(f.klic)}">${/parts list/.test(f.nazev || "") ? "Parts list" : "Příloha"}</button>`).join("")}
               ${lzeSmazatDoklad(d, doklady) ? `<button class="tl tl-male tl-kos" data-smazat-doklad="${d.id}" title="Smazat doklad ${esc(d.cislo)}" aria-label="Smazat doklad ${esc(d.cislo)}">🗑</button>` : ""}</span></div>`).join("")
-          || `<div class="info pozor">Zakázkový list zatím nebyl uložen.</div>`}</div>
+          || ((z.soubory || []).some(f => f.druh === "archiv" && !f.smazano)
+            ? `<div class="info">Zakázka ze starého systému – v aplikaci k ní nejsou vystavené doklady. Původní doklady jsou v sekci <b>Ostatní dokumenty</b> níže.</div>`
+            : `<div class="info pozor">K této zakázce zatím není vystavený zakázkový list.</div>`)}</div>
         <div class="radek-tlacitek" style="margin-top:14px">
           <a class="tl tl-hlavni" href="#/zakazka/${id}/nabidka">📝 Cenová nabídka</a>
           ${jeMajitel() ? `<a class="tl tl-hlavni" href="#/zakazka/${id}/zaloha">💰 Zálohová faktura</a>
@@ -1777,7 +1779,7 @@
         <div id="dily"></div>
       </details>
       ${blokPoznamek([{ tabulka: "zakazky", id: z.id, hodnota: z.poznamky, popis: "K této zakázce (záznam v E-servisce – uvidí ho zákazník i další majitelé auta)", napoveda: "Co je potřeba udělat, co jsme zjistili, domluva se zákazníkem…" },
-        { tabulka: "vozidla", id: z.vozidlo_id || v.id, hodnota: v.poznamky, popis: "K autu (zůstanou u auta i pro další návštěvy)", napoveda: "Zvláštnosti auta, historie, co hlídat příště…" }], id)}
+        { tabulka: "vozidla", id: z.vozidlo_id || v.id, hodnota: v.poznamky, popis: "K autu – neveřejné, zákazník je nevidí (zůstanou u auta i pro další návštěvy)", napoveda: "Zvláštnosti auta, historie, co hlídat příště…" }], id)}
 
       <details class="karta sbalovaci souhrn-zakazky" id="souhrn" data-sbal${sbalOpen(id, "souhrn")}></details>
 
