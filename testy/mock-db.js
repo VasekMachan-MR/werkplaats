@@ -147,6 +147,14 @@ window.__WERK_DB__ = (() => {
       T.soubory = T.soubory.filter(x => x.zakazka_id !== zid || x.druh === "tp"); T.zakazky = T.zakazky.filter(x => x.id !== zid);
       if (window.__ULOZENO__.citac === z.cislo) window.__ULOZENO__.citac = Math.max(7376, ...T.zakazky.map(x => x.cislo)); return z.cislo;
     },
+    async nahraditNepodepsaneListy(zid) {           // jako 039 v databázi
+      await cekej(); const ids = T.doklady.filter(d => d.zakazka_id === zid && d.druh === "zakazkovy_list"
+        && !T.podpisy.some(x => x.doklad_id === d.id && x.role === "zakaznik") && !T.dalkove_podpisy.some(x => x.doklad_id === d.id)).map(d => d.id);
+      T.soubory.forEach(f => { if (ids.includes(f.doklad_id) || T.doklady.some(d => ids.includes(d.id) && d.pdf_soubor_id === f.id)) { f.doklad_id = null; f.smazano ||= new Date().toISOString(); } });
+      T.podpisy = T.podpisy.filter(x => !ids.includes(x.doklad_id)); window.__ULOZENO__.tabulky.podpisy = T.podpisy;
+      T.doklady = T.doklady.filter(d => !ids.includes(d.id)); window.__ULOZENO__.tabulky.doklady = T.doklady;
+      return ids.length;
+    },
     async smazatDoklad(did) {
       const d = T.doklady.find(x => x.id === did); if (!d) throw new Error("Doklad nenalezen");
       if (!["nabidka", "faktura", "zalohova", "predavaci_protokol"].includes(d.druh)) throw new Error("Doklad nejde smazat");

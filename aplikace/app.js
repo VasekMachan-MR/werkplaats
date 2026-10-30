@@ -238,6 +238,8 @@
       async sklad() { return ok(await sb.from("sklad").select("*").order("nazev").limit(10000)); },
       async pohybySkladu(sid) { return ok(await sb.from("sklad_pohyby").select("id,druh,zmena,cena,poznamka,cas,zakazka_id,zakazky(cislo),soubory(id,klic,nazev,smazano)").eq("sklad_id", sid).order("cas", { ascending: false }).limit(200)); },
       // přijaté faktury k naskladnění (jedna faktura může patřit k více dílům) a které díly skladu je mají
+      // nepodepsaný zakázkový list se při novém vystavení nahradí (039) – server hlídá, že ho zákazník nepodepsal
+      async nahraditNepodepsaneListy(zid) { return ok(await sb.rpc("nahradit_nepodepsane_listy", { p_zakazka: zid })); },
       async prirazeniFakturyPrijmu(pohyb, soubor) { return ok(await sb.rpc("priradit_fakturu_prijmu", { p_pohyb: pohyb, p_soubor: soubor })); },
       async fakturySkladu() { return ok(await sb.from("soubory").select("id,klic,nazev,mime,vytvoreno").eq("druh", "nakupni_doklad").eq("faze", "sklad").is("smazano", null).order("vytvoreno", { ascending: false }).limit(30)); },
       async fakturyPrijmu() { return ok(await sb.from("sklad_pohyby").select("sklad_id,cas,soubory(id,klic,nazev,mime,smazano)").eq("druh", "prijem").not("soubor_id", "is", null).order("cas", { ascending: false }).limit(5000)); },
@@ -1456,7 +1458,7 @@
       </section>
       <div class="akce-dole"><div class="vnitrek">
         <button type="button" class="tl" id="zpet">${ctx ? `← <span class="jen-siroke">Zpět do zakázky</span><span class="jen-uzke">Zpět</span>` : Q.vysledek ? `Ukončit<span class="jen-siroke"> příjem</span>` : `← <span class="jen-siroke">Upravit údaje</span><span class="jen-uzke">Zpět</span>`}</button>
-        <span class="stav-ulozeni" id="stav-ulozeni">${ctx ? `Nová verze zakázkového listu ${esc(Q.cisloListu)}` : Q.vysledek ? `Zakázka #${Q.vysledek.cislo} je založená – dokončete uložení listu.` : ""}</span>
+        <span class="stav-ulozeni" id="stav-ulozeni">${ctx ? (Q.nahrazuje ? `Zakázkový list ${esc(Q.cisloListu)} – nahradí nepodepsaný ${esc(Q.nahrazuje)}` : `Nová verze zakázkového listu ${esc(Q.cisloListu)}`) : Q.vysledek ? `Zakázka #${Q.vysledek.cislo} je založená – dokončete uložení listu.` : ""}</span>
         <button type="button" class="tl tl-velke" id="pozdeji" title="Zákazník spěchá: list se uloží bez jeho podpisu a zákazník ho podepíše z domu v E-servisce">✍️ <span class="jen-siroke">Podepíše později</span><span class="jen-uzke">Později</span></button>
         <button type="button" class="tl tl-hlavni tl-velke" id="ulozit" disabled><span class="jen-siroke">Podepsat a uložit</span><span class="jen-uzke">Uložit</span></button>
       </div></div>`;
@@ -1546,10 +1548,10 @@
     en: { zakazkovy_list: "Work order", nabidka: "Quotation", faktura: "Invoice", predavaci_protokol: "Handover protocol", zalohova: "Advance invoice", opravny: "Credit note" }
   };
   /* 7377 + faktura (verze 1) → 7377-3; druhá faktura → 7377-3-2. VS jen číslice: 73773 / 737732 */
-  /* Od 1. 11. 2026 nový formát čísel (Vašek 30.10.2026): číslo zakázky + verze na 3 místa (první = 000) + druh dokladu
+  /* Od 30. 10. 2026 nový formát čísel (Vašek 30.10.2026 – přechod hned, původně od 1. 11.): číslo zakázky + verze na 3 místa (první = 000) + druh dokladu
      7377-3 → 73770003, 7377-3-2 → 73770023, 7377-1 → 73770001 – číslo = variabilní symbol (jen číslice, platba se spáruje).
      Přepíná se podle dne vystavení; návrat = posunout NOVA_CISLA_OD (už vydané doklady si čísla nechají). */
-  const NOVA_CISLA_OD = "2026-11-01";
+  const NOVA_CISLA_OD = "2026-10-30";
   const noveCislo = () => dnes() >= (window.__CISLA_OD__ || NOVA_CISLA_OD);
   const cisloDokladu = (c, druh, verze = 1) => noveCislo() ? `${c}${String(verze > 1 ? verze : 0).padStart(3, "0")}${PRIPONY[druh]}`
     : `${c}-${PRIPONY[druh]}${verze > 1 ? `-${verze}` : ""}`;
@@ -1583,7 +1585,7 @@
 
   /* Vykreslí doklad do rámečku → PDF → uloží PDF, podpis zákazníka, doklad (zamčený) a podpisy. Vrací {doklad, bytes, cislo}. */
   async function ulozitDoklad({ iframe, sablona, data, jazyk, zakazka_id, vozidlo_id, cisloZakazky, druh, verze = 1, vystaveno, splatnost,
-                               podpisZak, jmenoZakaznika, vyhPodepsalNaIpadu = false, nabidka_id = null, prubeh = () => {}, prilohy = [], zpusobZak = "ipad" }) {
+                               podpisZak, jmenoZakaznika, vyhPodepsalNaIpadu = false, nabidka_id = null, prubeh = () => {}, prilohy = [], zpusobZak = "ipad", predVystavenim = null }) {
     const cislo = TVAR_CISLA.test(String(data?.cislo || "")) ? String(data.cislo) : cisloDokladu(cisloZakazky, druh, verze);
     if (data && !data.cislo) data.cislo = cislo;
     prubeh(`Vytvářím ${NAZEV_DOKLADU.cs[druh].toLowerCase()}…`);
@@ -1619,6 +1621,7 @@
     const podpisy = [{ role: "vyhotovil", jmeno: uzivatel.jmeno, uzivatel_id: uzivatel.id, zpusob: vyhPodepsalNaIpadu ? "ipad" : "ulozeny", otisk_dokumentu: otisk }];
     if (podpisZak) podpisy.unshift({ role: "zakaznik", jmeno: jmenoZakaznika, zpusob: zpusobZak, otisk_dokumentu: otisk });
     prubeh("Ukládám doklad…");
+    if (predVystavenim) await predVystavenim();          // např. odstranit nepodepsaný zakázkový list, který nový nahrazuje – až když je PDF hotové a nahrané
     const doklad = await db.vystavitDoklad({ zakazka_id, vozidlo_id, nabidka_id, druh, verze, cislo, variabilni_symbol: vsZCisla(cislo), jazyk,
       vystaveno: vystaveno || dnes(), splatnost: splatnost || null, data: ulozenaData, celkem: vysledek.celkem ?? null, soubory, podpisy });
     posledniPdf = { zakazka_id, cislo, bytes, nazev: `${cislo}.pdf`, druh, jazyk, prilohy: hotovePrilohy };
@@ -1867,14 +1870,18 @@
   // nový zakázkový list s upravenými údaji z „Upravit příjem“ (nová verze 7377-1-2…) – stejná obrazovka náhledu a podpisu jako při příjmu
   function znovuVystavitList(z) {
     const c = z.zakaznici || {}, v = z.vozidla || {}, t = x => x == null ? "" : String(x);
-    const verze = Math.max(1, ...(z.doklady || []).filter(d => d.druh === "zakazkovy_list").map(d => d.verze || 1)) + ((z.doklady || []).some(d => d.druh === "zakazkovy_list") ? 1 : 0);
+    // nepodepsaný list (ani na iPadu, ani v E-servisce) se nahradí – zůstane jediný list, verze 1 (73780001); podepsaný → nová verze (Vašek 30.10.2026)
+    const listy = (z.doklady || []).filter(d => d.druh === "zakazkovy_list"), podepsany = d => !d.data?.cekaPodpis || !!dalkovyPodpis(d);
+    const nepodepsane = listy.filter(d => !podepsany(d)), nahradit = nepodepsane.length > 0;
+    const verze = Math.max(0, ...listy.filter(podepsany).map(d => d.verze || 1)) + 1;     // místo po nahrazených listech (bez podpisu: 1)
     const Q = {
       zakaznik: { jmeno: t(c.jmeno), ulice: t(c.ulice), psc: t(c.psc), mesto: t(c.mesto), zeme: t(c.zeme), telefon: t(c.telefon), email: t(c.email) },
       vozidlo: { typ: t(v.typ), model: t(v.model), rok: t(v.rok), vin: t(v.vin) },
       zakazka: { jazyk: z.jazyk || "cs", zavady: [...(z.zavady || [])], stav_prijem: [...(z.stav_prijem || [])], nadrz_prijem: z.nadrz_prijem || "", tp_prilozen: z.tp_prilozen,
         datum_prijmu: z.datum_prijmu, predpoklad_dokonceni: z.predpoklad_dokonceni || "", odhad_ceny: z.odhad_ceny == null ? "" : String(z.odhad_ceny) },
       fotky: z.foto_prijem ? [{}] : [], vysledek: { zakazka_id: z.id, vozidlo_id: z.vozidlo_id, cislo: z.cislo },
-      cisloListu: cisloDokladu(z.cislo, "zakazkovy_list", verze)
+      cisloListu: cisloDokladu(z.cislo, "zakazkovy_list", verze),
+      nahrazuje: nahradit ? nepodepsane.map(d => d.cislo).sort().join(", ") : ""
     };
     const zpet = () => { uklid?.(); uklid = null; detail(z.id); };
     prijemPodpis({ Q, zpet, ulozit: async (iframe, podpisVyh, podpisZak, vyhPodepsalNaIpadu, pozdeji = false) => {
@@ -1883,7 +1890,8 @@
       try {
         await ulozitDoklad({ iframe, sablona: "zakazkovy-list.html", data: dataZakazkovehoListu(z.cislo, podpisVyh, pozdeji ? null : podpisZak, pozdeji, Q), jazyk: Q.zakazka.jazyk,
           zakazka_id: z.id, vozidlo_id: z.vozidlo_id, cisloZakazky: z.cislo, druh: "zakazkovy_list", verze, vystaveno: dnes(),
-          podpisZak: pozdeji ? null : podpisZak, jmenoZakaznika: Q.zakaznik.jmeno.trim(), vyhPodepsalNaIpadu, prubeh: p.text });
+          podpisZak: pozdeji ? null : podpisZak, jmenoZakaznika: Q.zakaznik.jmeno.trim(), vyhPodepsalNaIpadu, prubeh: p.text,
+          predVystavenim: nahradit ? () => db.nahraditNepodepsaneListy(z.id) : null });
         if (pozdeji && posledniPdf) posledniPdf.cekaPodpis = true;
         p.zavri(); uklid?.(); uklid = null; location.hash = `#/hotovo/${z.id}`;
       } catch (e) { p.zavri(); hlaska("Vystavení se nepovedlo: " + chybaText(e) + " – zkuste to znovu.", true, 8000); }
