@@ -22,7 +22,8 @@ const server = http.createServer((q, r) => {
   const b = await chromium.launch();
   const ctx = await b.newContext({ ...devices["iPad Pro 11"], locale: "cs-CZ", timezoneId: "Europe/Prague" });
   const podpisVasek = fs.existsSync("dokumenty/sablony/assets/podpis.png") ? "data:image/png;base64," + fs.readFileSync("dokumenty/sablony/assets/podpis.png").toString("base64") : null;
-  await ctx.addInitScript({ content: `window.__TEST_PODPIS__ = ${JSON.stringify(podpisVasek)}; window.__KATALOG__ = ${fs.readFileSync("testy/katalog-vozu.json", "utf8")};` + fs.readFileSync("testy/mock-db.js", "utf8") });
+  // čísla dokladů: hlavní test běží ve starém formátu (7377-3) bez ohledu na dnešní datum; nový formát se testuje zvlášť
+  await ctx.addInitScript({ content: `window.__CISLA_OD__ = "2099-01-01"; window.__TEST_PODPIS__ = ${JSON.stringify(podpisVasek)}; window.__KATALOG__ = ${fs.readFileSync("testy/katalog-vozu.json", "utf8")};` + fs.readFileSync("testy/mock-db.js", "utf8") });
   const p = await ctx.newPage();
   const chyby = [];
   p.on("pageerror", e => chyby.push("pageerror: " + e.message));
@@ -977,7 +978,7 @@ const server = http.createServer((q, r) => {
     // ---------- „Upravit příjem“ → Uložit a vystavit k podpisu: nová verze zakázkového listu s novými údaji (Vašek 30.10.2026) ----------
     const zid = await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky.find(z => z.cislo === 7377).id);
     const pred = await p.evaluate(id => window.__ULOZENO__.tabulky.doklady.filter(d => d.zakazka_id === id && d.druh === "zakazkovy_list").map(d => d.verze || 1), zid);
-    const cisloNove = pred.length ? `7377-1-${Math.max(...pred) + 1}` : "7377-1";
+    const vNova = pred.length ? Math.max(...pred) + 1 : 1, cisloNove = `7377${String(vNova > 1 ? vNova : 0).padStart(3, "0")}1`;   // nový formát (viz níž)
     await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid); await p.waitForSelector("#upravit-prijem", { state: "attached" });
     await p.evaluate(() => { document.querySelector("#upravit-prijem").closest("details")?.setAttribute("open", ""); });
     await p.click("#upravit-prijem"); await p.waitForSelector("#vystavit-znovu");
@@ -985,6 +986,12 @@ const server = http.createServer((q, r) => {
       "Upravit příjem: tlačítko „Uložit a vystavit k podpisu“ je mezi Uložit a Zrušit");
     await p.fill('[data-uf="odhad_ceny"]', "45000");
     await p.click('[data-up="zavady"]'); await p.locator('[data-ur="zavady"]').last().fill("Doplněno: výměna brzdové kapaliny");
+    // od 1. 11. 2026 nový formát čísel: 7377-3 → 73770003, 7377-3-2 → 73770023, číslo = variabilní symbol
+    const prevod = await p.evaluate(() => { window.__CISLA_OD__ = "2000-01-01"; const { cisloDokladu: c, vsDokladu: v } = window.__WERK_CISLA__;
+      return [c(7377, "faktura"), c(7378, "predavaci_protokol"), c(7377, "faktura", 2), c(7377, "faktura", 12), c(7377, "zakazkovy_list"), c(7377, "zalohova"), c(7377, "opravny"), v(7377, "faktura", 2)].join(); });
+    kontrola(prevod === "73770003,73780004,73770023,73770123,73770001,73770005,73770006,73770023", "Čísla od 1. 11. 2026: 7377-3 → 73770003, 7378-4 → 73780004, 7377-3-2 → 73770023, VS = číslo");
+    const stary = await p.evaluate(() => { window.__CISLA_OD__ = "2099-01-01"; const { cisloDokladu: c, vsDokladu: v } = window.__WERK_CISLA__; const r = [c(7377, "faktura"), c(7377, "faktura", 2), v(7377, "faktura", 2)].join(); window.__CISLA_OD__ = "2000-01-01"; return r; });
+    kontrola(stary === "7377-3,7377-3-2,737732", "Čísla do 31. 10. 2026 beze změny (7377-3, 7377-3-2, VS 737732) – přepnutí jde vrátit datem");
     await p.click("#vystavit-znovu");
     await p.waitForSelector("#nahled"); await p.waitForFunction(() => /45\D?000/.test(document.querySelector("#nahled").contentDocument?.body?.innerText || ""), null, { timeout: 10000 }).catch(() => {});
     const nahled = await p.evaluate(() => document.querySelector("#nahled").contentDocument.body.innerText);
@@ -994,13 +1001,13 @@ const server = http.createServer((q, r) => {
     await p.click("#pozdeji");
     await p.waitForFunction(() => location.hash.startsWith("#/hotovo/"), null, { timeout: 15000 });
     const nl = await p.evaluate(id => window.__ULOZENO__.tabulky.doklady.filter(d => d.zakazka_id === id && d.druh === "zakazkovy_list").sort((a, b) => (b.verze || 1) - (a.verze || 1))[0], zid);
-    kontrola(nl.cislo === cisloNove && nl.data.cekaPodpis === true && nl.data.odhad === 45000 && nl.data.zavady.includes("Doplněno: výměna brzdové kapaliny"),
+    kontrola(nl.cislo === cisloNove && nl.variabilni_symbol === cisloNove && nl.data.cislo === cisloNove && nl.data.cekaPodpis === true && nl.data.odhad === 45000 && nl.data.zavady.includes("Doplněno: výměna brzdové kapaliny"),
       `Vystavit k podpisu: vznikla nová verze ${cisloNove} s novými údaji, čeká na podpis zákazníka (Podepíše později)`);
     await p.waitForSelector("#odkaz-podpis");
     kontrola(true, "Vystavit k podpisu: po uložení je hned tlačítko „Poslat odkaz k podpisu“");
     await p.evaluate(() => { location.hash = "#/doklady"; }); await p.waitForSelector("#f-druh");
     await p.click('#f-druh >> text=Zakázkové listy');
-    const listy = await p.$$eval("#seznam-dokladu .doklad b", b => b.map(x => x.textContent).filter(t => /^7377-1/.test(t)));
+    const listy = await p.$$eval("#seznam-dokladu .doklad b", b => b.map(x => x.textContent).filter(t => /^7377(-1|\d{3}1$)/.test(t)));
     kontrola(listy.length === 1 && listy[0] === cisloNove, `Doklady: ze zakázkového listu je vidět jen poslední verze (${cisloNove}), starší se nezobrazují`);
   }
 
