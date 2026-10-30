@@ -36,6 +36,10 @@ window.__WERK_DB__ = (() => {
           ["brzdy", "Brzdová kapalina"], ["chladici", "Chladicí kapalina"], ["diferencial", "Olej diferenciálu"], ["servo", "Olej servořízení"], ["ventily", "Seřízení ventilů", null, true]]
           .map(([ukon, nazev, jen_palivo = null, jen_serizovani_ventilu = false], i) => ({ ukon, nazev, poradi: i + 1, jen_palivo, jen_serizovani_ventilu })) };
     },
+    // koncept příjmu „na serveru“: přežije obnovení stránky (sessionStorage), jako skutečná databáze
+    async koncept() { await cekej(); if (window.__OFFLINE__) throw new Error("Failed to fetch"); const k = sessionStorage.getItem("mock-koncept"); return k ? JSON.parse(k) : null; },
+    async ulozitKoncept(data) { await cekej(); if (window.__OFFLINE__) throw new Error("Failed to fetch"); sessionStorage.setItem("mock-koncept", JSON.stringify({ data, upraveno: new Date().toISOString() })); return [{}]; },
+    async smazatKoncept() { await cekej(); sessionStorage.removeItem("mock-koncept"); },
     async dalsiCisloOdhad() { return window.__ULOZENO__.citac + 1; },
     async katalogVozu() { return kopie(window.__KATALOG__ || []); },
     async vsechnyDily() {

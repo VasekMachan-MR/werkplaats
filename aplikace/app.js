@@ -170,6 +170,11 @@
         const [m, t, u] = await Promise.all([sb.from("motory").select("kod,palivo,serizovani_ventilu,popis").order("kod"), sb.from("typy_motoru").select("klic,motor"), sb.from("servisni_ukony").select("*").order("poradi")]);
         return { motory: ok(m), typy: ok(t), ukony: ok(u) };
       },
+      // rozpracovaný příjem – jeden na přihlášeného člověka, vidět na všech jeho zařízeních
+      async koncept() { return ok(await sb.from("koncepty_prijmu").select("data,upraveno").maybeSingle()); },
+      async ulozitKoncept(data) { const u = ok(await sb.auth.getSession()).session?.user; if (!u) throw new Error("Nepřihlášený");
+        return ok(await sb.from("koncepty_prijmu").upsert({ uzivatel_id: u.id, data, upraveno: new Date().toISOString() }).select("uzivatel_id")); },
+      async smazatKoncept() { const u = ok(await sb.auth.getSession()).session?.user; if (!u) return; return ok(await sb.from("koncepty_prijmu").delete().eq("uzivatel_id", u.id)); },
       async dalsiCisloOdhad() { const r = ok(await sb.from("ciselne_rady").select("posledni").eq("rada", "zakazky").maybeSingle()); return r ? r.posledni + 1 : null; },
       async zakazky() {
         return ok(await sb.from("zakazky")
@@ -429,7 +434,7 @@
   };
   /* ================= úvodní přehled (po přihlášení) ================= */
   async function uvod() {
-    const n0 = navId;
+    const n0 = navId; obnovBannerKonceptu();
     const d0 = new Date(), datumDnes = d0.toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
     const hodina = d0.getHours(), pozdrav = hodina < 10 ? "Dobré ráno" : hodina < 18 ? "Dobrý den" : "Dobrý večer";
     app.innerHTML = `
@@ -437,7 +442,7 @@
         <div><h1>Přehled</h1><div class="mutted">${pozdrav} · ${esc(datumDnes)}</div></div>
         <a class="tl tl-hlavni tl-velke" href="#/novy">＋ Nový příjem vozu</a>
       </div>
-      ${nacti("werk-koncept-prijmu") ? `<div class="info pozor" style="margin:0 0 14px">Máte rozpracovaný příjem. <a href="#/novy"><b>Pokračovat</b></a></div>` : ""}
+      ${bannerKonceptu()}
       <div id="uvod"><div class="nacitani">Načítám přehled…</div></div>`;
     app.querySelector("#uvod").onclick = e => { const a = e.target.closest("[data-filtr]"); if (a) uloz("werk-filtr-zakazek", { ...(nacti("werk-filtr-zakazek") || {}), stav: a.dataset.filtr }); };
     let zak = [], dok = [];
@@ -556,13 +561,13 @@
   }
 
   async function prehled() {
-    const n0 = navId;
+    const n0 = navId; obnovBannerKonceptu();
     app.innerHTML = `
       <div class="hlavicka-prehledu">
         <h1>Zakázky</h1>
         <a class="tl tl-hlavni tl-velke" href="#/novy">＋ Nový příjem vozu</a>
       </div>
-      ${nacti("werk-koncept-prijmu") ? `<div class="info pozor" style="margin:0 0 14px">Máte rozpracovaný příjem. <a href="#/novy"><b>Pokračovat</b></a></div>` : ""}
+      ${bannerKonceptu()}
       <input class="vstup" id="filtr" type="search" placeholder="Hledat: číslo, zákazník, model, VIN, SPZ" style="margin-bottom:10px">
       <div class="filtry-zakazek">
         <select class="vstup" id="f-stav" aria-label="Stav"><option value="">Všechny stavy</option><option value="otevrene">Rozpracované</option><option value="hotove">Hotové / předané</option>
@@ -619,19 +624,62 @@
   const blobyFotek = {};      // id fotky → zmenšený soubor (jen v paměti, než se nahraje)
   let posledniPdf = null;     // {zakazka_id, cislo, bytes}
 
-  // koncept příjmu v iPadu: fotky bez náhledů (náhled se při obnově načte z úložiště), aby se paměť prohlížeče nepřeplnila
+  // koncept příjmu: v zařízení hned, na server (všechna zařízení) se zpožděním 1,5 s (Vašek 30.10.2026)
+  // fotky bez náhledů (náhled se při obnově načte z úložiště), aby se paměť prohlížeče nepřeplnila
+  const KONCEPT_SYNC = "werk-koncept-sync";            // čas posledního konceptu, který je i na serveru
+  let konceptKOdeslani = null, casovacKonceptu = null, beziciKoncept = null;
   function ulozKoncept() {
     if (!P) return;
+    P.ulozeno = Date.now();
+    const data = { ...P, fotky: P.fotky.filter(f => f.klic && f.stav === "nahrano").map(({ nahled, ...f }) => f) };
     let ok = true;
-    try { localStorage.setItem(KONCEPT, JSON.stringify({ ...P, fotky: P.fotky.filter(f => f.klic && f.stav === "nahrano").map(({ nahled, ...f }) => f) })); }
-    catch (e) { ok = false; }
+    try { localStorage.setItem(KONCEPT, JSON.stringify(data)); } catch (e) { ok = false; }
+    konceptKOdeslani = data; clearTimeout(casovacKonceptu); casovacKonceptu = setTimeout(odeslatKoncept, 1500);
     const s = document.getElementById("stav-ulozeni");
     if (s) { s.textContent = ok ? "Rozpracováno, uloženo" : "⚠︎ Rozpracovaný příjem se nepodařilo uložit – dokončete ho"; s.style.color = ok ? "" : "var(--cervena)"; }
     kontrolaPripravenosti();
   }
+  function odeslatKoncept() {
+    clearTimeout(casovacKonceptu);
+    const d = konceptKOdeslani; if (!d || !db.ulozitKoncept) return;
+    konceptKOdeslani = null;
+    const p = (beziciKoncept || Promise.resolve()).then(() => db.ulozitKoncept(d)).then(() => { if (nacti(KONCEPT)?.ulozeno === d.ulozeno) uloz(KONCEPT_SYNC, d.ulozeno); })
+      .catch(() => { if (!konceptKOdeslani) konceptKOdeslani = d; });   // bez signálu: zůstane v zařízení, zkusí se při další změně
+    beziciKoncept = p; p.finally(() => { if (beziciKoncept === p) beziciKoncept = null; });
+    return p;
+  }
+  function ulozKonceptHned() { if (konceptKOdeslani) odeslatKoncept(); }
+  function smazKoncept() {
+    uloz(KONCEPT, null); uloz(KONCEPT_SYNC, null); konceptKOdeslani = null; clearTimeout(casovacKonceptu);
+    if (db.smazatKoncept) (beziciKoncept || Promise.resolve()).catch(() => {}).then(() => db.smazatKoncept()).catch(() => {});
+  }
+  // novější z konceptu v zařízení a na serveru; koncept, který už byl na serveru a tam zmizel, byl dokončený nebo zahozený jinde
+  async function nactiKoncept() {
+    const mistni = nacti(KONCEPT), sync = nacti(KONCEPT_SYNC) || 0;
+    if (!db.koncept) return mistni;
+    let r; try { r = await sLimitem(db.koncept(), 6000, "Server neodpovídá"); } catch (e) { return mistni; }
+    const server = r?.data || null;
+    if (!server) {
+      if (mistni && sync && (mistni.ulozeno || 0) <= sync) { uloz(KONCEPT, null); uloz(KONCEPT_SYNC, null); return null; }
+      return mistni;
+    }
+    if (!mistni || (server.ulozeno || 0) > (mistni.ulozeno || 0)) {
+      try { localStorage.setItem(KONCEPT, JSON.stringify(server)); uloz(KONCEPT_SYNC, server.ulozeno || 0); } catch (e) { /* bez úložiště */ }
+      return server;
+    }
+    return mistni;
+  }
+  const htmlBanneruKonceptu = () => `<div class="info pozor" style="margin:0 0 14px">Máte rozpracovaný příjem. <a href="#/novy"><b>Pokračovat</b></a></div>`;
+  function bannerKonceptu() { return `<div id="banner-konceptu">${nacti(KONCEPT) ? htmlBanneruKonceptu() : ""}</div>`; }
+  function obnovBannerKonceptu() {
+    nactiKoncept().then(k => { const el = document.getElementById("banner-konceptu"); if (el) el.innerHTML = k ? htmlBanneruKonceptu() : ""; }).catch(() => {});
+  }
 
-  function prijem() {
-    const koncept = nacti(KONCEPT);
+  async function prijem() {
+    const n0 = navId;
+    if (!nacti(KONCEPT)) app.innerHTML = `<div class="nacitani">Načítám…</div>`;
+    const koncept = await nactiKoncept();
+    if (navId !== n0) return;
     P = koncept || novyPrijem();
     P.rucne = P.rucne || { datum: false, dokonceni: false };
     P.vozidlo = { ...novyPrijem().vozidlo, ...P.vozidlo };            // koncept ze starší verze formuláře nemá nová pole
@@ -983,7 +1031,7 @@
     // spodní lišta
     app.querySelector("#zahodit").onclick = () => {
       if (!confirm("Opravdu zahodit rozpracovaný příjem? Vyplněné údaje se smažou.")) return;
-      uloz(KONCEPT, null); P = null; location.hash = "#/";
+      smazKoncept(); P = null; location.hash = "#/";
     };
     app.querySelector("#k-podpisu").onclick = () => {
       if (coChybi().length) return;
@@ -1411,7 +1459,7 @@
         const { zakazka_id: zid, vozidlo_id: vid } = P.vysledek, f = P.fotky.filter(x => x.klic && x.stav === "nahrano");
         try { let mp = false; try { mp = (await db.profilovkyVozu(vid) || []).length > 0; } catch (e) { mp = true; } const pf = mp ? null : f.find(x => !x.video); if (f.length) await db.vlozit("soubory", f.map(x => ({ zakazka_id: zid, vozidlo_id: vid, druh: x.video ? "video" : "foto", faze: x === pf ? "profil" : "prijem", klic: x.klic, nazev: x.nazev || null, mime: x.mime || "image/jpeg" }))); }
         catch (e) { return hlaska("Fotky se nepodařilo přiřadit: " + chybaText(e) + " – zkuste to znovu, až bude signál.", true, 8000); }
-        uloz(KONCEPT, null); P = null; location.hash = `#/zakazka/${zid}`; return;
+        smazKoncept(); P = null; location.hash = `#/zakazka/${zid}`; return;
       }
       P.krok = "formular"; ulozKoncept(); vykresliFormular();
     };
@@ -1559,7 +1607,7 @@
       const prvniFoto = maProfil ? null : P.fotky.find(f => !f.video);   // auto už profilovou fotku má (dřívější návštěva) → nic nepřepisovat
       if (P.fotky.length) await db.vlozit("soubory", P.fotky.map(f => ({ zakazka_id, vozidlo_id, druh: f.video ? "video" : "foto", faze: f === prvniFoto ? "profil" : "prijem", klic: f.klic, nazev: f.nazev || null, mime: f.mime || "image/jpeg" })));
       await zapsatTP(vozidlo_id, zakazka_id);
-      uloz(KONCEPT, null); P = null;
+      smazKoncept(); P = null;
       p.zavri();
       location.hash = `#/hotovo/${zakazka_id}`;
     } catch (e) {
@@ -1679,10 +1727,8 @@
   function navazPoznamky(root, potom) {
     root.querySelectorAll("textarea[data-poznamka]").forEach(t => {
       const st = root.querySelector("[data-stav-poznamek]");
-      t.addEventListener("input", () => { clearTimeout(t._u); st.textContent = "Ukládám…"; t._u = setTimeout(async () => {
-        try { await ulozitZmenu(t.dataset.poznamka, t.dataset.id, { poznamky: t.value.trim() || null }, st); potom?.(t.dataset.poznamka, t.value); }
-        catch (e) { st.innerHTML = `<span style="color:var(--cervena)">Neuloženo – ${esc(chybaText(e))}</span>`; }
-      }, 800); });
+      t.addEventListener("input", () => { st.textContent = "Ukládám…";
+        odlozitZmenu(800, t.dataset.poznamka, t.dataset.id, () => ({ poznamky: t.value.trim() || null }), () => st, () => potom?.(t.dataset.poznamka, t.value)); });
     });
   }
   // Postup prací: odrážky z inspekce, které se během opravy odklikávají; lišta s % vidí i zákazník v E-servisce
@@ -1699,11 +1745,8 @@
     if (!Array.isArray(z.ukoly)) z.ukoly = [];
     const U = z.ukoly, st = () => el.querySelector("[data-stav-ukolu]");
     const obnovListy = () => { const p = postupProcent(U); root.querySelectorAll("#postup-prace .postup").forEach(x => { x.querySelector(".postup-lista div").style.width = p + "%"; x.querySelector("b").textContent = U.some(y => String(y.t || "").trim()) ? p + " %" : "–"; x.setAttribute("aria-valuenow", p); }); };
-    const uloz = () => { obnovListy(); clearTimeout(el._u); st().textContent = "Ukládám…"; el._u = setTimeout(async () => {
-      const data = U.map(x => ({ t: String(x.t || "").trim(), h: !!x.h })).filter(x => x.t);
-      try { await ulozitZmenu("zakazky", z.id, { ukoly: data }, st()); }
-      catch (e) { st().innerHTML = `<span style="color:var(--cervena)">Neuloženo – ${esc(chybaText(e))}</span>`; }
-    }, 700); };
+    const uloz = () => { obnovListy(); st().textContent = "Ukládám…";
+      odlozitZmenu(700, "zakazky", z.id, () => ({ ukoly: U.map(x => ({ t: String(x.t || "").trim(), h: !!x.h })).filter(x => x.t) }), st); };
     const kresli = (fokus) => {
       if (!U.length) U.push({ t: "", h: false });
       el.innerHTML = `${listaPostupu(U)}
@@ -2286,11 +2329,11 @@
   }
   async function odeslatFrontu(rucne = false) {
     if (odesilamFrontu || !fronta().length || !uzivatel) return ukazFrontu();   // až po přihlášení a ověření kódem
-    odesilamFrontu = true; let ok = 0;
+    odesilamFrontu = true; let ok = 0, hlasit = false;
     try {
       for (const x of fronta()) {
         if (x.uid && x.uid !== uzivatel.id) continue;    // změny jiného člověka na tomto zařízení počkají na něj
-        try { await provedZFronty(x); ok++; }
+        try { await provedZFronty(x); ok++; if (!x.tichy) hlasit = true; }
         catch (e) {
           if (jeVypadek(e)) break;                         // pořád bez signálu – zkusit později
           hlaska(`Změnu se nepodařilo uložit ani dodatečně: ${chybaText(e)}`, true, 9000);   // server ji odmítl – nedržet donekonečna
@@ -2299,7 +2342,7 @@
       }
     } finally { odesilamFrontu = false; }
     ukazFrontu();
-    if (ok && !fronta().length) { hlaska("✓ Změny z doby bez signálu jsou odeslané."); document.querySelectorAll("[data-ceka-fronta]").forEach(e => { e.textContent = "✓ Uloženo"; delete e.dataset.cekaFronta; }); }
+    if (ok && !fronta().length) { if (hlasit) hlaska("✓ Změny z doby bez signálu jsou odeslané."); document.querySelectorAll("[data-ceka-fronta]").forEach(e => { e.textContent = "✓ Uloženo"; delete e.dataset.cekaFronta; }); }
     else if (rucne && fronta().length && navigator.onLine) hlaska("Zatím se nepodařilo odeslat – zkusím to znovu za chvíli.", true);
     if (fronta().length) { clearTimeout(casovacFronty); casovacFronty = setTimeout(() => odeslatFrontu(), 30000); }
   }
@@ -2311,7 +2354,7 @@
     if (fronta().some(x => x.klic === `upravit:${tabulka}:${id}:${Object.keys(zmeny).join(",")}`)) { doFronty({ klic: `upravit:${tabulka}:${id}:${Object.keys(zmeny).join(",")}`, druh: "upravit", tabulka, id, zmeny }); }
     else try { await db.upravit(tabulka, id, zmeny); if (stavEl) stavEl.textContent = "✓ Uloženo"; return "ok"; }
     catch (e) { if (!jeVypadek(e)) throw e; doFronty({ klic: `upravit:${tabulka}:${id}:${Object.keys(zmeny).join(",")}`, druh: "upravit", tabulka, id, zmeny }); }
-    if (stavEl) { stavEl.textContent = "⏳ Bez signálu – odešle se samo"; stavEl.dataset.cekaFronta = "1"; }
+    if (stavEl) { stavEl.textContent = navigator.onLine ? "⏳ Odesílám…" : "⏳ Bez signálu – odešle se samo"; stavEl.dataset.cekaFronta = "1"; }
     return "fronta";
   }
   // po otevření zakázky použít neodeslané změny z fronty (ať se nepřepíšou starší verzí ze serveru)
@@ -2340,12 +2383,13 @@
     const zakazka = E;                                   // uložit vždy k té zakázce, kde se psalo
     if (cekajiciUlozeni[co]) clearTimeout(cekajiciUlozeni[co].t);
     delete neulozene[co];
-    const uloz = async () => {
-      const E = zakazka, zid = E.id;
-      const data = co === "prace" ? E.polozky.map(p => ({ typ: p.typ, popis: p.popis || "", mnozstvi: p.mnozstvi ?? null, jednotka: p.jednotka || null, sazba: p.sazba ?? null, castka: p.castka ?? null }))
+    const dataK = () => { const E = zakazka;
+      return co === "prace" ? E.polozky.map(p => ({ typ: p.typ, popis: p.popis || "", mnozstvi: p.mnozstvi ?? null, jednotka: p.jednotka || null, sazba: p.sazba ?? null, castka: p.castka ?? null }))
         : E.dily.map(d => ({ id: d.id, nazev: d.nazev, cislo_mb: d.cislo_mb, vyrobce: d.vyrobce, dodavatel_id: d.dodavatel_id || null,
           mnozstvi: d.mnozstvi, jednotka: d.jednotka || "ks", nakupni_cena: d.nakupni_cena ?? null, mena: d.mena || "CZK", kurz: d.kurz ?? 1,
-          marze_pct: d.marze_pct ?? 30, prodejni_cena: d.prodejni_cena ?? null, stav: d.stav || "potreba", puvod: d.puvod || null, poznamka: d.poznamka || null }));
+          marze_pct: d.marze_pct ?? 30, prodejni_cena: d.prodejni_cena ?? null, stav: d.stav || "potreba", puvod: d.puvod || null, poznamka: d.poznamka || null })); };
+    const uloz = async () => {
+      const zid = zakazka.id, data = dataK();
       const klic = `${co}:${zid}`;
       try {
         if (fronta().some(x => x.klic === klic)) throw Object.assign(new Error("Failed to fetch"), { fronta: true });   // starší změna ještě neodešla → pořadí zachovat
@@ -2372,10 +2416,39 @@
       return p;
     };
     if (ihned) return fn();
-    cekajiciUlozeni[co] = { fn, t: setTimeout(fn, 700) };
+    cekajiciUlozeni[co] = { fn, t: setTimeout(fn, 700), zaloha: () => ({ klic: `${co}:${zakazka.id}`, druh: co, zid: zakazka.id, data: dataK() }) };
   }
-  window.addEventListener("beforeunload", e => { if (Object.keys(cekajiciUlozeni).length + Object.keys(beziciUlozeni).length + Object.keys(neulozene).length) { e.preventDefault(); e.returnValue = ""; } });
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") dokoncitUkladani(); });   // iPad: přepnutí aplikace
+  // odložené uložení pole (poznámky, úkony, daň): čeká v seznamu jako práce a díly → doukládá se při odchodu ze stránky
+  function odlozitZmenu(ms, tabulka, id, zmenyFn, stavFn, potom) {
+    const co = `pole:${tabulka}:${id}:${Object.keys(zmenyFn()).join(",")}`;
+    if (cekajiciUlozeni[co]) clearTimeout(cekajiciUlozeni[co].t);
+    const fn = async () => {
+      delete cekajiciUlozeni[co];
+      const st = stavFn(), z = zmenyFn();
+      try { await ulozitZmenu(tabulka, id, z, st); potom?.(z); return true; }
+      catch (e) { if (st && st.isConnected) st.innerHTML = `<span style="color:var(--cervena)">Neuloženo – ${esc(chybaText(e))}</span>`; return false; }
+    };
+    const zaloha = () => { const z = zmenyFn(); return { klic: `upravit:${tabulka}:${id}:${Object.keys(z).join(",")}`, druh: "upravit", tabulka, id, zmeny: z }; };
+    cekajiciUlozeni[co] = { fn, t: setTimeout(fn, ms), zaloha };
+  }
+  // zavření okna / záložky nebo přepnutí aplikace: rozepsané změny hned zapsat do zařízení (fronta), ať se neztratí,
+  // i kdyby prohlížeč stránku zavřel dřív, než se stihnou odeslat – odešlou se hned nebo při dalším otevření aplikace
+  function zalohovatCekajici() {
+    let n = 0;
+    for (const k in cekajiciUlozeni) {
+      const x = cekajiciUlozeni[k]; if (!x.zaloha) continue;
+      clearTimeout(x.t); delete cekajiciUlozeni[k];
+      try { doFronty({ ...x.zaloha(), tichy: true }); n++; } catch (e) { /* bez úložiště */ }
+    }
+    if (n) odeslatFrontu();
+    return n;
+  }
+  window.addEventListener("beforeunload", e => {
+    zalohovatCekajici(); ulozKonceptHned();
+    if (Object.keys(cekajiciUlozeni).length + Object.keys(beziciUlozeni).length + Object.keys(neulozene).length) { e.preventDefault(); e.returnValue = ""; }
+  });
+  window.addEventListener("pagehide", () => { zalohovatCekajici(); ulozKonceptHned(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { zalohovatCekajici(); ulozKonceptHned(); dokoncitUkladani(); } });   // iPad: přepnutí aplikace
 
   // daň: navýšení ceny práce o daň, kterou pak odvedu (výchozí 30 %, u zakázky jde změnit)
   // celková marže na dílech (prodej − nákup × kurz), jen díly s nákupní cenou – pro můj přehled
@@ -2438,10 +2511,7 @@
       el.querySelector("#souhrn-cena-h").textContent = "· " + kc(s.celkem + (zap ? d : 0));
       const zi = el.querySelector("#souhrn-zisk"); if (zi) zi.textContent = kc(zisk(d));
       const sd = el.querySelector("#s-dani b"); if (sd) sd.textContent = kc(s.celkem + d);
-      clearTimeout(inp._u); inp._u = setTimeout(async () => {
-        const st = el.querySelector("#stav-dane");
-        try { await ulozitZmenu("zakazky", zid, { dan_pct: n }, st); } catch (e) { st.innerHTML = `<span style="color:var(--cervena)">Neuloženo – ${esc(chybaText(e))}</span>`; }
-      }, 700);
+      odlozitZmenu(700, "zakazky", zid, () => ({ dan_pct: n }), () => el.querySelector("#stav-dane"));
     });
   }
   const mnozstviCz = n => Number(n).toLocaleString("cs-CZ", { maximumFractionDigits: 2 });

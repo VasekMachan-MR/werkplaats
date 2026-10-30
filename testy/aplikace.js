@@ -117,6 +117,19 @@ const server = http.createServer((q, r) => {
   // rozpracovaný příjem přežije obnovení stránky
   await p.reload(); await p.waitForSelector('[data-pole="zakaznik.jmeno"]');
   kontrola(await p.inputValue('[data-pole="zakaznik.jmeno"]') === "Jan Novák" && await p.locator("#fotky .fotka").count() === 3, "rozpracovaný příjem přežil obnovení stránky");
+  { // rozpracovaný příjem je i na serveru → vidět na jiném zařízení (Vašek 30.10.2026)
+    await p.waitForTimeout(1800);
+    const srv = await p.evaluate(() => sessionStorage.getItem("mock-koncept"));
+    kontrola(srv && JSON.parse(srv).data.zakaznik.jmeno === "Jan Novák", "rozpracovaný příjem se uložil i na server");
+    const ctx2 = await b.newContext({ ...devices["iPhone 13"], locale: "cs-CZ", timezoneId: "Europe/Prague" });
+    await ctx2.addInitScript({ content: `try { sessionStorage.setItem("mock-koncept", ${JSON.stringify(srv)}); } catch (e) {} window.__KATALOG__ = []; ` + fs.readFileSync("testy/mock-db.js", "utf8") });
+    const d2 = await ctx2.newPage();
+    await d2.goto(URL0 + "#/zakazky"); await d2.waitForSelector("#banner-konceptu >> text=Máte rozpracovaný příjem");
+    kontrola(true, "jiné zařízení (iPhone): v Zakázkách je vidět „Máte rozpracovaný příjem“");
+    await d2.click("#banner-konceptu >> text=Pokračovat"); await d2.waitForSelector('[data-pole="zakaznik.jmeno"]');
+    kontrola(await d2.inputValue('[data-pole="zakaznik.jmeno"]') === "Jan Novák" && await d2.locator("#fotky .fotka").count() === 3, "jiné zařízení: příjem pokračuje se stejnými údaji i fotkami");
+    await ctx2.close();
+  }
   await foto("02-prijem-formular");
 
   await p.click("#k-podpisu");
@@ -134,6 +147,8 @@ const server = http.createServer((q, r) => {
   await p.click("#ulozit");
   await p.waitForSelector("text=Zakázkový list uložen");
   kontrola(await p.isVisible("text=7377-1"), "uloženo jako 7377-1");
+  await p.waitForTimeout(300);
+  kontrola(!(await p.evaluate(() => sessionStorage.getItem("mock-koncept"))) && !(await p.evaluate(() => localStorage.getItem("werk-koncept-prijmu"))), "po uložení příjmu je koncept smazaný v zařízení i na serveru");
   kontrola((await p.evaluate(() => document.querySelector(".velke-cislo").textContent)) === "7377-1", "číslo dokladu 7377-1");
   await foto("04-hotovo");
 
@@ -722,6 +737,12 @@ const server = http.createServer((q, r) => {
     await p.fill('textarea[data-poznamka="vozidla"]', "Pozor: zadní levé kolo – zrezlý šroub");
     await p.waitForSelector("[data-stav-poznamek] >> text=✓ Uloženo");
     kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.vozidla.some(v => v.poznamky === "Pozor: zadní levé kolo – zrezlý šroub")), "poznámka k autu se uloží k autu");
+    // zavření okna hned po napsání (dřív, než se stihne uložit): text se hned zapíše do zařízení a odešle se
+    await p.fill('textarea[data-poznamka="vozidla"]', "Pozor: zadní levé kolo – zrezlý šroub, objednat nový");
+    const vFronte = await p.evaluate(() => { window.dispatchEvent(new Event("pagehide")); return (JSON.parse(localStorage.getItem("werk-fronta")) || []).some(x => x.zmeny?.poznamky === "Pozor: zadní levé kolo – zrezlý šroub, objednat nový"); });
+    kontrola(vFronte, "zavření okna hned po napsání: poznámka se okamžitě zapíše do zařízení");
+    await p.waitForFunction(() => window.__ULOZENO__.tabulky.vozidla.some(v => v.poznamky === "Pozor: zadní levé kolo – zrezlý šroub, objednat nový") && !(JSON.parse(localStorage.getItem("werk-fronta")) || []).length);
+    kontrola(!(await p.isVisible("text=Změny z doby bez signálu jsou odeslané")), "…a sama se odešle (bez hlášky o výpadku signálu)");
   }
 
   // ---------- Práce: odrážky z inspekce, odklikávání a lišta s procenty ----------
