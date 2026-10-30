@@ -379,7 +379,11 @@ const server = http.createServer((q, r) => {
   await p.selectOption("#f-stav", ""); await p.selectOption("#f-razeni", "cislo-");
   await foto("07-prehled");
 
-  await p.click(".zakazka-radek >> text=7378"); await p.waitForSelector(".kontakt-tlacitka");
+  await p.click(".zakazka-radek >> text=7378"); await p.waitForSelector("#sekce-udaje");
+  kontrola(await p.evaluate(() => !document.getElementById("sekce-udaje").open && ["Zákazník", "Vozidlo", "Příjem"].every(t => document.getElementById("sekce-udaje").textContent.includes(t))
+    && document.getElementById("sekce-servis").compareDocumentPosition(document.getElementById("sekce-dily")) & Node.DOCUMENT_POSITION_FOLLOWING),
+    "zákazník, vozidlo a příjem jsou v jedné sbalené sekci; Servisní úkony jsou nad Díly");
+  await p.click("#sekce-udaje > summary"); await p.waitForSelector(".kontakt-tlacitka");
   kontrola(await p.getAttribute('.kontakt-tlacitka a[href^="https://wa.me/"]', "href") === "https://wa.me/420600111222" && await p.isVisible('.kontakt-tlacitka >> text=Zavolat'), "zákazník v zakázce: Zavolat a WhatsApp (+420 600 111 222)");
   kontrola(!(await p.isVisible(".rychle-foto")), "iPad: rychlé focení nahoře se neukazuje (jen iPhone)");
   await p.evaluate(() => { location.hash = "#/zakazky"; }); await p.waitForSelector("#seznam .zakazka-radek");

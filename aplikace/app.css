@@ -579,3 +579,7 @@ details.sbalovaci > summary h2 { display: flex; align-items: baseline; gap: 8px;
 details.sbalovaci > summary h2::before { content: "▸"; color: var(--sedy); font-size: 16px; }
 details.sbalovaci[open] > summary h2::before { content: "▾"; }
 details.sbalovaci[open] > summary { margin-bottom: 14px; }
+
+/* sloučená sekce Zákazník, vozidlo a příjem */
+.podsekce + .podsekce { border-top: 1px solid var(--linka); margin-top: 16px; padding-top: 14px; }
+.podnadpis { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; font-size: 16px; color: var(--navy); }

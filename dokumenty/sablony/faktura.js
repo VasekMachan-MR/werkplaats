@@ -293,8 +293,8 @@ function strana1(d, tx) {
   // QR Platba (český standard SPD) – zákazník naskenuje v bankovní aplikaci, vyplní se účet, částka, VS i splatnost
   // vpravo v poli s daty (636–687 pt), na středu pod „Celková částka“; nad kódem popisek
   if ((!d.druh || d.druh === "zalohova") && celkem > 0 && typeof qrcode === "function") {
-    h += T(431.5, 640.3, tx.qr || "QR platba", { b: true, c: true, size: 6.5 });
-    h += qrPlatba(d, celkem, 431.5 - 19.25, 647.5, 38.5);
+    h += T(431.5, 638.55, tx.qr || "QR platba", { b: true, c: true, size: 6.5 });
+    h += qrPlatba(d, celkem, 431.5 - 19.25, 645.75, 38.5);
   }
 
   h += paticka(1, 2);

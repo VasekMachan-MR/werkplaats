@@ -1771,27 +1771,28 @@
         <div id="prace"></div>
       </details>
 
+      <details class="karta sbalovaci" id="sekce-servis" data-sbal${sbalOpen(id, "sekce-servis")}><summary><h2>Servisní úkony</h2></summary></details>
       <details class="karta sbalovaci" id="sekce-dily" data-sbal${sbalOpen(id, "sekce-dily")}>
         <summary><h2>Díly <span class="mutted" id="souhrn-dilu" style="font-weight:400;font-size:15px"></span> <span class="napoveda" id="stav-dilu" style="margin-left:auto;font-weight:400"></span></h2></summary>
         <div id="dily"></div>
       </details>
-      <details class="karta sbalovaci" id="sekce-servis" data-sbal${sbalOpen(id, "sekce-servis")}><summary><h2>Servisní úkony</h2></summary></details>
-      ${blokPoznamek([{ tabulka: "zakazky", id: z.id, hodnota: z.poznamky, popis: "K této zakázce", napoveda: "Co je potřeba udělat, co jsme zjistili, domluva se zákazníkem…" },
+      ${blokPoznamek([{ tabulka: "zakazky", id: z.id, hodnota: z.poznamky, popis: "K této zakázce (zákazník je uvidí v E-servisce u této návštěvy)", napoveda: "Co je potřeba udělat, co jsme zjistili, domluva se zákazníkem…" },
         { tabulka: "vozidla", id: z.vozidlo_id || v.id, hodnota: v.poznamky, popis: "K autu (zůstanou u auta i pro další návštěvy)", napoveda: "Zvláštnosti auta, historie, co hlídat příště…" }], id)}
 
       <details class="karta sbalovaci souhrn-zakazky" id="souhrn" data-sbal${sbalOpen(id, "souhrn")}></details>
 
-      <details class="karta sbalovaci" id="sekce-vozidlo" data-sbal${sbalOpen(id, "sekce-vozidlo")}>
-        <summary><h2>Vozidlo <span class="mutted" style="font-weight:400;font-size:15px">${esc([v.typ, v.model, v.spz].filter(Boolean).join(" · "))}</span></h2></summary><dl class="udaje">
+      <details class="karta sbalovaci" id="sekce-udaje" data-sbal${sbalOpen(id, "sekce-udaje")}>
+        <summary><h2>Zákazník, vozidlo a příjem <span class="mutted" style="font-weight:400;font-size:15px">${esc([c.jmeno, [v.typ, v.model].filter(Boolean).join(" "), v.spz].filter(Boolean).join(" · "))}</span></h2></summary>
+        <div class="podsekce"><h3 class="podnadpis">👤 Zákazník <a class="tl tl-male" href="#/zakaznik/${z.zakaznik_id || c.id}" style="margin-left:auto">✏️ Upravit zákazníka</a></h3><dl class="udaje">
+        ${[["Jméno", esc(c.jmeno)], ["Kontaktní osoba", esc(c.kontaktni_osoba)], ["Telefon", telOdkaz(c.telefon)], ["E-mail", mailOdkaz(c.email)], ["Adresa", esc([c.ulice, [c.psc, c.mesto].filter(Boolean).join(" "), c.zeme].filter(Boolean).join(", "))], ["IČO", esc(c.ico)], ["DIČ", esc(c.dic)]]
+          .filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${b}</dd></div>`).join("")}</dl>${kontaktTlacitka(c)}</div>
+        <div class="podsekce"><h3 class="podnadpis">🚗 Vozidlo <a class="tl tl-male" href="#/vozidlo/${z.vozidlo_id || v.id}" style="margin-left:auto">✏️ Upravit vozidlo a TP</a></h3><dl class="udaje">
         ${[["VIN", v.vin], ["Typ", v.typ], ["Model", v.model], ["Rok", v.rok], ["SPZ", v.spz], ["Barva", v.barva], ["Verze", v.verze],
            ["Tachometr při předání", z.km_predani != null ? `${Number(z.km_predani).toLocaleString("cs-CZ")} ${jedn}` : ""]]
           .filter(([, x]) => x != null && x !== "").map(([a, b]) => `<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join("")}</dl>
-        <p style="margin:16px 0 8px"><b>Dokumenty vozidla</b> <span class="napoveda">(v E-servisce ke stažení)</span></p><div class="fotky" id="dokumenty-vozidla"><span class="mutted">Načítám…</span></div>
-        <p style="margin:10px 0 0"><a href="#/vozidlo/${z.vozidlo_id || v.id}">Upravit vozidlo a TP →</a> · <a href="#/zakaznik/${z.zakaznik_id || c.id}">Upravit zákazníka →</a></p></details>
-      <section class="karta"><h2>Zákazník</h2><dl class="udaje">
-        ${[["Jméno", esc(c.jmeno)], ["Kontaktní osoba", esc(c.kontaktni_osoba)], ["Telefon", telOdkaz(c.telefon)], ["E-mail", mailOdkaz(c.email)], ["Adresa", esc([c.ulice, [c.psc, c.mesto].filter(Boolean).join(" "), c.zeme].filter(Boolean).join(", "))], ["IČO", esc(c.ico)], ["DIČ", esc(c.dic)]]
-          .filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${b}</dd></div>`).join("")}</dl>${kontaktTlacitka(c)}</section>
-      <section class="karta" id="sekce-prijem-detail"></section>
+          <p style="margin:14px 0 8px"><b>Dokumenty vozidla</b> <span class="napoveda">(v E-servisce ke stažení)</span></p><div class="fotky" id="dokumenty-vozidla"><span class="mutted">Načítám…</span></div></div>
+        <div class="podsekce" id="sekce-prijem-detail"></div>
+      </details>
       <details class="karta sbalovaci" id="sekce-archiv" data-sbal${sbalOpen(id, "sekce-archiv")}><summary><h2>Ostatní dokumenty</h2></summary></details>
       <section class="karta" id="sekce-fotky-detail"></section>`;
     vykresliPrijemDetail(false);
@@ -1872,7 +1873,7 @@
     const el = document.getElementById("sekce-prijem-detail"); if (!el || !E) return;
     const z = E.z, v = z.vozidla || {}, jedn = v.jednotka_tachometru === "mi" ? "mi" : "km";
     if (!upravy) {
-      el.innerHTML = `<h2>Příjem ${datumCz(z.datum_prijmu)} <button type="button" class="tl tl-male" id="upravit-prijem" style="margin-left:auto">✏️ Upravit příjem</button></h2>
+      el.innerHTML = `<h3 class="podnadpis">📋 Příjem ${datumCz(z.datum_prijmu)} <button type="button" class="tl tl-male" id="upravit-prijem" style="margin-left:auto">✏️ Upravit příjem</button></h3>
         <dl class="udaje">${[["Předpoklad dokončení", datumCz(z.predpoklad_dokonceni)], ["Tachometr při příjmu", z.km_prijem != null ? `${Number(z.km_prijem).toLocaleString("cs-CZ")} ${jedn}` : ""],
           ["Nádrž", z.nadrz_prijem], ["TP přiložen", z.tp_prilozen == null ? "" : z.tp_prilozen ? "Ano" : "Ne"], ["Odhadovaná cena", z.odhad_ceny != null ? kc(z.odhad_ceny) : ""],
           ["Jazyk dokladů", z.jazyk === "en" ? "English" : "Čeština"]].filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join("")}</dl>
@@ -1889,7 +1890,7 @@
         <button type="button" class="tl smazat" data-us="${klic}" data-i="${i}" aria-label="Smazat řádek">×</button></div>`).join("")}</div>
       <div class="radek-tlacitek" style="margin-top:8px"><button type="button" class="tl tl-male" data-up="${klic}">＋ Přidat řádek</button></div>`;
     const kresli = () => {
-      el.innerHTML = `<h2>Upravit příjem</h2>
+      el.innerHTML = `<h3 class="podnadpis">📋 Upravit příjem</h3>
         <div class="info" style="margin:0 0 14px">Změny se uloží k zakázce a použijí se v dalších dokladech. Už podepsaný zakázkový list ${esc(String(z.cislo))}-1 zůstává beze změny.</div>
         <div class="mrizka">
           <label class="pole s2">Datum převzetí<input type="date" data-uf="datum_prijmu" value="${esc(F.datum_prijmu)}"></label>
