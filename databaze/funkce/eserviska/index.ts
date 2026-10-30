@@ -135,6 +135,7 @@ Deno.serve(async req => {
     const zl = (dok || []).filter((d: any) => d.zakazka_id === z.id && d.druh === "zakazkovy_list")[0] as any;
     if (!zl || !zl.data?.cekaPodpis || (zl.podpisy || []).some((x: any) => x.role === "zakaznik")) continue;
     const dp = Array.isArray(zl.dalkove_podpisy) ? zl.dalkove_podpisy[0] : zl.dalkove_podpisy;
+    if (dp) continue;   // už podepsáno – podepsaný list je rovnou v Dokumentech k návštěvě
     podpis = { cislo: zl.cislo, zakazka: z.cislo, url: url[zl.soubory?.klic] || null, podepsano: dp?.podepsano || null, jazyk: zl.jazyk || null };
     break;
   }
@@ -184,10 +185,45 @@ async function podepsat(req: Request, sb: any, odp: (s: number, o: unknown) => R
   if (eu) return odp(500, { chyba: "ulozeni" });
   const { data: sf, error: es } = await sb.from("soubory").insert({ zakazka_id: d.zakazka_id, vozidlo_id: v.id, druh: "podpis", klic, nazev: "podpis zákazníka (E-serviska)", mime: "image/png", velikost: bin.length, verejne: false }).select("id").single();
   if (es) { await sb.storage.from("soubory").remove([klic]); return odp(500, { chyba: "ulozeni" }); }
+  // podpis se rovnou vloží do PDF zakázkového listu (políčko „Převzal“) a PDF dokladu se nahradí podepsaným – dílna nic „nevystavuje“ (Vašek 30.10.2026)
+  let nahrazeno = false;
+  try { nahrazeno = await vlozitPodpisDoDokladu(sb, d, v, bin); } catch (_) { nahrazeno = false; }
   // IP adresa se neukládá (Vašek 30.10.2026) – stačí čas a zařízení
-  const { error: ed } = await sb.from("dalkove_podpisy").insert({ doklad_id: d.id, soubor_id: sf.id, ip: null, zarizeni: (req.headers.get("user-agent") || "").slice(0, 300) });
+  const { error: ed } = await sb.from("dalkove_podpisy").insert({ doklad_id: d.id, soubor_id: sf.id, ip: null, zarizeni: (req.headers.get("user-agent") || "").slice(0, 300), vystaveny_doklad_id: nahrazeno ? d.id : null });
   if (ed) { await sb.from("soubory").delete().eq("id", sf.id); await sb.storage.from("soubory").remove([klic]); return odp(409, { chyba: "uz-podepsano" }); }
   return odp(200, { ok: true });
+}
+
+// podpis zákazníka do PDF (stránka 1, políčko „Převzal“ nad tečkami – stejné místo v šabloně i ve starých listech z Excelu)
+async function razitkoPodpisu(pdfBytes: Uint8Array, png: Uint8Array, en: boolean): Promise<Uint8Array> {
+  const pdf = await PDFDocument.load(pdfBytes);
+  const str = pdf.getPage(0), H = str.getHeight();
+  const obr = await pdf.embedPng(png), box = { x: 199, y: H - 706.9 - 30, w: 122, h: 30 };
+  const m = Math.min(box.w / obr.width, box.h / obr.height), w = obr.width * m, h = obr.height * m;
+  str.drawImage(obr, { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, width: w, height: h });
+  const kdy = new Date().toLocaleString(en ? "en-GB" : "cs-CZ", { timeZone: "Europe/Prague", day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const txt = (en ? "Signed online (e-service book) " : "Podepsáno online v E-servisce ") + kdy;
+  const font = await pdf.embedFont(StandardFonts.Helvetica), vel = 5.2;
+  str.drawText(txt, { x: 259.7 - font.widthOfTextAtSize(txt, vel) / 2, y: H - 734.6, size: vel, font, color: rgb(0.2, 0.2, 0.2) });
+  return await pdf.save();
+}
+
+// nový zakázkový list: podepsané PDF nahradí původní (číslo dokladu zůstává, nepodepsané PDF se skryje)
+async function vlozitPodpisDoDokladu(sb: any, d: any, v: any, png: Uint8Array): Promise<boolean> {
+  const { data: ps } = await sb.from("doklady").select("pdf_soubor_id,jazyk,soubory!doklady_pdf_soubor_id_fkey(id,klic,nazev,verejne)").eq("id", d.id).maybeSingle();
+  const stary = ps?.soubory; if (!stary?.klic) return false;
+  const { data: orig, error: eo } = await sb.storage.from("soubory").download(stary.klic);
+  if (eo || !orig) return false;
+  const pdfBin = await razitkoPodpisu(new Uint8Array(await orig.arrayBuffer()), png, ps.jazyk === "en");
+  const klicPdf = `zakazky/${d.zakazky.cislo}/doklady/${d.cislo}-podepsany-${Date.now().toString(36)}.pdf`;
+  const { error: eu } = await sb.storage.from("soubory").upload(klicPdf, pdfBin, { contentType: "application/pdf", upsert: false });
+  if (eu) return false;
+  const { data: novy, error: ei } = await sb.from("soubory").insert({ zakazka_id: d.zakazka_id, vozidlo_id: v.id, doklad_id: d.id, druh: "pdf", klic: klicPdf, nazev: stary.nazev, mime: "application/pdf", velikost: pdfBin.length, verejne: stary.verejne !== false }).select("id").single();
+  if (ei || !novy) { await sb.storage.from("soubory").remove([klicPdf]); return false; }
+  const { error: ed } = await sb.from("doklady").update({ pdf_soubor_id: novy.id }).eq("id", d.id);
+  if (ed) { await sb.from("soubory").delete().eq("id", novy.id); await sb.storage.from("soubory").remove([klicPdf]); return false; }
+  await sb.from("soubory").update({ smazano: new Date().toISOString() }).eq("id", stary.id);   // nepodepsaná verze zmizí z aplikace i E-servisky
+  return true;
 }
 
 // Starý zakázkový list (PDF z Excelu v Ostatních dokumentech): podpis se vloží do políčka „Převzal“ nad tečky
@@ -205,19 +241,8 @@ async function podepsatArchiv(req: Request, sb: any, odp: (s: number, o: unknown
   const { data: orig, error: eo } = await sb.storage.from("soubory").download(f.klic);
   if (eo || !orig) return odp(500, { chyba: "ulozeni" });
   let pdfBin: Uint8Array;
-  try {
-    const pdf = await PDFDocument.load(new Uint8Array(await orig.arrayBuffer()));
-    const str = pdf.getPage(0), H = str.getHeight();
-    const obr = await pdf.embedPng(bin), box = { x: 199, y: H - 706.9 - 30, w: 122, h: 30 };    // políčko „Převzal“ (stejné místo jako v šabloně)
-    const m = Math.min(box.w / obr.width, box.h / obr.height), w = obr.width * m, h = obr.height * m;
-    str.drawImage(obr, { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, width: w, height: h });
-    const en = /^work[ _]order/i.test(f.nazev || ""), ted = new Date();
-    const kdy = ted.toLocaleString(en ? "en-GB" : "cs-CZ", { timeZone: "Europe/Prague", day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" });
-    const txt = (en ? "Signed online (e-service book) " : "Podepsáno online v E-servisce ") + kdy;
-    const font = await pdf.embedFont(StandardFonts.Helvetica), vel = 5.2;
-    str.drawText(txt, { x: 259.7 - font.widthOfTextAtSize(txt, vel) / 2, y: H - 734.6, size: vel, font, color: rgb(0.2, 0.2, 0.2) });
-    pdfBin = await pdf.save();
-  } catch (_) { return odp(500, { chyba: "pdf" }); }
+  try { pdfBin = await razitkoPodpisu(new Uint8Array(await orig.arrayBuffer()), bin, /^work[ _]order/i.test(f.nazev || "")); }
+  catch (_) { return odp(500, { chyba: "pdf" }); }
 
   const zn = Date.now().toString(36), cislo = f.zakazky.cislo;
   const klicPodpis = `zakazky/${cislo}/eserviska-${zn}/podpis-zakaznika-archiv.png`, klicPdf = `archiv/${cislo}/${crypto.randomUUID()}.pdf`;

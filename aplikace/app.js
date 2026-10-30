@@ -1758,7 +1758,10 @@
       <section class="karta"><h2>Doklady</h2>
         ${(() => { const zl = cekajiciList(doklady); if (!zl) return "";
           const dp = dalkovyPodpis(zl);
-          return dp ? `<div class="info ok-podpis"><span>✍️ Zákazník podepsal zakázkový list v E-servisce ${esc(new Date(dp.podepsano).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" }))}.</span>
+          const kdy = dp ? esc(new Date(dp.podepsano).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })) : "";
+          // podpis z E-servisky se do PDF vloží sám (server) – tlačítko „Vystavit“ jen když se to nepovedlo
+          if (dp && dp.vystaveny_doklad_id) return `<div class="info ok-podpis"><span>✍️ Zákazník podepsal zakázkový list ${esc(zl.cislo)} v E-servisce ${kdy}. Podepsané PDF je uložené u dokladu i v E-servisce.</span></div>`;
+          return dp ? `<div class="info ok-podpis"><span>✍️ Zákazník podepsal zakázkový list v E-servisce ${kdy}.</span>
               <button class="tl tl-hlavni" id="vystavit-podepsany">Vystavit podepsaný list</button></div>`
             : `<div class="info pozor"><span>⏳ Zakázkový list ${esc(zl.cislo)} čeká na podpis zákazníka v E-servisce.</span>${v.vin ? ` <button class="tl tl-male" id="odkaz-k-podpisu">🔗 Poslat odkaz k podpisu</button>` : ""}</div>`; })()}
         <div class="doklady">${doklady.map(d => `
