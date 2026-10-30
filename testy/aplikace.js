@@ -346,6 +346,21 @@ const server = http.createServer((q, r) => {
   await p.click('.doklad:has(b:text-is("7377-2")) [data-smazat-doklad]');
   await p.waitForFunction(() => document.querySelectorAll("#seznam-dokladu .doklad").length === 4);
   kontrola(await p.evaluate(() => !window.__ULOZENO__.tabulky.doklady.some(d => d.cislo === "7377-2")), "koš smaže chybnou nabídku 7377-2 (zbývají 4 doklady)");
+  // podklady pro účetní (UOL): ZIP za měsíc = vydané faktury + přijaté faktury + přehled CSV; bez výběru měsíce jen upozornění
+  await p.click("#podklady-uol");
+  await p.waitForSelector("text=Nejdřív vyberte měsíc");
+  await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, z = T.zakazky.find(x => x.cislo === 7377), k = "nakupni/7377/test-faktura.pdf";
+    window.__ULOZENO__.soubory[k] = new TextEncoder().encode("%PDF-1.4\n%%EOF");
+    T.soubory.push({ id: "nf1", zakazka_id: z.id, druh: "nakupni_doklad", faze: null, klic: k, nazev: "Faktura Granex 2026/77.pdf", mime: "application/pdf", verejne: false, vytvoreno: new Date().toISOString() }); });
+  const mesicTed = await p.evaluate(() => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); });
+  await p.selectOption("#f-mesic", mesicTed);
+  const [stazeni] = await Promise.all([p.waitForEvent("download"), p.click("#podklady-uol")]);
+  const pu = await p.evaluate(() => window.__PODKLADY_UOL__);
+  kontrola(!!stazeni && pu.nazev === `Podklady UOL ${mesicTed} – Mercedes Restorations.zip`
+    && pu.soubory.filter(f => f.startsWith("Vydané faktury/")).length === 2 && pu.soubory.some(f => /^Přijaté faktury\/.*#7377 Faktura Granex 2026-77\.pdf$/.test(f))
+    && pu.soubory.includes(`Přehled ${mesicTed}.csv`), "podklady pro účetní: ZIP s fakturou 7377-3, zálohovou 7377-5, přijatou fakturou a přehledem CSV");
+  await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; T.soubory = T.soubory.filter(s => s.id !== "nf1"); window.__ULOZENO__.tabulky.soubory = T.soubory; });
+  await p.selectOption("#f-mesic", "");
   // opravný doklad k faktuře 7377-3
   await p.click('.doklad:has(b:text-is("7377-3")) a[href^="#/zakazka/"]');
   await p.waitForSelector('a[href$="/opravny"]');

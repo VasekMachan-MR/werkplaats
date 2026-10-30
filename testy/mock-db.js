@@ -188,6 +188,14 @@ window.__WERK_DB__ = (() => {
         return { ...d, zakazky: z && { id: z.id, cislo: z.cislo, zakaznici: T.zakaznici.find(c => c.id === z.zakaznik_id), vozidla: T.vozidla.find(v => v.id === z.vozidlo_id) },
           soubory: T.soubory.find(s => s.id === d.pdf_soubor_id) }; }).sort((a, b) => b.cislo.localeCompare(a.cislo)));
     },
+    async prijateFaktury(od, doo) {
+      await cekej();
+      return kopie(T.soubory.filter(s => s.druh === "nakupni_doklad" && !s.smazano && String(s.vytvoreno) >= od && String(s.vytvoreno) < doo).map(s => {
+        const z = T.zakazky.find(x => x.id === s.zakazka_id), d = T.dily.find(x => s.faze === "dil:" + x.id);
+        return { ...s, zakazky: z && { cislo: z.cislo, zakaznici: T.zakaznici.find(c => c.id === z.zakaznik_id), vozidla: T.vozidla.find(v => v.id === z.vozidlo_id) },
+          dil: d ? { id: d.id, nazev: d.nazev, cislo_mb: d.cislo_mb, nakupni_cena: d.nakupni_cena, mena: d.mena, dodavatele: [{ id: "d1", nazev: "Auto Kelly" }, { id: "d2", nazev: "Granex" }, { id: "d3", nazev: "MB (original)" }, { id: "d4", nazev: "Jiný" }].find(x => x.id === d.dodavatel_id) || null } : null };
+      }));
+    },
     async sazby() { return [{ nazev: "Inspekce", kc_za_hodinu: 1200 }, { nazev: "Ostatní práce", kc_za_hodinu: 1500 }]; },
     async nahrat(klic, blob, typ, prubeh) {
       if (S[klic]) throw new Error("The resource already exists");

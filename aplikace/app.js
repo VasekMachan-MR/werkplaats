@@ -247,6 +247,14 @@
           .select("id,zakazka_id,druh,verze,cislo,vystaveno,splatnost,celkem,zaplaceno,odeslano_uol,jazyk,zakazky(id,cislo,zakaznici(jmeno),vozidla(typ,model)),soubory!doklady_pdf_soubor_id_fkey(klic)")
           .order("vystaveno", { ascending: false }).order("cislo", { ascending: false }).limit(2000));
       },
+      // přijaté faktury (nákupní doklady) nahrané v daném období – pro podklady účetní; u dílu i jeho název a dodavatel
+      async prijateFaktury(od, doo) {
+        const s = ok(await sb.from("soubory").select("id,klic,nazev,mime,faze,vytvoreno,zakazky!soubory_zakazka_id_fkey(cislo,zakaznici(jmeno),vozidla(typ,model))")
+          .eq("druh", "nakupni_doklad").is("smazano", null).gte("vytvoreno", od).lt("vytvoreno", doo).order("vytvoreno").limit(2000));
+        const ids = [...new Set(s.map(x => /^dil:(.+)$/.exec(x.faze || "")?.[1]).filter(Boolean))];
+        const dily = ids.length ? ok(await sb.from("dily").select("id,nazev,cislo_mb,nakupni_cena,mena,dodavatele(nazev)").in("id", ids)) : [];
+        return s.map(x => ({ ...x, dil: dily.find(d => x.faze === "dil:" + d.id) || null }));
+      },
       async sazby() { return ok(await sb.from("sazby").select("nazev,kc_za_hodinu,poradi").order("poradi")); },
       async nahrat(klic, blob, typ, prubeh) {
         if (!prubeh) return ok(await kos().upload(klic, blob, { contentType: typ, upsert: false, cacheControl: "31536000" }));
@@ -3569,6 +3577,7 @@
       <div class="radek-tlacitek" style="margin-bottom:14px">
         <select class="vstup" id="f-mesic" style="max-width:220px"><option value="">Všechny měsíce</option>${mesice.map(m => `<option value="${m}" ${F.mesic === m ? "selected" : ""}>${nazevMesice(m)}</option>`).join("")}</select>
         <label class="cip zaskrt"><input type="checkbox" id="f-nezapl" ${F.nezaplacene ? "checked" : ""}> Jen nezaplacené</label>
+        ${jeMajitel() ? `<button type="button" class="tl tl-male" id="podklady-uol">📦 Podklady pro účetní</button>` : ""}
       </div>
       <div class="dlazdice" id="dlazdice"></div>
       <div class="doklady" id="seznam-dokladu"></div>`;
@@ -3603,7 +3612,73 @@
       app.querySelectorAll("#f-druh button").forEach(x => x.setAttribute("aria-pressed", x === b)); vykresli(); };
     app.querySelector("#f-mesic").onchange = e => { F.mesic = e.target.value; vykresli(); };
     app.querySelector("#f-nezapl").onchange = e => { F.nezaplacene = e.target.checked; vykresli(); };
+    const tlUol = app.querySelector("#podklady-uol");
+    if (tlUol) tlUol.onclick = async () => {
+      if (!F.mesic) { hlaska("Nejdřív vyberte měsíc – podklady pro účetní se dělají po měsících.", true); app.querySelector("#f-mesic").focus(); return; }
+      tlUol.disabled = true; const puvodni = tlUol.textContent; tlUol.textContent = "Připravuji…";
+      try { await podkladyProUcetni(F.mesic, vse, t => { tlUol.textContent = t; }); }
+      catch (e) { hlaska("Podklady se nepodařilo připravit: " + chybaText(e), true); }
+      finally { tlUol.disabled = false; tlUol.textContent = puvodni; }
+    };
     vykresli();
+  }
+
+  /* ---------- podklady pro účetní (UOL) za měsíc: ZIP s vydanými fakturami, přijatými fakturami a přehledem (Vašek 30.10.2026)
+     Zatím jen ke stažení – nic se neposílá a doklady se neoznačují jako předané (to přijde s odesíláním). ---------- */
+  let fflateLib = null;
+  const nactiZip = () => fflateLib ||= new Promise((hotovo, chyba) => {
+    if (window.fflate) return hotovo(window.fflate);
+    const s = document.createElement("script"); s.src = "vendor/fflate.js";
+    s.onload = () => hotovo(window.fflate);
+    s.onerror = () => { fflateLib = null; chyba(new Error("Nepodařilo se načíst nástroj pro ZIP")); };
+    document.head.appendChild(s);
+  });
+  const bezpecnyNazev = t => String(t || "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "-").replace(/\s+/g, " ").trim().slice(0, 120);
+  const csvBunka = v => { const t = v == null ? "" : String(v); return /[";\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+  const csvCislo = n => n == null || n === "" ? "" : String(Math.round(Number(n) * 100) / 100).replace(".", ",");
+  async function podkladyProUcetni(mesic, vse, stav) {
+    const [y, m] = mesic.split("-").map(Number);
+    const od = `${mesic}-01`, doo = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
+    const FA = ["faktura", "zalohova", "opravny"];
+    const vydane = vse.filter(d => FA.includes(d.druh) && String(d.vystaveno).startsWith(mesic)).sort((a, b) => String(a.cislo).localeCompare(String(b.cislo), "cs", { numeric: true }));
+    const prijate = await db.prijateFaktury(od, doo);
+    if (!vydane.length && !prijate.length) { hlaska(`Za ${nazevMesice(mesic)} nejsou žádné faktury ani přijaté doklady.`, true); return; }
+    const { zipSync, strToU8 } = await nactiZip();
+    const soubory = {}, chybi = [], pouzite = new Set();
+    const unikat = cesta => { let c = cesta, i = 2; const tecka = cesta.lastIndexOf("."); while (pouzite.has(c.toLowerCase())) c = tecka > 0 ? `${cesta.slice(0, tecka)} (${i++})${cesta.slice(tecka)}` : `${cesta} (${i++})`; pouzite.add(c.toLowerCase()); return c; };
+    const bajty = async klic => new Uint8Array(await (await db.stahnout(klic)).arrayBuffer());
+    let n = 0; const celkem = vydane.length + prijate.length;
+    for (const d of vydane) {
+      stav?.(`Stahuji ${++n}/${celkem}…`);
+      if (!d.soubory?.klic) { chybi.push(`${d.cislo} (bez PDF)`); continue; }
+      try { soubory[unikat(`Vydané faktury/${bezpecnyNazev(`${d.cislo} ${DRUHY[d.druh] || d.druh}`)}.pdf`)] = [await bajty(d.soubory.klic), { level: 0 }]; }
+      catch (e) { chybi.push(`${d.cislo} (${chybaText(e)})`); }
+    }
+    for (const f of prijate) {
+      stav?.(`Stahuji ${++n}/${celkem}…`);
+      const pripona = (/\.[a-z0-9]{2,5}$/i.exec(f.nazev || f.klic || "")?.[0] || (f.mime === "application/pdf" ? ".pdf" : "")).toLowerCase();
+      const zaklad = (f.nazev || "doklad").replace(/\.[a-z0-9]{2,5}$/i, "");
+      const jmeno = bezpecnyNazev([String(f.vytvoreno).slice(0, 10), f.zakazky?.cislo ? `#${f.zakazky.cislo}` : "", f.dil?.dodavatele?.nazev, zaklad].filter(Boolean).join(" "));
+      try { f._soubor = unikat(`Přijaté faktury/${jmeno}${pripona}`); soubory[f._soubor] = [await bajty(f.klic), { level: /pdf|jpe?g|png|heic/i.test(pripona) ? 0 : 6 }]; }
+      catch (e) { chybi.push(`${f.nazev || f.klic} (${chybaText(e)})`); f._soubor = ""; }
+    }
+    const r = [["VYDANÉ FAKTURY – " + nazevMesice(mesic)], ["Číslo", "Druh", "Vystaveno", "Splatnost", "Zákazník", "Zakázka", "Vozidlo", "Částka Kč", "Zaplaceno", "Předáno účetní"]];
+    for (const d of vydane) r.push([d.cislo, DRUHY[d.druh] || d.druh, datumCz(d.vystaveno), datumCz(d.splatnost), d.zakazky?.zakaznici?.jmeno, d.zakazky?.cislo, [d.zakazky?.vozidla?.typ, d.zakazky?.vozidla?.model].filter(Boolean).join(" "),
+      csvCislo(d.celkem), d.zaplaceno ? datumCz(d.zaplaceno) : "ne", d.odeslano_uol ? datumCz(d.odeslano_uol) : ""]);
+    const sumaFa = vydane.filter(d => d.druh !== "zalohova").reduce((x, d) => x + (Number(d.celkem) || 0), 0);
+    r.push(["Celkem faktury a opravné doklady (bez zálohových)", "", "", "", "", "", "", csvCislo(sumaFa)], [], ["PŘIJATÉ FAKTURY (nahrané v " + nazevMesice(mesic) + ")"],
+      ["Soubor v ZIP", "Nahráno", "Zakázka", "Zákazník", "Vozidlo", "Díl", "Číslo MB", "Dodavatel", "Nákupní cena", "Měna"]);
+    for (const f of prijate) r.push([f._soubor || `CHYBÍ: ${f.nazev || ""}`, datumCz(f.vytvoreno), f.zakazky?.cislo, f.zakazky?.zakaznici?.jmeno, [f.zakazky?.vozidla?.typ, f.zakazky?.vozidla?.model].filter(Boolean).join(" "),
+      f.dil?.nazev || (f.faze ? "(díl smazán)" : "bez dílu"), f.dil?.cislo_mb, f.dil?.dodavatele?.nazev, csvCislo(f.dil?.nakupni_cena), f.dil?.mena || (f.dil ? "CZK" : "")]);
+    if (chybi.length) r.push([], ["CHYBĚJÍCÍ SOUBORY"], ...chybi.map(c => [c]));
+    soubory[`Přehled ${mesic}.csv`] = strToU8("﻿" + r.map(x => x.map(csvBunka).join(";")).join("\r\n") + "\r\n");
+    stav?.("Balím ZIP…");
+    const zip = zipSync(soubory);
+    const url = URL.createObjectURL(new Blob([zip], { type: "application/zip" }));
+    const a = document.createElement("a"); a.href = url; a.download = `Podklady UOL ${mesic} – Mercedes Restorations.zip`;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+    hlaska(`Podklady za ${nazevMesice(mesic)}: ${vydane.length} vydaných, ${prijate.length} přijatých faktur${chybi.length ? `, ⚠ ${chybi.length} souborů chybí (viz přehled)` : ""}.`, !!chybi.length);
+    window.__PODKLADY_UOL__ = { nazev: a.download, soubory: Object.keys(soubory), velikost: zip.length };   // pro testy
   }
 
   /* ================= dokumenty vozidla (TP) ================= */
