@@ -1022,6 +1022,27 @@ const server = http.createServer((q, r) => {
       return { n: d.length, s: d.filter(x => x.cislo === document.title || true).map(x => x.cislo), novy: d.find(x => x.data?.odhad === 47000), stareVKosi: !!T.soubory.find(f => f.id === pdf)?.smazano }; }, [zid, predNahr.pdf]);
     kontrola(po.n === predNahr.n && po.novy?.cislo === cisloNove && po.s.filter(c => c === cisloNove).length === 1 && po.stareVKosi,
       `Znovu vystavit: nepodepsaný list se nahradil – pořád jediný ${cisloNove} (s novou cenou), podepsané listy zůstaly, staré PDF je v koši`);
+    // ---------- cenová nabídka „Podepíše později“ → E-serviska + e-mail (Vašek 31.10.2026) ----------
+    await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid); await p.waitForSelector("text=📝 Cenová nabídka");
+    await p.click("text=📝 Cenová nabídka"); await p.waitForSelector("#vystavit:not([disabled])");
+    kontrola(await p.isEnabled("#pozdeji"), "nabídka: tlačítko „✍️ Podepíše později“ je i u cenové nabídky");
+    const cisloNab = (await p.textContent("#vystavit")).replace(/^\D*/, "").trim();
+    await p.click("#pozdeji"); await p.waitForSelector(`.velke-cislo >> text=${cisloNab}`);
+    kontrola(/cenovou nabídku tam podepíše/.test(await p.textContent(".hotovo")) && await p.isVisible("#odkaz-podpis"), `nabídka ${cisloNab}: po vystavení „čeká na podpis“ + „Poslat odkaz k podpisu“`);
+    kontrola(await p.evaluate(c => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === c); return d.druh === "nabidka" && d.data.cekaPodpis === true && !T.podpisy.some(x => x.doklad_id === d.id && x.role === "zakaznik"); }, cisloNab),
+      "nabídka uložená s „čeká na podpis“ a bez podpisu zákazníka");
+    await p.evaluate(() => { window.__MAILTO__ = u => { window.__MAIL__ = u; }; window.__MAIL__ = null; });
+    await p.click("#odkaz-podpis"); await p.waitForFunction(() => !!window.__MAIL__);
+    { const m = decodeURIComponent(await p.evaluate(() => window.__MAIL__ || ""));
+      kontrola(new RegExp(`subject=Mercedes-Benz W126 - Cenová nabídka č\\. ${cisloNab}&`).test(m) && /podepsání cenové nabídky k vašemu vozu Mercedes-Benz W126/.test(m) && /e-serviska\?k=[0-9a-f]{20}/.test(m),
+        `e-mail k podpisu nabídky: předmět „Mercedes-Benz W126 - Cenová nabídka č. ${cisloNab}“, text o nabídce, odkaz do E-servisky`); }
+    await p.click("text=Detail zakázky"); await p.waitForSelector("[data-odkaz-faktura]");
+    kontrola(new RegExp(`Cenová nabídka ${cisloNab} čeká na podpis zákazníka`).test(await p.textContent("body")), `zakázka: „Cenová nabídka ${cisloNab} čeká na podpis zákazníka v E-servisce“`);
+    await p.evaluate(c => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === c);
+      T.dalkove_podpisy.push({ id: "dp-nab", doklad_id: d.id, soubor_id: null, podepsano: new Date().toISOString(), vystaveny_doklad_id: d.id }); }, cisloNab);
+    await p.evaluate(() => { const h = location.hash; location.hash = "#/zakazky"; location.hash = h; });
+    await p.waitForSelector("text=Zákazník podepsal cenovou nabídku");
+    kontrola(new RegExp(`Zákazník podepsal cenovou nabídku ${cisloNab} v E-servisce`).test(await p.textContent("body")), "po podpisu v E-servisce: „Zákazník podepsal cenovou nabídku…“");
   }
 
   // ---------- výchozí řazení zakázek podle stavu; smazání řádku práce se potvrzuje ----------
