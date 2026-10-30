@@ -1280,19 +1280,24 @@
     iframe._fronta = p.catch(() => {});
     return p;
   }
+  // promise s časovým limitem: po limitu chyba (zpráva), nebo s null jen pokračuje
+  const sLimitem = (p, ms, zprava) => new Promise((ok, chyba) => { const t = setTimeout(() => zprava ? chyba(new Error(zprava + " – zkuste to znovu (případně obnovte stránku).")) : ok(null), ms);
+    p.then(v => { clearTimeout(t); ok(v); }, e => { clearTimeout(t); chyba(e); }); });
   function vykresliSablonu(iframe, sablona, data, jazyk) { return vFronte(iframe, () => vykresliSablonuHned(iframe, sablona, data, jazyk)); }
   async function vykresliSablonuHned(iframe, sablona, data, jazyk) {
     if (!iframe.dataset.nacteno) {
-      await new Promise((ok, chyba) => { iframe.onload = ok; iframe.onerror = chyba; iframe.src = `sablony/${sablona}`; });
+      iframe.onload = null;
+      await sLimitem(new Promise((ok, chyba) => { iframe.onload = ok; iframe.onerror = chyba; iframe.src = `sablony/${sablona}`; }), 20000, "Náhled dokladu se nenačetl");
       const w = iframe.contentWindow, d = iframe.contentDocument;
       for (const src of ["../vendor/pdf-lib.min.js", "../vendor/fontkit.umd.min.js", "do-pdf.js"]) {
-        await new Promise((ok, chyba) => { const s = d.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => chyba(new Error("Nelze načíst " + src)); d.head.appendChild(s); });
+        await sLimitem(new Promise((ok, chyba) => { const s = d.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => chyba(new Error("Nelze načíst " + src)); d.head.appendChild(s); }), 20000, "Nelze načíst " + src);
       }
       iframe.dataset.nacteno = "1";
       if (!w.render) throw new Error("Šablona se nenačetla");
     }
-    iframe.contentWindow.__posledniVysledek = await iframe.contentWindow.render(data, jazyk);
-    await Promise.all([...iframe.contentDocument.images].map(i => (i.complete ? null : i.decode().catch(() => null))));
+    iframe.contentWindow.__posledniVysledek = await sLimitem(Promise.resolve(iframe.contentWindow.render(data, jazyk)), 20000, "Náhled dokladu se nevykreslil");
+    // obrázky: Safari umí u decode() zůstat viset – čeká se nejvýš 3 s
+    await sLimitem(Promise.all([...iframe.contentDocument.images].map(i => (i.complete ? null : i.decode().catch(() => null)))), 3000, null);
     return iframe.contentWindow;
   }
 
@@ -1363,7 +1368,6 @@
       pretece = !r ? "" : r.zavady.potreba > r.zavady.max ? `Závady se nevejdou na list (${r.zavady.potreba} řádků z ${r.zavady.max})` : r.stav?.potreba > r.stav?.max ? `Stav při převzetí se nevejde na list (${r.stav.potreba} řádků z ${r.stav.max})` : "";
       if (pretece) hlaska(pretece + " – vraťte se a zkraťte text.", true, 8000);
     };
-    await obnovNahled();
     app.querySelector("#smazat-podpis").onclick = () => pad.smazat();
     app.querySelector("#zpet").onclick = async () => {
       if (P.vysledek) {                                    // zakázka už existuje, jen list se nepodařilo uložit → nezaseknout se v příjmu
@@ -1403,6 +1407,7 @@
       } finally { if (b.isConnected) { delete b.dataset.bezi; b.disabled = false; } }
     };
     uklid = () => { window.removeEventListener("resize", meritko); pad.zrus(); mujPad?.zrus(); };
+    obnovNahled();   // náhled až po napojení tlačítek – když se zasekne, „Upravit údaje“ dál funguje (Vašek 30.10.2026, Safari na Macu)
   }
 
   /* ================= vystavení dokladu (společné pro všechny druhy) ================= */
