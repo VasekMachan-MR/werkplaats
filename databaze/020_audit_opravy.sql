@@ -91,7 +91,11 @@ alter table public.zakazky add column if not exists poznamky text;
 
 -- ---------- E2: fotky a archivní PDF jsou v E-servisce vidět, jednotlivě jdou skrýt ----------
 alter table public.soubory alter column verejne set default true;
-update public.soubory set verejne = true where druh in ('foto', 'video', 'archiv') and smazano is null;
+update public.soubory set verejne = true where druh in ('foto', 'video') and smazano is null;
+-- E5: z archivu ukázat zákazníkovi jen jeho doklady (zakázkový list, parts list, předávací protokol, jeho faktura);
+--     faktury dodavatelů, potvrzení plateb apod. zůstanou skryté (jde to u každého PDF přepnout 👁/🚫)
+update public.soubory set verejne = (nazev !~ '›' and nazev ~* '^(zak[aá]zkov[ýy][ _]list|work[ _]order|parts[ _]list|p[řr]ed[aá]vac[ií]|invoice[ _]|faktura[ _])')
+  where druh = 'archiv';
 
 -- ---------- D3/C1: auto má nejvýš jednoho současného majitele; změna majitele při příjmu ----------
 create unique index if not exists vlastnictvi_jeden_soucasny on public.vlastnictvi (vozidlo_id) where vlastni_do is null;

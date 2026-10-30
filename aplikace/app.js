@@ -1254,6 +1254,8 @@
     return !vsechny.some(x => x.druh === d.druh && x.zakazka_id === d.zakazka_id && (x.verze || 0) > d.verze);
   }
   // D1: soubory v úložišti se mažou spolu se záznamem (na pozadí; když se to nepovede, uklidí se příště)
+  // E5: které archivní PDF zákazník uvidí v E-servisce hned (jeho zakázkový list, parts list, protokol, faktura); ostatní jde zapnout 👁
+  const archivProZakaznika = n => !/›/.test(n || "") && /^(zak[aá]zkov[ýy][ _]list|work[ _]order|parts[ _]list|p[řr]ed[aá]vac[ií]|invoice[ _]|faktura[ _])/i.test(n || "");
   const slozkaSouboru = k => (String(k || "").match(/^(zakazky\/\d+\/[\w-]+)\/[^/]+$/) || [])[1] || null;
   const uklidSoubory = telo => { if (jeMajitel()) db.smazatSoubory?.(telo)?.catch?.(() => {}); };
   async function smazatDokladDotaz(d, potom) {
@@ -1758,7 +1760,7 @@
         try {
           const klic = `archiv/${zak.z.cislo}/${uuid()}.pdf`;
           await db.nahrat(klic, f, "application/pdf", () => {});
-          const [rad] = await db.vlozit("soubory", [{ zakazka_id: zak.id, vozidlo_id: zak.z.vozidlo_id || zak.z.vozidla?.id, druh: "archiv", klic, nazev: f.name, velikost: f.size, mime: "application/pdf" }]);
+          const [rad] = await db.vlozit("soubory", [{ zakazka_id: zak.id, vozidlo_id: zak.z.vozidlo_id || zak.z.vozidla?.id, druh: "archiv", klic, nazev: f.name, velikost: f.size, mime: "application/pdf", verejne: archivProZakaznika(f.name) }]);
           (zak.z.soubory ||= []).push(rad || { druh: "archiv", klic, nazev: f.name }); ok++;
         } catch (er) { hlaska(`${f.name}: ${chybaText(er)}`, true); }
       }

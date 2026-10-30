@@ -1,5 +1,6 @@
 // E-serviska: veřejná data servisní knížky podle VIN pro web mercedesrestorations.cz (/e-serviska?vin=…).
-// Zatím BEZ ochrany (rozhodnutí Vaška 29.10.2026) – kdo zná VIN, vidí vše včetně údajů zákazníka. Ochrana se doplní později.
+// Přístup jen tajným odkazem ?k=… (vozidla.eserviska_kod, Vašek 29.10.2026 – E3); VIN sám nestačí. Při změně majitele se odkaz změní.
+// Předchozí majitelé: vidět je historie prací a fotky (bez jmen, dokladů a dílů – E1b); údaje zákazníka jen u současného majitele (C1).
 // Jen čtení. Odkazy na soubory jsou podepsané a platí 1 hodinu.
 // „Co je příště na řadě“: intervaly z tabulky servisni_intervaly (skupina A/B/C podle roku), případně servisni_intervaly_motoru, + zaškrtnuté servisní úkony u zakázek.
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -35,13 +36,13 @@ Deno.serve(async req => {
   const odp = (s: number, o: unknown) => new Response(JSON.stringify(o), { status: s, headers: hlavicky(origin) });
   if (req.method !== "GET") return odp(405, { chyba: "jen GET" });
 
-  const vin = (new URL(req.url).searchParams.get("vin") || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (vin.length < 10 || vin.length > 20) return odp(400, { chyba: "neplatny-vin" });
+  const kod = (new URL(req.url).searchParams.get("k") || "").replace(/[^0-9a-zA-Z_-]/g, "");
+  if (kod.length < 16 || kod.length > 40) return odp(403, { chyba: "potreba-odkaz" });
 
   const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
   const { data: v } = await sb.from("vozidla")
-    .select("id,vin,spz,znacka,typ,model,rok,mesic,verze,cislo_motoru,prevodovka,barva,rafky,pneu_letni,pneu_zimni,kody_vybavy,km_posledni,jednotka_tachometru,servisni_skupina,motor")
-    .eq("vin", vin).maybeSingle();
+    .select("id,vin,spz,znacka,typ,model,rok,mesic,verze,cislo_motoru,prevodovka,barva,rafky,pneu_letni,pneu_zimni,kody_vybavy,km_posledni,jednotka_tachometru,servisni_skupina,motor,eserviska_kod")
+    .eq("eserviska_kod", kod).maybeSingle();
   if (!v) return odp(404, { chyba: "nenalezeno" });
 
   const sk = skupina(v);
@@ -58,20 +59,20 @@ Deno.serve(async req => {
   const motor = urciMotor(v, motory || [], typy || []), mInfo = (motory || []).find(m => m.kod === motor);
   const palivo = mInfo ? mInfo.palivo : /\b\d{3}\s*(D|TD|SD|CD|SDL)\b/i.test(v.model || "") ? "diesel" : "benzin";
   const platne = new Set((ukony || []).filter(u => (!u.jen_palivo || u.jen_palivo === palivo) && (!u.jen_serizovani_ventilu || mInfo?.serizovani_ventilu)).map(u => u.ukon));
-  const aktualni = (vl || []).find(x => !x.vlastni_do) || (vl || [])[0];
+  const aktualni = (vl || []).find(x => !x.vlastni_do) || null;      // bez současného majitele žádné údaje zákazníka ani doklady
   const ids = (zak || []).map(z => z.id);
 
   const [{ data: pol }, { data: dily }, { data: dok }, { data: soub }] = ids.length ? await Promise.all([
     sb.from("polozky").select("zakazka_id,poradi,typ,popis").in("zakazka_id", ids).is("nabidka_id", null).in("typ", ["prace", "pausal", "nadpis"]).order("poradi"),
     sb.from("dily").select("zakazka_id,poradi,nazev,cislo_mb,vyrobce,mnozstvi,jednotka,stav").in("zakazka_id", ids).neq("stav", "nepouzito").order("poradi"),
     sb.from("doklady").select("id,zakazka_id,druh,cislo,verze,vystaveno,pdf_soubor_id,soubory!doklady_pdf_soubor_id_fkey(klic)").in("zakazka_id", ids).eq("zamceno", true).in("druh", DOKLADY).order("verze", { ascending: false }),
-    sb.from("soubory").select("zakazka_id,doklad_id,druh,faze,klic,nazev,mime,vytvoreno").in("zakazka_id", ids).in("druh", ["foto", "video", "pdf"]).is("smazano", null).order("vytvoreno")
+    sb.from("soubory").select("zakazka_id,doklad_id,druh,faze,klic,nazev,mime,vytvoreno,verejne").in("zakazka_id", ids).in("druh", ["foto", "video", "pdf", "archiv"]).is("smazano", null).order("vytvoreno")
   ]) : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
 
   // podepsané odkazy najednou
   const klice = new Set<string>();
   (tp || []).forEach(f => klice.add(f.klic));
-  (soub || []).forEach(f => klice.add(f.klic));
+  (soub || []).forEach(f => { if (f.druh === "pdf" || f.verejne !== false) klice.add(f.klic); });
   (dok || []).forEach(d => (d as any).soubory?.klic && klice.add((d as any).soubory.klic));
   const url: Record<string, string> = {};
   if (klice.size) {
@@ -80,18 +81,24 @@ Deno.serve(async req => {
   }
 
   const navstevy = (zak || []).map(z => {
-    const vlastni = aktualni && z.zakaznik_id === aktualni.zakaznik_id;   // doklady předchozího majitele se neukazují
+    const vlastni = !!aktualni && z.zakaznik_id === aktualni.zakaznik_id;   // doklady a díly předchozího majitele se neukazují
     const posledni: Record<string, any> = {};
     (dok || []).filter(d => d.zakazka_id === z.id).forEach(d => { if (!posledni[d.druh]) posledni[d.druh] = d; });
     const dokumenty = vlastni ? Object.values(posledni).map((d: any) => ({ druh: d.druh, cislo: d.cislo, vystaveno: d.vystaveno, url: url[d.soubory?.klic] || null })).filter(d => d.url) : [];
     if (vlastni) (soub || []).filter(f => f.zakazka_id === z.id && f.druh === "pdf" && /parts.list/i.test(f.nazev || "") && Object.values(posledni).some((d: any) => d.id === f.doklad_id))
       .forEach(f => dokumenty.push({ druh: "parts_list", cislo: f.nazev, vystaveno: null, url: url[f.klic] || null }));
+    // E5: původní doklady ze starého systému (archiv) – jen ty, které jsou označené 👁
+    if (vlastni) (soub || []).filter(f => f.zakazka_id === z.id && f.druh === "archiv" && f.verejne !== false && url[f.klic]).forEach(f => {
+      const n = f.nazev || "", druh = /^(zak[aá]zkov|work[ _]order)/i.test(n) ? "zakazkovy_list" : /^parts[ _]list/i.test(n) ? "parts_list"
+        : /^p[řr]ed[aá]vac/i.test(n) ? "predavaci_protokol" : /^(invoice|faktura)[ _]/i.test(n) ? "faktura" : "puvodni";
+      dokumenty.push({ druh, cislo: null, nazev: n.replace(/\.pdf$/i, ""), puvodni: true, vystaveno: null, url: url[f.klic] });
+    });
     return {
-      cislo: z.cislo, stav: z.stav, servisni_ukony: z.servisni_ukony || [], datum_prijmu: z.datum_prijmu, datum_predani: z.datum_predani, km_prijem: z.km_prijem, km_predani: z.km_predani,
+      cislo: z.cislo, stav: z.stav, predchozi_majitel: !vlastni, servisni_ukony: z.servisni_ukony || [], datum_prijmu: z.datum_prijmu, datum_predani: z.datum_predani, km_prijem: z.km_prijem, km_predani: z.km_predani,
       zavady: (z.zavady || []).filter(Boolean),
       prace: (pol || []).filter(p => p.zakazka_id === z.id && p.popis).map(p => ({ typ: p.typ, popis: p.popis })),
-      dily: (dily || []).filter(d => d.zakazka_id === z.id).map(d => ({ nazev: d.nazev, cislo_mb: d.cislo_mb, vyrobce: d.vyrobce, mnozstvi: d.mnozstvi, jednotka: d.jednotka })),
-      fotky: (soub || []).filter(f => f.zakazka_id === z.id && (f.druh === "foto" || f.druh === "video") && url[f.klic]).map(f => ({ url: url[f.klic], video: f.druh === "video", faze: f.faze })),
+      dily: !vlastni ? [] : (dily || []).filter(d => d.zakazka_id === z.id).map(d => ({ nazev: d.nazev, cislo_mb: d.cislo_mb, vyrobce: d.vyrobce, mnozstvi: d.mnozstvi, jednotka: d.jednotka })),
+      fotky: (soub || []).filter(f => f.zakazka_id === z.id && (f.druh === "foto" || f.druh === "video") && f.verejne !== false && url[f.klic]).map(f => ({ url: url[f.klic], video: f.druh === "video", faze: f.faze })),
       dokumenty
     };
   });
@@ -105,7 +112,7 @@ Deno.serve(async req => {
     const z = hotove.find(x => (x.servisni_ukony || []).includes(it.ukon));
     const interval = naJed(it.interval_km);
     if (!z) return { ukon: it.ukon, interval_km: interval, interval_mesice: it.interval_mesice, zdroj: it.zdroj, posledni: null, pristi: null, stav: "nezname" };
-    const datum = z.datum_predani || z.datum_prijmu, km = z.km_predani ?? z.km_prijem ?? null;
+    const datum = z.datum_predani || z.datum_prijmu, km = z.km_prijem ?? z.km_predani ?? null;   // km se zapisují při převzetí (F4)
     const pDatum = it.interval_mesice ? plusMesice(datum, it.interval_mesice) : null, pKm = interval != null && km != null ? km + interval : null;
     const nyni = v.km_posledni;
     const po = (pDatum && pDatum <= dnes) || (pKm != null && nyni != null && nyni >= pKm);
@@ -114,7 +121,7 @@ Deno.serve(async req => {
       posledni: { datum, km, cislo: z.cislo }, pristi: { datum: pDatum, km: pKm }, stav: po ? "po" : brzy ? "brzy" : "ok" };
   });
 
-  const { id: _id, servisni_skupina: _s, motor: _m, ...vuz } = v;
+  const { id: _id, servisni_skupina: _s, motor: _m, eserviska_kod: _k, ...vuz } = v;
   return odp(200, {
     vuz,
     zakaznik: aktualni?.zakaznici || null,
