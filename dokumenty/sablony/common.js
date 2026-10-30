@@ -67,6 +67,9 @@ function odrazky(x, y, polozky, maxRadku, maxW = 278, krok = 12.75) {
   return { html: h, radku: n, potreba, oriznuto: potreba > maxRadku };   // potreba = kolik řádků by text potřeboval
 }
 /* Text na pozici x,y (pt). opts: size, b (tučně), serif, c (na střed x), r (zarovnat vpravo k x), ink (černá) */
+/* Číslo dokladu vpravo nahoře („# 73740001“) – zarovnané doprava, s odstupem od rámečku stránky (Vašek 31.10.2026) */
+const PRAVY_OKRAJ_CISLA = 524;
+const cisloVHlavicce = (cislo, y, opts) => T(PRAVY_OKRAJ_CISLA, y, `# ${cislo}`, { ...opts, r: true });
 function T(x, y, text, opts = {}) {
   if (text == null || text === "") return "";
   if (opts.maxW) { const f = vejdeSe(text, opts.size || 9.8, !!opts.b, opts.maxW, opts.calibri ? "calibri" : !!opts.serif, opts.minSize); text = f.text; opts = { ...opts, size: f.size }; }
