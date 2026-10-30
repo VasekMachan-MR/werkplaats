@@ -492,11 +492,12 @@ const server = http.createServer((q, r) => {
   const ar = await p.evaluate(() => window.__ULOZENO__.tabulky.soubory.filter(f => f.druh === "archiv"));
   kontrola(ar.length === 1 && /^archiv\/7378\/.+\.pdf$/.test(ar[0].klic) && ar[0].nazev === "Zakazkovy_list_stary.pdf" && !ar[0].doklad_id && /Zakazkovy_list_stary\.pdf/.test(await p.textContent("#sekce-archiv")),
     "archivní PDF se přiloží k zakázce (druh archiv, bez dokladu) a zobrazí v Ostatních dokumentech");
-  await p.evaluate(() => { navigator.share = async d => { window.__SDILENO__ = d.url; }; window.__SDILENO__ = null; });
+  await p.evaluate(() => { window.__MAILTO__ = u => { window.__MAIL__ = u; }; window.__MAIL__ = null; });
   await p.click("#sekce-archiv [data-archiv-podpis]");
   await p.waitForSelector("#sekce-archiv >> text=čeká na podpis zákazníka");
-  kontrola(await p.evaluate(() => !!window.__ULOZENO__.tabulky.soubory.find(f => f.druh === "archiv").podpis_pozadan && /e-serviska\?k=/.test(window.__SDILENO__ || "")),
-    "u starého PDF jde „Nechat podepsat“ – označí se k podpisu a otevře se sdílení odkazu do E-servisky");
+  { const m = decodeURIComponent(await p.evaluate(() => window.__MAIL__ || ""));
+    kontrola(await p.evaluate(() => !!window.__ULOZENO__.tabulky.soubory.find(f => f.druh === "archiv").podpis_pozadan) && /^mailto:jan\.novak@example\.cz\?subject=/.test(m) && /e-serviska\?k=[0-9a-f]{20}/.test(m) && /(Děkujeme za důvěru|Thank you for your trust)/.test(m),
+      "„Nechat podepsat“ označí PDF k podpisu a připraví zákazníkovi e-mail s odkazem do E-servisky"); }
   await p.click("#sekce-archiv [data-archiv-podpis-zrusit]");
   await p.waitForSelector("#sekce-archiv [data-archiv-podpis]");
   await p.click("#sekce-archiv [data-archiv-smazat]");

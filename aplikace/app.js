@@ -1531,7 +1531,7 @@
       </div></div>`;
     if (!pdf) return;
     const op = app.querySelector("#odkaz-podpis");
-    if (op) op.onclick = async () => { try { const z = await db.detail(id); await sdiletOdkazEservisky(z.vozidla || {}, z.jazyk === "en"); } catch (e) { hlaska(chybaText(e), true); } };
+    if (op) op.onclick = async () => { try { poslatOdkazKPodpisu(await db.detail(id)); } catch (e) { hlaska(chybaText(e), true); } };
     const soubory = [pdf, ...(pdf.prilohy || [])].map(x => new File([x.bytes], x.nazev, { type: "application/pdf" }));
     if (soubory.length > 1) app.querySelector("#otevrit").insertAdjacentHTML("afterend", soubory.slice(1).map((f, i) => `<button class="tl tl-velke" data-priloha="${i + 1}">Otevřít ${/parts-list/.test(f.name) ? "parts list" : "přílohu"}</button>`).join(""));
     app.querySelector("#otevrit").onclick = () => window.open(URL.createObjectURL(soubory[0]), "_blank");
@@ -1700,6 +1700,19 @@
     } catch (e) { p.zavri(); hlaska("Vystavení se nepovedlo: " + chybaText(e), true, 8000); }
   }
   // iPhone/iPad: nabídka Sdílet (WhatsApp, Zprávy, e-mail…); jinak zkopírovat
+  // odkaz k podpisu: připravený e-mail zákazníkovi (odešle se z poštovní aplikace – účet info@mercedesrest.cz); bez e-mailu sdílení jako dřív
+  function poslatOdkazKPodpisu(z) {
+    const v = z.vozidla || {}, c = z.zakaznici || {}, en = z.jazyk === "en", url = odkazEservisky(v), auto = [v.typ, v.model].filter(Boolean).join(" ");
+    const email = String(c.email || "").trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { hlaska("Zákazník nemá e-mail – posílám odkaz jinak (WhatsApp, zprávy…)."); return sdiletOdkazEservisky(v, en, true); }
+    const kdo = uzivatel?.jmeno || "Václav Macháň";
+    const predmet = en ? `Work order no. ${z.cislo} – please sign – Mercedes Restorations` : `Zakázkový list č. ${z.cislo} – prosím o podpis – Mercedes Restorations`;
+    const text = en
+      ? `Dear Sir or Madam,\n\nplease find below the link to sign the work order for your ${auto || "car"} (order no. ${z.cislo}). After opening the link you can view the work order in a preview. Please check it and, if everything is correct, sign it.\n\nYou will then find the signed version in your e-service book under “Documents for this visit” for the respective visit.\n\nLink to sign the work order and to your e-service book:\n${url}\n\nThank you for your trust, we look forward to working with you.\n\n${kdo}\nM|R`
+      : `Dobrý den,\n\nzasílám odkaz pro podepsání zakázkového listu k vašemu vozu${auto ? " " + auto : ""} (zakázka č. ${z.cislo}). Zakázkový list si po otevření odkazu zobrazíte v náhledu. Prosím o kontrolu a případně podpis.\n\nPodepsanou verzi pak naleznete v e-servisní knížce v sekci „Dokumenty k návštěvě“ u dané návštěvy.\n\nOdkaz k podpisu a do e-servisní knížky:\n${url}\n\nDěkujeme za důvěru a těšíme se na spolupráci.\n\n${kdo}\nM|R`;
+    const u = `mailto:${email}?subject=${encodeURIComponent(predmet)}&body=${encodeURIComponent(text).replace(/%0A/g, "%0D%0A")}`;
+    if (window.__MAILTO__) window.__MAILTO__(u); else location.href = u;     // (testy si mailto zachytí)
+  }
   async function sdiletOdkazEservisky(v, en = false, kPodpisu = true) {
     const url = odkazEservisky(v), auto = [v.typ, v.model].filter(Boolean).join(" ");
     const titul = kPodpisu ? (en ? `Please sign the work order for your ${auto}: ` : `Prosím o podpis zakázkového listu k vašemu vozu ${auto}: `) : `E-servisní knížka – ${auto}`;
@@ -1808,7 +1821,7 @@
     const sd = app.querySelector("#sdilet-eservisku");
     if (sd) sd.onclick = () => sdiletOdkazEservisky(v, z.jazyk === "en", E.cekaNaPodpis);
     const okp = app.querySelector("#odkaz-k-podpisu");
-    if (okp) okp.onclick = () => sdiletOdkazEservisky(v, z.jazyk === "en", true);
+    if (okp) okp.onclick = () => poslatOdkazKPodpisu(z);
     const vpl = app.querySelector("#vystavit-podepsany");
     if (vpl) vpl.onclick = async () => { vpl.disabled = true; try { await vystavitPodepsanyList(z, cekajiciList(doklady)); } finally { if (vpl.isConnected) vpl.disabled = false; } };
     vykresliFotkyDetail();
@@ -2088,9 +2101,9 @@
     const zadejPodpis = async (id, kdy) => { const s = E.z.soubory.find(x => x.id === id); if (!s) return;
       try { await db.upravit("soubory", id, { podpis_pozadan: kdy }); s.podpis_pozadan = kdy; vykresliArchiv(); return true; } catch (e) { hlaska(chybaText(e), true); } };
     el.querySelectorAll("[data-archiv-podpis]").forEach(b => b.onclick = async () => {
-      if (await zadejPodpis(b.dataset.archivPodpis, new Date().toISOString())) { hlaska("Zákazník uvidí v E-servisce výzvu k podpisu. Pošlete mu odkaz."); sdiletOdkazEservisky(v, E.z.jazyk === "en", true); }
+      if (await zadejPodpis(b.dataset.archivPodpis, new Date().toISOString())) { hlaska("Zákazník uvidí v E-servisce výzvu k podpisu."); poslatOdkazKPodpisu(E.z); }
     });
-    el.querySelectorAll("[data-archiv-podpis-odkaz]").forEach(b => b.onclick = () => sdiletOdkazEservisky(v, E.z.jazyk === "en", true));
+    el.querySelectorAll("[data-archiv-podpis-odkaz]").forEach(b => b.onclick = () => poslatOdkazKPodpisu(E.z));
     el.querySelectorAll("[data-archiv-podpis-zrusit]").forEach(b => b.onclick = async () => {
       if (!confirm("Zrušit žádost o podpis? Zákazník už v E-servisce výzvu neuvidí.")) return;
       if (await zadejPodpis(b.dataset.archivPodpisZrusit, null)) hlaska("Žádost o podpis zrušena.");
