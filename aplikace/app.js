@@ -1776,7 +1776,7 @@
         <summary><h2>Díly <span class="mutted" id="souhrn-dilu" style="font-weight:400;font-size:15px"></span> <span class="napoveda" id="stav-dilu" style="margin-left:auto;font-weight:400"></span></h2></summary>
         <div id="dily"></div>
       </details>
-      ${blokPoznamek([{ tabulka: "zakazky", id: z.id, hodnota: z.poznamky, popis: "K této zakázce (zákazník je uvidí v E-servisce u této návštěvy)", napoveda: "Co je potřeba udělat, co jsme zjistili, domluva se zákazníkem…" },
+      ${blokPoznamek([{ tabulka: "zakazky", id: z.id, hodnota: z.poznamky, popis: "K této zakázce (záznam v E-servisce – uvidí ho zákazník i další majitelé auta)", napoveda: "Co je potřeba udělat, co jsme zjistili, domluva se zákazníkem…" },
         { tabulka: "vozidla", id: z.vozidlo_id || v.id, hodnota: v.poznamky, popis: "K autu (zůstanou u auta i pro další návštěvy)", napoveda: "Zvláštnosti auta, historie, co hlídat příště…" }], id)}
 
       <details class="karta sbalovaci souhrn-zakazky" id="souhrn" data-sbal${sbalOpen(id, "souhrn")}></details>

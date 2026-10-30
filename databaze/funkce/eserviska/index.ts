@@ -101,7 +101,7 @@ Deno.serve(async req => {
       postup: !vlastni ? null : (() => { const u = (Array.isArray(z.ukoly) ? z.ukoly : []).filter((x: any) => String(x?.t || "").trim()); return u.length ? { hotovo: u.filter((x: any) => x.h).length, celkem: u.length } : null; })(),
       zavady: (z.zavady || []).filter(Boolean),
       prace: (pol || []).filter(p => p.zakazka_id === z.id && p.popis).map(p => ({ typ: p.typ, popis: p.popis })),
-      poznamky: vlastni && String(z.poznamky || "").trim() ? String(z.poznamky).trim() : null,   // poznámky k zakázce – jen pro současného majitele
+      poznamky: String(z.poznamky || "").trim() || null,   // poznámky k zakázce = záznam v servisní knížce, vidí je i další majitelé
       dily: !vlastni ? [] : (dily || []).filter(d => d.zakazka_id === z.id).map(d => ({ nazev: d.nazev, cislo_mb: d.cislo_mb, vyrobce: d.vyrobce, mnozstvi: d.mnozstvi, jednotka: d.jednotka })),
       fotky: (soub || []).filter(f => f.zakazka_id === z.id && (f.druh === "foto" || f.druh === "video") && f.verejne !== false && url[f.klic]).map(f => ({ url: url[f.klic], video: f.druh === "video", faze: f.faze })),
       dokumenty
