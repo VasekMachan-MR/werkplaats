@@ -540,3 +540,4 @@ details.postup-prace[open] > summary .postup { display: none; }
 .kal-novy input[name=text] { grid-column: 1 / -1; }
 @media (min-width: 760px) { .kal-novy { grid-template-columns: 1fr 120px 220px auto; } .kal-novy input[name=text] { grid-column: auto; } }
 @media (max-width: 420px) { .kal-den { min-height: 44px; padding: 4px 0; } .kal-novy select { grid-column: 1 / -1; } }
+.info.ok-podpis { background: var(--zelena-svetla); color: var(--zelena); display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }

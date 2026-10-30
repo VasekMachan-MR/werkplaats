@@ -16,3 +16,20 @@ create table if not exists public.kalendar (
 create index if not exists kalendar_datum on public.kalendar (datum);
 alter table public.kalendar enable row level security;
 create policy dilna on public.kalendar for all to authenticated using ((select soukrome.je_clen())) with check ((select soukrome.je_clen()));
+
+-- Dopodepsání zakázkového listu z E-servisky (zákazník spěchal a odešel bez podpisu):
+-- zákazník podepíše z domu → podpis se uloží sem → Werkplaats z něj vystaví podepsanou verzi listu (7380-1-2)
+create table if not exists public.dalkove_podpisy (
+  id uuid primary key default gen_random_uuid(),
+  doklad_id uuid not null unique references public.doklady(id) on delete cascade,
+  soubor_id uuid not null references public.soubory(id) on delete cascade,
+  podepsano timestamptz not null default now(),
+  ip text,
+  zarizeni text,
+  vystaveny_doklad_id uuid references public.doklady(id) on delete set null
+);
+alter table public.dalkove_podpisy enable row level security;
+create policy dilna_cte on public.dalkove_podpisy for select to authenticated using ((select soukrome.je_clen()));
+create policy dilna_upravuje on public.dalkove_podpisy for update to authenticated using ((select soukrome.je_clen())) with check ((select soukrome.je_clen()));
+-- zapisuje jen serverová funkce E-servisky (service role); mazání jen majitel
+create policy majitel_maze on public.dalkove_podpisy for delete to authenticated using ((select soukrome.je_majitel()));

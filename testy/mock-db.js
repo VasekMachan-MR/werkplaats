@@ -1,6 +1,6 @@
 /* Zkušební databáze v paměti prohlížeče – stejné funkce jako skutečné napojení na Supabase (app.js → vytvorDb).
    Používá se jen v testech, do aplikace se nedostane. */
-window.__ULOZENO__ = { soubory: {}, tabulky: { zakaznici: [], vozidla: [], vlastnictvi: [], zakazky: [], soubory: [], doklady: [], podpisy: [], polozky: [], dily: [], nabidky: [], kalendar: [] }, citac: 7376 };
+window.__ULOZENO__ = { soubory: {}, tabulky: { zakaznici: [], vozidla: [], vlastnictvi: [], zakazky: [], soubory: [], doklady: [], podpisy: [], polozky: [], dily: [], nabidky: [], kalendar: [], dalkove_podpisy: [] }, citac: 7376 };
 window.__WERK_DB__ = (() => {
   const T = window.__ULOZENO__.tabulky, S = window.__ULOZENO__.soubory;
   const id = () => crypto.randomUUID();
@@ -171,7 +171,8 @@ window.__WERK_DB__ = (() => {
       await cekej();
       const z = T.zakazky.find(x => x.id === zid); if (!z) return null;
       return kopie({ ...z, vozidla: T.vozidla.find(v => v.id === z.vozidlo_id), zakaznici: T.zakaznici.find(c => c.id === z.zakaznik_id),
-        doklady: T.doklady.filter(d => d.zakazka_id === zid).map(d => ({ ...d, soubory: T.soubory.find(s => s.id === d.pdf_soubor_id) })),
+        doklady: T.doklady.filter(d => d.zakazka_id === zid).map(d => ({ ...d, soubory: T.soubory.find(s => s.id === d.pdf_soubor_id),
+          dalkove_podpisy: T.dalkove_podpisy.filter(x => x.doklad_id === d.id).map(x => ({ ...x, soubory: T.soubory.find(f => f.id === x.soubor_id) })) })),
         soubory: T.soubory.filter(s => s.zakazka_id === zid) });
     }
   };

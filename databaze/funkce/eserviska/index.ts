@@ -26,7 +26,7 @@ const plusMesice = (d: string, m: number) => { const x = new Date(d + "T12:00:00
 
 function hlavicky(origin: string | null) {
   const h: Record<string, string> = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "vary": "Origin" };
-  if (origin && POVOLENE.some(r => r.test(origin))) { h["access-control-allow-origin"] = origin; h["access-control-allow-methods"] = "GET, OPTIONS"; }
+  if (origin && POVOLENE.some(r => r.test(origin))) { h["access-control-allow-origin"] = origin; h["access-control-allow-methods"] = "GET, POST, OPTIONS"; h["access-control-allow-headers"] = "content-type"; }
   return h;
 }
 
@@ -34,12 +34,12 @@ Deno.serve(async req => {
   const origin = req.headers.get("origin");
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: hlavicky(origin) });
   const odp = (s: number, o: unknown) => new Response(JSON.stringify(o), { status: s, headers: hlavicky(origin) });
-  if (req.method !== "GET") return odp(405, { chyba: "jen GET" });
+  if (req.method !== "GET" && req.method !== "POST") return odp(405, { chyba: "jen GET/POST" });
+  const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
+  if (req.method === "POST") return podepsat(req, sb, odp);
 
   const kod = (new URL(req.url).searchParams.get("k") || "").replace(/[^0-9a-zA-Z_-]/g, "");
   if (kod.length < 16 || kod.length > 40) return odp(403, { chyba: "potreba-odkaz" });
-
-  const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
   const { data: v } = await sb.from("vozidla")
     .select("id,vin,spz,znacka,typ,model,rok,mesic,verze,cislo_motoru,prevodovka,barva,rafky,pneu_letni,pneu_zimni,kody_vybavy,km_posledni,jednotka_tachometru,servisni_skupina,motor,eserviska_kod")
     .eq("eserviska_kod", kod).maybeSingle();
@@ -65,7 +65,7 @@ Deno.serve(async req => {
   const [{ data: pol }, { data: dily }, { data: dok }, { data: soub }] = ids.length ? await Promise.all([
     sb.from("polozky").select("zakazka_id,poradi,typ,popis").in("zakazka_id", ids).is("nabidka_id", null).in("typ", ["prace", "pausal", "nadpis"]).order("poradi"),
     sb.from("dily").select("zakazka_id,poradi,nazev,cislo_mb,vyrobce,mnozstvi,jednotka,stav").in("zakazka_id", ids).neq("stav", "nepouzito").order("poradi"),
-    sb.from("doklady").select("id,zakazka_id,druh,cislo,verze,vystaveno,pdf_soubor_id,soubory!doklady_pdf_soubor_id_fkey(klic)").in("zakazka_id", ids).eq("zamceno", true).in("druh", DOKLADY).order("verze", { ascending: false }),
+    sb.from("doklady").select("id,zakazka_id,druh,cislo,verze,vystaveno,jazyk,pdf_soubor_id,data,soubory!doklady_pdf_soubor_id_fkey(klic),podpisy(role),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(podepsano)").in("zakazka_id", ids).eq("zamceno", true).in("druh", DOKLADY).order("verze", { ascending: false }),
     sb.from("soubory").select("zakazka_id,doklad_id,druh,faze,klic,nazev,mime,vytvoreno,verejne").in("zakazka_id", ids).in("druh", ["foto", "video", "pdf", "archiv"]).is("smazano", null).order("vytvoreno")
   ]) : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
 
@@ -123,13 +123,52 @@ Deno.serve(async req => {
       posledni: { datum, km, cislo: z.cislo }, pristi: { datum: pDatum, km: pKm }, stav: po ? "po" : brzy ? "brzy" : "ok" };
   });
 
+  // zakázkový list čekající na podpis zákazníka (jen současný majitel, jen poslední verze listu rozpracované zakázky)
+  let podpis: any = null;
+  for (const z of (zak || [])) {
+    if (!aktualni || z.zakaznik_id !== aktualni.zakaznik_id || HOTOVO.includes(z.stav)) continue;
+    const zl = (dok || []).filter((d: any) => d.zakazka_id === z.id && d.druh === "zakazkovy_list")[0] as any;
+    if (!zl || !zl.data?.cekaPodpis || (zl.podpisy || []).some((x: any) => x.role === "zakaznik")) continue;
+    const dp = Array.isArray(zl.dalkove_podpisy) ? zl.dalkove_podpisy[0] : zl.dalkove_podpisy;
+    podpis = { cislo: zl.cislo, zakazka: z.cislo, url: url[zl.soubory?.klic] || null, podepsano: dp?.podepsano || null, jazyk: zl.jazyk || null };
+    break;
+  }
+
   const { id: _id, servisni_skupina: _s, motor: _m, eserviska_kod: _k, ...vuz } = v;
   return odp(200, {
     vuz,
     zakaznik: aktualni?.zakaznici || null,
     tp: (tp || []).filter(f => url[f.klic]).map(f => ({ nazev: f.nazev, url: url[f.klic], pdf: f.mime === "application/pdf" })),
-    navstevy,
+    navstevy, podpis,
     servis, servis_skupina: sk, motor, palivo,
     platnost_odkazu_s: PLATNOST
   });
 });
+
+// POST {k, cislo, podpis: "data:image/png;base64,…", souhlas: true} – zákazník dopodepíše zakázkový list z domu
+async function podepsat(req: Request, sb: any, odp: (s: number, o: unknown) => Response) {
+  let b: any; try { b = await req.json(); } catch { return odp(400, { chyba: "spatny-pozadavek" }); }
+  const kod = String(b?.k || "").replace(/[^0-9a-zA-Z_-]/g, "");
+  if (kod.length < 16 || kod.length > 40) return odp(403, { chyba: "potreba-odkaz" });
+  if (b?.souhlas !== true) return odp(400, { chyba: "chybi-souhlas" });
+  const png = String(b?.podpis || "");
+  if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(png) || png.length > 400000 || png.length < 500) return odp(400, { chyba: "spatny-podpis" });
+  const { data: v } = await sb.from("vozidla").select("id").eq("eserviska_kod", kod).maybeSingle();
+  if (!v) return odp(404, { chyba: "nenalezeno" });
+  const { data: d } = await sb.from("doklady").select("id,cislo,druh,data,zakazka_id,zakazky!inner(id,cislo,stav,vozidlo_id,zakaznik_id),podpisy(role),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id)")
+    .eq("cislo", String(b?.cislo || "")).eq("druh", "zakazkovy_list").maybeSingle();
+  if (!d || d.zakazky?.vozidlo_id !== v.id || !d.data?.cekaPodpis || HOTOVO.includes(d.zakazky.stav)) return odp(404, { chyba: "nenalezeno" });
+  const { data: maj } = await sb.from("vlastnictvi").select("zakaznik_id").eq("vozidlo_id", v.id).is("vlastni_do", null).maybeSingle();
+  if (!maj || maj.zakaznik_id !== d.zakazky.zakaznik_id) return odp(404, { chyba: "nenalezeno" });
+  if ((d.podpisy || []).some((x: any) => x.role === "zakaznik") || (Array.isArray(d.dalkove_podpisy) ? d.dalkove_podpisy.length : d.dalkove_podpisy)) return odp(409, { chyba: "uz-podepsano" });
+  const bin = Uint8Array.from(atob(png.split(",")[1]), c => c.charCodeAt(0));
+  const klic = `zakazky/${d.zakazky.cislo}/eserviska-${Date.now().toString(36)}/podpis-zakaznika-${d.cislo}.png`;
+  const { error: eu } = await sb.storage.from("soubory").upload(klic, bin, { contentType: "image/png", upsert: false });
+  if (eu) return odp(500, { chyba: "ulozeni" });
+  const { data: sf, error: es } = await sb.from("soubory").insert({ zakazka_id: d.zakazka_id, vozidlo_id: v.id, druh: "podpis", klic, nazev: "podpis zákazníka (E-serviska)", mime: "image/png", velikost: bin.length, verejne: false }).select("id").single();
+  if (es) { await sb.storage.from("soubory").remove([klic]); return odp(500, { chyba: "ulozeni" }); }
+  const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || null;
+  const { error: ed } = await sb.from("dalkove_podpisy").insert({ doklad_id: d.id, soubor_id: sf.id, ip, zarizeni: (req.headers.get("user-agent") || "").slice(0, 300) });
+  if (ed) { await sb.from("soubory").delete().eq("id", sf.id); await sb.storage.from("soubory").remove([klic]); return odp(409, { chyba: "uz-podepsano" }); }
+  return odp(200, { ok: true });
+}

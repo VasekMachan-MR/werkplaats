@@ -224,6 +224,7 @@ function strana1(d, tx) {
   if (d.druh !== "protokol" && d.odhad != null && d.odhad !== "") h += T(435.6, 712.8, `${cislo2(d.odhad)} ${tx.mena}`, { b: true, size: 15.7, c: true });
   if (d.podpisVyhotovil) h += IMG(podpisSrc(d.podpisVyhotovil), 63.0, 706.9, 220.4, 752.7);
   if (d.podpisZakaznik) h += `<img class="abs" src="${d.podpisZakaznik}" style="left:199pt;top:706.9pt;width:122pt;height:30pt;object-fit:contain">`;
+  if (d.podepsanoDalkove) h += T(259.7, 737.6, d.podepsanoDalkove, { c: true, size: 5.6, maxW: 116, minSize: 4.6 });
 
   h += paticka(1, 2);
   return `<section class="page">${h}</section>`;

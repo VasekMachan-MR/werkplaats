@@ -648,6 +648,29 @@ const server = http.createServer((q, r) => {
     await p.screenshot({ path: "testy/vystup-app/prace-postup.png", fullPage: false });
   }
 
+  // ---------- Dopodepsání zakázkového listu z E-servisky ----------
+  {
+    const zid = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const d = T.doklady.find(x => x.druh === "zakazkovy_list"); d.data = { ...d.data, cekaPodpis: true }; return d.zakazka_id; });
+    await p.evaluate(id => { location.hash = "#/zakazky"; location.hash = "#/zakazka/" + id; }, zid);
+    await p.waitForSelector("#odkaz-k-podpisu");
+    kontrola(true, "zakázka ukazuje, že list čeká na podpis zákazníka (+ odkaz k podpisu)");
+    await p.evaluate(async () => {        // zákazník podepsal v E-servisce (to dělá serverová funkce)
+      const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.druh === "zakazkovy_list");
+      const c = document.createElement("canvas"); c.width = 200; c.height = 60; const x = c.getContext("2d"); x.strokeStyle = "#1372e8"; x.lineWidth = 3; x.beginPath(); x.moveTo(10, 40); x.bezierCurveTo(60, 0, 120, 70, 190, 20); x.stroke();
+      const b = await new Promise(r => c.toBlob(r, "image/png")), klic = "zakazky/eserviska/podpis.png";
+      window.__ULOZENO__.soubory[klic] = new Uint8Array(await b.arrayBuffer());
+      T.soubory.push({ id: "sf-dalkovy", zakazka_id: d.zakazka_id, druh: "podpis", klic, mime: "image/png", verejne: false });
+      T.dalkove_podpisy.push({ id: "dp1", doklad_id: d.id, soubor_id: "sf-dalkovy", podepsano: new Date().toISOString(), vystaveny_doklad_id: null });
+    });
+    await p.evaluate(id => { location.hash = "#/zakazky"; location.hash = "#/zakazka/" + id; }, zid);
+    await p.waitForSelector("#vystavit-podepsany"); await p.click("#vystavit-podepsany");
+    await p.waitForSelector("#hlaska >> text=Podepsaný zakázkový list");
+    const r = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === "7377-1-2"); return d && { verze: d.verze, pod: d.data.podepsanoDalkove, ceka: d.data.cekaPodpis, zp: T.podpisy.filter(x => x.doklad_id === d.id).map(x => x.role + ":" + x.zpusob).join(","), dp: T.dalkove_podpisy[0].vystaveny_doklad_id === d.id }; });
+    kontrola(r && r.verze === 2 && /Podepsáno online v E-servisce/.test(r.pod) && !r.ceka && /zakaznik:eserviska/.test(r.zp) && r.dp, "z podpisu v E-servisce se vystaví podepsaný list 7377-1-2 (podpis zákazníka + poznámka o el. podpisu)");
+    kontrola(await p.locator("#vystavit-podepsany, #odkaz-k-podpisu").count() === 0, "po vystavení už zakázka na podpis nečeká");
+    { const b = await p.evaluate(() => Array.from(Object.entries(window.__ULOZENO__.soubory).find(([k]) => /7377-1-2-zakazkovy-list\.pdf$/.test(k))?.[1] || [])); if (b.length) require("fs").writeFileSync("testy/vystup-app/podepsany-list.pdf", Buffer.from(b)); }
+  }
+
   // ---------- Kalendář v Přehledu ----------
   {
     await p.evaluate(() => { location.hash = "#/"; }); await p.waitForSelector("#kalendar .kal-den");
