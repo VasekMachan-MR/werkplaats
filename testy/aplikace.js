@@ -176,7 +176,10 @@ const server = http.createServer((q, r) => {
   const souhrn = await p.textContent("#souhrn");
   const sh = souhrn.replace(/[\u00a0\u202f]/g, " ").replace(/\s+/g, " ");
   if (!/Práce \(6 h\) ?9 050 Kč/.test(sh)) console.log("souhrn:", sh);
-  kontrola(/Práce \(6 h\) ?9 050 Kč/.test(sh) && /Materiál \(díly\) ?13 325 Kč/.test(sh) && /Celkem ?22 375 Kč/.test(sh), "souhrn: práce 9 050 (6 h) + díly 13 325 = 22 375 Kč");
+  kontrola(/Práce \(6 h\) ?9 050 Kč/.test(sh) && /Materiál \(díly\) ?13 325 Kč/.test(sh) && /z práce ?2 715 Kč/.test(sh) && /Celkem ?25 090 Kč/.test(sh), "souhrn: práce 9 050 + daň 30 % (2 715) + díly 13 325 = 25 090 Kč");
+  await p.fill("#dan-pct", "20"); await p.waitForSelector("#stav-dane >> text=✓ Uloženo");
+  kontrola((await p.textContent("#souhrn-celkem")).replace(/\s/g, "") === "24185Kč" && await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky[0].dan_pct === 20), "daň jde změnit (20 % → celkem 24 185 Kč) a uloží se k zakázce");
+  await p.fill("#dan-pct", "30"); await p.waitForSelector("#stav-dane >> text=✓ Uloženo");
   await foto("11-prace-dily");
   // změna a hned odchod na přehled – musí se uložit i tak (bez čekání)
   await p.locator('.radek-pol[data-i="0"] [data-f="mnozstvi"]').fill("1");
@@ -460,9 +463,15 @@ const server = http.createServer((q, r) => {
   await p.waitForSelector("#sekce-archiv [data-archiv-otevrit]", { timeout: 15000 });
   const ar = await p.evaluate(() => window.__ULOZENO__.tabulky.soubory.filter(f => f.druh === "archiv"));
   kontrola(ar.length === 1 && /^archiv\/7378\/.+\.pdf$/.test(ar[0].klic) && ar[0].nazev === "Zakazkovy_list_stary.pdf" && !ar[0].doklad_id && /Zakazkovy_list_stary\.pdf/.test(await p.textContent("#sekce-archiv")),
-    "archivní PDF se přiloží k zakázce (druh archiv, bez dokladu) a zobrazí v sekci Archiv");
+    "archivní PDF se přiloží k zakázce (druh archiv, bez dokladu) a zobrazí v Ostatních dokumentech");
   await p.click("#sekce-archiv [data-archiv-smazat]");
-  await p.waitForSelector("#sekce-archiv >> text=Žádné archivní dokumenty");
+  await p.waitForSelector("#sekce-archiv >> text=Zatím žádné dokumenty");
+  // Ostatní dokumenty: i fotka dokumentu (HEIC z iPhonu)
+  await p.setInputFiles("#archiv-nahrat", [{ name: "Servisni_knizka.HEIC", mimeType: "", buffer: Buffer.from("heic") }]);
+  await p.waitForSelector("#sekce-archiv .doklad >> text=Servisni_knizka.HEIC", { timeout: 15000 });
+  { const h = await p.evaluate(() => window.__ULOZENO__.tabulky.soubory.find(f => f.nazev === "Servisni_knizka.HEIC"));
+    kontrola(h && h.mime === "image/heic" && /\.heic$/.test(h.klic) && /🖼/.test(await p.textContent("#sekce-archiv")), "Ostatní dokumenty: jde nahrát i fotka dokumentu (HEIC) – uloží se jako obrázek"); }
+  await p.click("#sekce-archiv [data-archiv-smazat]"); await p.waitForSelector("#sekce-archiv >> text=Zatím žádné dokumenty");
   // dlouhý název bez mezer (jako skutečné archivní PDF) – na iPhonu nesmí roztáhnout stránku
   await p.setInputFiles("#archiv-nahrat", [{ name: "Zakázkový_list_W126_300SE_Jan_Novák_Cenová_nabídka_materiál.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF") }]);
   await p.waitForSelector("#sekce-archiv [data-archiv-otevrit]", { timeout: 15000 });
@@ -694,6 +703,18 @@ const server = http.createServer((q, r) => {
     kontrola(true, "Díly: hledání");
   }
 
+  // ---------- výchozí řazení zakázek podle stavu; smazání řádku práce se potvrzuje ----------
+  {
+    await p.evaluate(() => { localStorage.setItem("werk-filtr-zakazek", JSON.stringify({ stav: "", typ: "", razeni: "cislo-" })); location.hash = "#/"; location.hash = "#/zakazky"; });
+    await p.waitForSelector("#seznam .zakazka-radek, #seznam .prazdne");
+    kontrola(await p.inputValue("#f-razeni") === "stav", "zakázky jsou ve výchozím stavu řazené „Podle stavu“ (rozpracované nahoře)");
+    const zid = await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky.find(z => window.__ULOZENO__.tabulky.polozky.some(x => x.zakazka_id === z.id)).id);
+    await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid); await p.waitForSelector('[data-smaz="0"]');
+    const n0 = await p.locator(".radek-pol[data-i]").count();
+    odmitnoutDialog = true; await p.click('[data-smaz="0"]'); await p.waitForTimeout(200); odmitnoutDialog = false;
+    kontrola(await p.locator(".radek-pol[data-i]").count() === n0, "smazání řádku práce se nejdřív zeptá (Zrušit = nic se nesmaže)");
+  }
+
   // ---------- Kalendář v Přehledu ----------
   {
     await p.evaluate(() => { location.hash = "#/"; }); await p.waitForSelector("#kalendar .kal-den");
@@ -717,7 +738,17 @@ const server = http.createServer((q, r) => {
   {
     const zf = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const f = T.soubory.find(x => x.druh === "foto" && x.zakazka_id && !x.smazano); return f && f.zakazka_id; });
     await p.evaluate(id => { window.__SDILENO__ = null; navigator.canShare = d => !!(d && d.files && d.files.length); navigator.share = async d => { window.__SDILENO__ = { n: d.files.length, typ: d.files[0].type, nazev: d.files[0].name, text: d.text }; }; location.hash = "#/zakazka/" + id; }, zf);
-    await p.waitForSelector("#poslat-fotky"); await p.click("#poslat-fotky");
+    await p.waitForSelector("#poslat-fotky");
+    kontrola(await p.evaluate(() => document.querySelector('a[href$="/zaloha"]')?.classList.contains("tl-hlavni")), "tlačítko Zálohová faktura je modré jako Nabídka a Faktura");
+    // skrytá fotka (🚫) se při „Vybrat vše“ nevybere
+    const skryta = await p.evaluate(id => { const f = window.__ULOZENO__.tabulky.soubory.filter(x => x.zakazka_id === id && (x.druh === "foto" || x.druh === "video") && !x.smazano); f[0].verejne = false; return { n: f.length, id: f[0].id }; }, zf);
+    await p.evaluate(id => { location.hash = "#/zakazky"; location.hash = "#/zakazka/" + id; }, zf); await p.waitForSelector("#poslat-fotky");
+    await p.click("#poslat-fotky"); await p.waitForSelector(".fotka[data-vybrat]");
+    await p.click("#vybrat-vse"); await p.waitForSelector(".fotka.vybrana");
+    kontrola((await p.textContent("#pocet-vybranych")).trim() === String(skryta.n - 1) && !(await p.evaluate(id => document.querySelector(`.fotka[data-vybrat="${id}"]`).classList.contains("vybrana"), skryta.id)), "„Vybrat vše“ nevybere fotku skrytou v E-servisce (🚫)");
+    await p.evaluate(id => { window.__ULOZENO__.tabulky.soubory.find(x => x.id === id).verejne = true; }, skryta.id);
+    await p.evaluate(id => { location.hash = "#/zakazky"; location.hash = "#/zakazka/" + id; }, zf); await p.waitForSelector("#poslat-fotky");
+    await p.click("#poslat-fotky");
     await p.waitForSelector(".fotka[data-vybrat]");
     kontrola(await p.isDisabled("#odeslat-fotky"), "bez vybrané fotky nejde nic poslat");
     await p.click(".fotka[data-vybrat] >> nth=0");
