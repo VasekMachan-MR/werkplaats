@@ -539,6 +539,14 @@ const server = http.createServer((q, r) => {
     "v zakázce jsou rozbalené jen Práce k fakturaci, Díly a Servisní úkony, ostatní sekce sbalené");
   kontrola(/z toho marže [\d,]+ %/.test(await p.textContent("#souhrn")) && /^Cena/.test(await p.textContent("#souhrn")), "souhrn má nadpis „Cena“ a procento marže je vlevo u popisu");
   kontrola(await p.evaluate(() => document.getElementById("souhrn").open && /Zisk/.test(document.getElementById("souhrn").textContent) && !!document.getElementById("souhrn-zisk")), "sekce Cena je sbalovací, výchozí rozbalená, a ukazuje Zisk");
+  // přijatá faktura za materiál u dílů (zákazník ji nevidí, půjde do UOL)
+  await p.setInputFiles("#faktura-dilu-nahrat", [{ name: "Faktura_Landsmann_123.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF") }]);
+  await p.waitForSelector("#faktury-dilu [data-faktura-otevrit]", { timeout: 15000 });
+  const fd = await p.evaluate(() => window.__ULOZENO__.tabulky.soubory.filter(f => f.druh === "nakupni_doklad"));
+  kontrola(fd.length === 1 && /^nakupni\/7378\/.+\.pdf$/.test(fd[0].klic) && fd[0].verejne === false && /Faktura_Landsmann_123\.pdf/.test(await p.textContent("#faktury-dilu")),
+    "přijatá faktura za materiál se nahraje u Dílů (druh nakupni_doklad, skrytá pro zákazníka) a zobrazí se pod díly");
+  await p.click("#faktury-dilu [data-faktura-smazat]");
+  await p.waitForFunction(() => !document.querySelector("#faktury-dilu [data-faktura-otevrit]"));
   await p.click("#sekce-archiv > summary");
   // archiv (legacy): původní PDF jen jako příloha zakázky
   await p.setInputFiles("#archiv-nahrat", [{ name: "Zakazkovy_list_stary.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n%%EOF") }]);

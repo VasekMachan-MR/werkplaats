@@ -2271,6 +2271,49 @@
     });
   }
 
+  // úložiště bere PDF, JPG, PNG a HEIC (fotky z iPhonu)
+  const typDokumentu = f => { const t = (f.type || "").replace("image/heif", "image/heic").replace("image/jpg", "image/jpeg");
+    return ["application/pdf", "image/jpeg", "image/png", "image/heic"].includes(t) ? t : (/\.pdf$/i.test(f.name) ? "application/pdf" : /\.hei[cf]$/i.test(f.name) ? "image/heic" : /\.png$/i.test(f.name) ? "image/png" : /\.jpe?g$/i.test(f.name) ? "image/jpeg" : ""); };
+
+  /* ---------- přijaté faktury za materiál (Vašek 30.10.2026): u dílů zakázky, zákazník je nevidí, půjdou účetní (UOL) ---------- */
+  function vykresliFakturyDilu() {
+    const el = document.getElementById("faktury-dilu"); if (!el || !E) return;
+    const fa = (E.z.soubory || []).filter(s => s.druh === "nakupni_doklad" && !s.smazano).sort((a, b) => String(a.vytvoreno || "").localeCompare(String(b.vytvoreno || "")));
+    el.innerHTML = fa.length ? `<div class="faktury-dilu"><h3 class="podnadpis">🧾 Přijaté faktury za materiál <span class="mutted" style="font-weight:400">${fa.length}</span></h3>
+      <div class="doklady">${fa.map(f => `<div class="doklad"><span>${/^image\//.test(f.mime || "") ? "🖼" : "📄"} ${esc(f.nazev || "faktura")}${f.vytvoreno ? ` <small class="mutted">${datumCz(String(f.vytvoreno).slice(0, 10))}</small>` : ""}</span><span class="radek-tlacitek">
+        <button type="button" class="tl tl-male" data-faktura-otevrit="${esc(f.klic)}">Otevřít</button>
+        ${jeMajitel() ? `<button type="button" class="tl tl-male tl-kos" data-faktura-smazat="${f.id}" aria-label="Smazat fakturu">🗑</button>` : ""}</span></div>`).join("")}</div></div>` : "";
+    el.querySelectorAll("[data-faktura-otevrit]").forEach(b => b.onclick = async () => {
+      const okno = window.open("", "_blank");
+      try { const u = await db.odkaz(b.dataset.fakturaOtevrit, 600); if (okno) okno.location = u; else location.href = u; }
+      catch (e) { okno?.close(); hlaska(chybaText(e), true); }
+    });
+    el.querySelectorAll("[data-faktura-smazat]").forEach(b => b.onclick = async () => {
+      if (!confirm("Opravdu smazat tuto přijatou fakturu ze zakázky?")) return;
+      try { const s = E.z.soubory.find(x => x.id === b.dataset.fakturaSmazat);
+        await db.smazatZaznamSouboru(b.dataset.fakturaSmazat); if (s) { uklidSoubory({ klice: [s.klic] }); s.smazano = new Date().toISOString(); }
+        vykresliFakturyDilu(); hlaska("Faktura odebrána."); }
+      catch (e) { hlaska(chybaText(e), true); }
+    });
+  }
+  async function nahratFakturyDilu(vse) {
+    const soubory = vse.filter(f => typDokumentu(f));
+    if (soubory.length < vse.length) hlaska("Některé soubory nejsou PDF, JPG, PNG ani HEIC – přeskočeny.", true);
+    if (!soubory.length) return;
+    const zak = E; let ok = 0;
+    hlaska(`Nahrávám ${soubory.length === 1 ? "fakturu" : soubory.length + " soubory"}…`);
+    for (const f of soubory) {
+      try {
+        const mime = typDokumentu(f), pr = (f.name.match(/\.([a-z0-9]{2,5})$/i)?.[1] || (mime === "application/pdf" ? "pdf" : "jpg")).toLowerCase();
+        const klic = `nakupni/${zak.z.cislo}/${uuid()}.${pr}`;
+        await db.nahrat(klic, f, mime, () => {});
+        const [rad] = await db.vlozit("soubory", [{ zakazka_id: zak.id, vozidlo_id: zak.z.vozidlo_id || zak.z.vozidla?.id, druh: "nakupni_doklad", klic, nazev: f.name, velikost: f.size, mime, verejne: false }]);
+        (zak.z.soubory ||= []).push(rad || { druh: "nakupni_doklad", klic, nazev: f.name, mime, verejne: false, vytvoreno: new Date().toISOString() }); ok++;
+      } catch (er) { hlaska(`${f.name}: ${chybaText(er)}`, true); }
+    }
+    if (E === zak) { const sd = document.getElementById("sekce-dily"); if (sd) sd.open = true; vykresliFakturyDilu(); if (ok) hlaska(`Přidáno ${ok} ${ok === 1 ? "faktura" : ok < 5 ? "faktury" : "faktur"}.`); }
+  }
+
   /* ---------- archiv (legacy): původní PDF ze starého systému (Excel), jen pro čtení, nic se z nich nedigitalizuje ---------- */
   function vykresliArchiv() {
     const el = document.getElementById("sekce-archiv"); if (!el || !E) return;
@@ -2684,13 +2727,17 @@
       <div class="radek-tlacitek" style="margin-top:12px">
         <button type="button" class="tl" id="pridat-dil">＋ Přidat díl</button>
         <button type="button" class="tl" id="import-dilu" aria-expanded="${!!E.imp}">📥 Import z e-mailu</button>
+        <label class="tl" title="Faktura od dodavatele za materiál k této zakázce (PDF nebo fotka). Zákazník ji nevidí, půjde účetní do UOL.">🧾 Přijatá faktura<input type="file" accept="application/pdf,image/*,.heic,.heif,.jpg,.jpeg,.png" multiple hidden id="faktura-dilu-nahrat"></label>
         ${E.dily.length ? `<button type="button" class="tl" id="parts-list">📄 Parts list (PDF)</button>
           <label class="cip zaskrt"><input type="checkbox" id="parts-ceny" checked> s cenami</label>
           <button type="button" class="tl tl-smazat" id="smazat-dily" style="margin-left:auto">🗑 Smazat všechny díly</button>` : ""}
         <span class="napoveda">Prodejní cena = nákup × kurz + marže. Jde přepsat ručně.</span>
       </div>
+      <div id="faktury-dilu"></div>
       ${htmlTypickychDilu()}
       ${E.imp ? panelImportu() : ""}`;
+    vykresliFakturyDilu();
+    el.querySelector("#faktura-dilu-nahrat").onchange = e => { const f = [...e.target.files]; e.target.value = ""; nahratFakturyDilu(f); };
     el.querySelectorAll(".dil[data-i]").forEach(r => {
       const d = E.dily[+r.dataset.i];
       napojNaseptavac(r, d);
