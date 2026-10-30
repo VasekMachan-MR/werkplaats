@@ -115,10 +115,11 @@
     }
   };
 
-  /* Z VIN Mercedesu zjistí typ a kód modelu: WDB1260241A… → 126 / 126.024; starý podvozek 10806812… → 108 / 108.068 */
+  /* Z VIN Mercedesu zjistí typ a kód modelu: WDB1260241A… → 126 / 126.024; starý podvozek 10806812… → 108 / 108.068; US VIN WDBBA48D… → 107 / 107.048 */
   function rozlustitVin(vin) {
     const v = String(vin || "").toUpperCase().replace(/\s/g, "");
-    let m = v.match(/^WD[BDC](\d{3})(\d{3})/) || v.match(/^(\d{3})(\d{3})\d{2,}/);
+    const us = { AB33: ["123", "193"], BA48: ["107", "048"] }[v.slice(3, 7)];   // americké VIN (od 1981): 300TD 123.193, 560 SL 107.048
+    let m = v.match(/^WD[BDC](\d{3})(\d{3})/) || v.match(/^(\d{3})(\d{3})\d{2,}/) || (/^WD[BDC]/.test(v) && us ? [0, ...us] : null);
     return m ? { typ: m[1], kod: `${m[1]}.${m[2]}` } : null;
   }
 

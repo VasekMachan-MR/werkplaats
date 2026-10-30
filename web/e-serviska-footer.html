@@ -56,7 +56,7 @@ function fdate(s,l){if(!s)return'';var p=String(s).split('-'),D=+p[2],M=+p[1],Y=
 function num(n,l){return Number(n).toLocaleString(l==='cs'?'cs-CZ':l==='nl'?'nl-NL':'en-GB')}
 // stav tachometru; u mílí i přepočet na km („180 955 mi (≈ 291 200 km)“)
 function kmTxt(n,l,unit){return num(n,l)+' '+unit+(unit==='mi'?' (≈ '+num(Math.round(n*1.609344/100)*100,l)+' km)':'')}
-function kodModelu(vin,typ){var v=String(vin||'').toUpperCase().replace(/\s/g,''),m=v.match(/^WD[BDC](\d{3})(\d{3})/)||v.match(/^(\d{3})(\d{3})\d{2,}/),n=String(typ||'').match(/\d{3}/);return m&&(!n||n[0]===m[1])?m[1]+'.'+m[2]:''}
+function kodModelu(vin,typ){var v=String(vin||'').toUpperCase().replace(/\s/g,''),u={AB33:['123','193'],BA48:['107','048']}[v.slice(3,7)],m=v.match(/^WD[BDC](\d{3})(\d{3})/)||v.match(/^(\d{3})(\d{3})\d{2,}/)||(/^WD[BDC]/.test(v)&&u?[0,u[0],u[1]]:null),n=String(typ||'').match(/\d{3}/);return m&&(!n||n[0]===m[1])?m[1]+'.'+m[2]:''}
 function typKod(t){t=String(t||'').toUpperCase().replace(/\s+/g,'');var m=t.match(/^([WRC])?(\d{3})/);if(!m)return t;return (m[1]||(m[2]==='107'?'R':m[2]==='124'&&/C$/.test(t)?'C':'W'))+m[2]}
 function kody(k){if(!k)return[];if(Array.isArray(k))return k.map(function(x){return typeof x==='string'?[x,'']:[x.kod||x.code||'',x.popis||x.text||x.desc||'']});if(typeof k==='object')return Object.keys(k).map(function(c){return[c,k[c]]});return[]}
 function roky(m,t){var y=m/12;return y===1?'1 '+t.y1:y+' '+(y<5?t.y24:t.y5)}
