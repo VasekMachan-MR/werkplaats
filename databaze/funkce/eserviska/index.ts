@@ -23,6 +23,15 @@ function urciMotor(v: any, motory: any[], typy: any[]) {
   if (vk && t[vk[1] + "." + vk[2]]) return t[vk[1] + "." + vk[2]];
   return t[normModel(v.model)] || null;
 }
+// druh převodovky z údajů vozidla (Vašek 31.10.2026): kód 722 / „automat…“ = automat, 711–717 / „manuál…“ = manuál, jinak SA kód 420/421
+function druhPrevodovky(v: any) {
+  const p = String(v?.prevodovka || "").toLowerCase().replace(/\s/g, "");
+  if (/^722|automat/.test(p)) return "automat";
+  if (/^71[1-7]|manu|ručn|rucn/.test(p)) return "manual";
+  const k = Array.isArray(v?.kody_vybavy) ? v.kody_vybavy : [];
+  if (k.some((x: any) => /^42[01]$/.test(String(x?.kod || "").trim()) || /automatic transmission|automatikgetriebe/i.test(String(x?.popis || "")))) return "automat";
+  return null;
+}
 const plusMesice = (d: string, m: number) => { const x = new Date(d + "T12:00:00Z"); x.setUTCMonth(x.getUTCMonth() + m); return x.toISOString().slice(0, 10); };
 
 function hlavicky(origin: string | null) {
@@ -54,14 +63,16 @@ Deno.serve(async req => {
     sb.from("servisni_intervaly").select("ukon,poradi,interval_km,interval_mesice,zdroj").eq("skupina", sk).order("poradi"),
     sb.from("motory").select("kod,palivo,serizovani_ventilu"),
     sb.from("typy_motoru").select("klic,motor"),
-    sb.from("servisni_ukony").select("ukon,jen_palivo,jen_serizovani_ventilu"),
+    sb.from("servisni_ukony").select("ukon,jen_palivo,jen_serizovani_ventilu,jen_prevodovka"),
     sb.from("servisni_intervaly_motoru").select("motor,ukon,interval_km,interval_mesice,zdroj"),
     // profilové fotky patří k autu – ze všech návštěv, i ze smazaných / zrušených zakázek (Vašek 30.10.2026)
     sb.from("soubory").select("klic,verejne,vytvoreno").eq("vozidlo_id", v.id).eq("druh", "foto").eq("faze", "profil").is("smazano", null).order("vytvoreno")
   ]);
   const motor = urciMotor(v, motory || [], typy || []), mInfo = (motory || []).find(m => m.kod === motor);
   const palivo = mInfo ? mInfo.palivo : /\b\d{3}\s*(D|TD|SD|CD|SDL)\b/i.test(v.model || "") ? "diesel" : "benzin";
-  const platne = new Set((ukony || []).filter(u => (!u.jen_palivo || u.jen_palivo === palivo) && (!u.jen_serizovani_ventilu || mInfo?.serizovani_ventilu)).map(u => u.ukon));
+  // převodovka neurčená → olej automatu ani manuálu se zákazníkovi neukazuje (nic nepravdivého); kdo úkon zaškrtl, tomu se ukáže vždy
+  const prevodovka = druhPrevodovky(v), zaskrtnute = new Set((zak || []).flatMap(z => z.servisni_ukony || []));
+  const platne = new Set((ukony || []).filter(u => zaskrtnute.has(u.ukon) || ((!u.jen_palivo || u.jen_palivo === palivo) && (!u.jen_serizovani_ventilu || mInfo?.serizovani_ventilu) && (!u.jen_prevodovka || u.jen_prevodovka === prevodovka))).map(u => u.ukon));
   const aktualni = (vl || []).find(x => !x.vlastni_do) || null;
   // TP je u auta, ale je na něm jméno majitele → jen současnému majiteli a jen nahraný za jeho vlastnictví
   const tpVidi = (tp || []).filter((f: any) => aktualni && (!aktualni.vlastni_od || String(f.vytvoreno || "").slice(0, 10) >= String(aktualni.vlastni_od)));
@@ -132,6 +143,9 @@ Deno.serve(async req => {
     return { ukon: it.ukon, interval_km: interval, interval_mesice: it.interval_mesice, zdroj: it.zdroj,
       posledni: { datum, km, cislo: z.cislo }, pristi: { datum: pDatum, km: pKm }, stav: po ? "po" : brzy ? "brzy" : "ok" };
   });
+  // nejnaléhavější nahoře: Po termínu → Brzy → V pořádku → Nezaznamenáno (v rámci skupiny pořadí z manuálu) – Vašek 31.10.2026
+  const NALEH: Record<string, number> = { po: 0, brzy: 1, ok: 2, nezname: 3 };
+  servis.sort((a, b) => NALEH[a.stav] - NALEH[b.stav]);
 
   // doklad čekající na podpis zákazníka (jen současný majitel): zakázkový list (poslední verze, rozpracovaná zakázka)
   // nebo faktura / zálohová faktura vystavená s „Podepíše později“ (Vašek 30.10.2026 – i u hotové zakázky)
@@ -165,7 +179,7 @@ Deno.serve(async req => {
     // profilové fotky auta (nahoře vpravo) – jen fotky označené ⭐, nejnovější první; servisní fotky jsou jen u návštěv
     profil: (prof || []).filter((f: any) => f.verejne !== false && url[f.klic]).reverse().map((f: any) => url[f.klic]),
     navstevy, podpis,
-    servis, servis_skupina: sk, motor, palivo,
+    servis, servis_skupina: sk, motor, palivo, prevodovka,
     platnost_odkazu_s: PLATNOST
   });
 });

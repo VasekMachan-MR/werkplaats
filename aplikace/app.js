@@ -436,11 +436,21 @@
     if (vk && typy[vk[1] + "." + vk[2]]) return typy[vk[1] + "." + vk[2]];
     return typy[normModel(v?.model)] || null;
   }
+// druh převodovky z údajů vozidla (Vašek 31.10.2026): kód 722 / „automat…“ = automat, 711–717 / „manuál…“ = manuál, jinak SA kód 420/421
+  function druhPrevodovky(v) {
+    const p = String(v?.prevodovka || "").toLowerCase().replace(/\s/g, "");
+    if (/^722|automat/.test(p)) return "automat";
+    if (/^71[1-7]|manu|ručn|rucn/.test(p)) return "manual";
+    const k = Array.isArray(v?.kody_vybavy) ? v.kody_vybavy : [];
+    if (k.some((x) => /^42[01]$/.test(String(x?.kod || "").trim()) || /automatic transmission|automatikgetriebe/i.test(String(x?.popis || "")))) return "automat";
+    return null;
+  }
   function servisVozu(v, K) {
     const motor = urciMotor(v, K), m = K.motory.find(x => x.kod === motor);
     const palivo = m ? m.palivo : /\b\d{3}\s*(D|TD|SD|CD|SDL)\b/i.test(v?.model || "") ? "diesel" : "benzin";
-    const ukony = K.ukony.filter(u => (!u.jen_palivo || u.jen_palivo === palivo) && (!u.jen_serizovani_ventilu || m?.serizovani_ventilu));
-    return { motor, palivo, ukony };
+    const prevodovka = druhPrevodovky(v);   // neurčená → nabídnou se obě (automat i manuál), ať jde zaškrtnout správná
+    const ukony = K.ukony.filter(u => (!u.jen_palivo || u.jen_palivo === palivo) && (!u.jen_serizovani_ventilu || m?.serizovani_ventilu) && (!u.jen_prevodovka || !prevodovka || u.jen_prevodovka === prevodovka));
+    return { motor, palivo, prevodovka, ukony };
   }
   // skupina intervalů MB podle modelového roku (A 1986+, B 1981–85, C do 1980); jde přepsat u vozidla
   const skupinaServisu = v => v?.servisni_skupina || (!v?.rok ? "A" : v.rok >= 1986 ? "A" : v.rok >= 1981 ? "B" : "C");
@@ -2501,8 +2511,8 @@
     if (!document.getElementById("sekce-servis")) return;
     const v = E.z.vozidla || {}, sk = skupinaServisu(v), zvol = new Set(E.z.servisni_ukony || []), S2 = servisVozu(v, K);
     const ukony = S2.ukony.concat(K.ukony.filter(u => zvol.has(u.ukon) && !S2.ukony.includes(u)));   // už zaškrtnuté nikdy nezmizí
-    el.innerHTML = `<summary><h2>Servisní úkony <span class="mutted" id="souhrn-servisu" style="font-weight:400;font-size:15px">${zvol.size ? `· ${zvol.size} zaškrtnut${zvol.size === 1 ? "ý" : zvol.size < 5 ? "é" : "ých"}` : ""}</span> <span class="napoveda" style="margin-left:auto;font-weight:400">pro E-servisku · ${S2.motor ? `motor ${esc(S2.motor)}` : "motor neurčen"} (${S2.palivo === "diesel" ? "diesel" : "benzín"}) · intervaly ${sk}</span></h2></summary>
-      <p class="napoveda" style="margin:0 0 6px">Zaškrtněte, co se při této návštěvě provedlo. E-serviska podle toho spočítá, co je příště na řadě.${S2.motor ? "" : ` Motor jde určit v <a href="#/vozidlo/${E.z.vozidlo_id || v.id}">údajích vozidla</a>.`}</p>
+    el.innerHTML = `<summary><h2>Servisní úkony <span class="mutted" id="souhrn-servisu" style="font-weight:400;font-size:15px">${zvol.size ? `· ${zvol.size} zaškrtnut${zvol.size === 1 ? "ý" : zvol.size < 5 ? "é" : "ých"}` : ""}</span> <span class="napoveda" style="margin-left:auto;font-weight:400">pro E-servisku · ${S2.motor ? `motor ${esc(S2.motor)}` : "motor neurčen"} (${S2.palivo === "diesel" ? "diesel" : "benzín"}) · ${S2.prevodovka === "automat" ? "automat" : S2.prevodovka === "manual" ? "manuál" : "převodovka neurčena"} · intervaly ${sk}</span></h2></summary>
+      <p class="napoveda" style="margin:0 0 6px">Zaškrtněte, co se při této návštěvě provedlo. E-serviska podle toho spočítá, co je příště na řadě.${S2.motor ? "" : ` Motor jde určit v <a href="#/vozidlo/${E.z.vozidlo_id || v.id}">údajích vozidla</a>.`}${S2.prevodovka ? "" : ` Převodovka není určená – doplňte ji v <a href="#/vozidlo/${E.z.vozidlo_id || v.id}">údajích vozidla</a> (kód 722… = automat, 717… = manuál), pak se nabídne jen správný olej převodovky.`}</p>
       <div class="cipy">${ukony.map(u =>
         `<label class="cip zaskrt"><input type="checkbox" data-servis="${u.ukon}" ${zvol.has(u.ukon) ? "checked" : ""}> ${esc(u.nazev)}</label>`).join("")}</div>
       <div class="napoveda" id="stav-servisu" style="margin-top:8px"></div>`;
