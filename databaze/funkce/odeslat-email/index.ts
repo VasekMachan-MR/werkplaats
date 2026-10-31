@@ -38,7 +38,7 @@ function textEmailu(en: boolean, x: { cislo: string; model: string; spz: string;
 // odkaz do E-servisky jako výrazné tlačítko na vlastním řádku (Vašek 31.10.2026: modrý odkaz v textu byl špatně vidět)
 const naHtml = (t: string, odkaz: string, en: boolean) => `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#092b50">` +
   t.split("\n\n").map(p => p.endsWith("\n" + odkaz)
-    ? `<p style="margin:0 0 8px">${esc(p.slice(0, -odkaz.length - 1))}</p><p style="margin:0 0 18px"><a href="${esc(odkaz)}" style="display:inline-block;background:#092b50;color:#ffffff;font-weight:700;text-decoration:none;padding:12px 22px">${en ? "Open E-serviska" : "Otevřít E-servisku"} &rarr;</a></p>`
+    ? `<p style="margin:0 0 8px">${esc(p.slice(0, -odkaz.length - 1))}</p><p style="margin:0 0 18px"><a href="${esc(odkaz)}" style="display:inline-block;background:#092b50;color:#ffffff;font-size:13px;font-weight:700;text-decoration:none;padding:7px 14px">${en ? "Open E-serviska" : "Otevřít E-servisku"} &rarr;</a></p>`
     : `<p style="margin:0 0 14px">${esc(p).replace(/\n/g, "<br>")}</p>`).join("") + `</div>`;
 
 Deno.serve(async req => {
