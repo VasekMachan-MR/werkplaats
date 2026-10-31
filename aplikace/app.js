@@ -1661,7 +1661,7 @@
     posledniPdf = { zakazka_id, cislo, bytes, nazev: `${cislo}.pdf`, druh, jazyk, prilohy: hotovePrilohy };
     // podepsaný zakázkový list + VOP hned zákazníkovi e-mailem (Vašek 31.10.2026); neúspěch nic nezastaví – jde poslat znovu z detailu
     // „Odeslat k podpisu“: nepodepsaný zakázkový list i cenová nabídka jdou zákazníkovi e-mailem s odkazem k podpisu (Vašek 31.10.2026)
-    const kPodpisu = !podpisZak && !!data?.cekaPodpis && (druh === "zakazkovy_list" || druh === "nabidka");
+    const kPodpisu = !podpisZak && !!data?.cekaPodpis && ["zakazkovy_list", "nabidka", "zalohova"].includes(druh);
     if (((druh === "zakazkovy_list" && podpisZak) || kPodpisu) && doklad?.id) {
       prubeh(kPodpisu ? "Posílám zákazníkovi e-mail k podpisu…" : "Posílám kopii zákazníkovi…");
       try { posledniPdf.email = await db.odeslatEmail(doklad.id); }
@@ -1724,25 +1724,25 @@
   async function hotovo(id) {
     const pdf = posledniPdf && posledniPdf.zakazka_id === id ? posledniPdf : null;
     const nazev = pdf ? NAZEV_DOKLADU.cs[pdf.druh] || "Doklad" : "Doklad";
-    const autoPodpis = !!(pdf?.cekaPodpis && pdf.email && ["zakazkovy_list", "nabidka"].includes(pdf.druh));   // „Odeslat k podpisu“ – e-mail odešel sám
+    const autoPodpis = !!(pdf?.cekaPodpis && pdf.email && ["zakazkovy_list", "nabidka", "zalohova"].includes(pdf.druh));   // „Odeslat k podpisu“ – e-mail odešel sám
     app.innerHTML = `<div class="karta hotovo">
       <div class="fajfka">✓</div>
       <div class="mutted">${esc(nazev)} uložen${["nabidka", "faktura", "zalohova"].includes(pdf?.druh) ? "a" : ""}</div>
       <div class="velke-cislo">${pdf ? esc(pdf.cislo) : ""}</div>
       ${autoPodpis ? (pdf.email.ok
-        ? `<div class="info" style="text-align:left;font-size:17px">📧 E-mail ${pdf.druh === "nabidka" ? "s cenovou nabídkou k odsouhlasení" : "se zakázkovým listem k podpisu"} jsme poslali na <b>${esc(pdf.email.komu)}</b>.<br>Jakmile zákazník ${pdf.druh === "nabidka" ? "nabídku odsouhlasí" : "list podepíše"}, uvidíte to v detailu zakázky v Dokladech. Kdyby e-mail nedorazil, ať zákazník zkontroluje i složku Spam / Hromadné.</div>`
+        ? `<div class="info" style="text-align:left;font-size:17px">📧 E-mail ${pdf.druh === "nabidka" ? "s cenovou nabídkou k odsouhlasení" : pdf.druh === "zalohova" ? "se zálohovou fakturou k podpisu" : "se zakázkovým listem k podpisu"} jsme poslali na <b>${esc(pdf.email.komu)}</b>.<br>Jakmile zákazník ${pdf.druh === "nabidka" ? "nabídku odsouhlasí" : pdf.druh === "zalohova" ? "zálohovou fakturu podepíše" : "list podepíše"}, uvidíte to v detailu zakázky v Dokladech. Kdyby e-mail nedorazil, ať zákazník zkontroluje i složku Spam / Hromadné.</div>`
         : `<div class="info pozor" style="text-align:left">📧 E-mail zákazníkovi se neodeslal: ${esc(pdf.email.chyba || "neznámá chyba")}<br>Pošlete mu odkaz k podpisu ručně.
-            <div class="radek-tlacitek" style="margin-top:10px"><button class="tl tl-hlavni" id="odkaz-podpis">🔗 Poslat odkaz k podpisu</button></div></div>`)
+            <div class="radek-tlacitek" style="margin-top:10px"><button class="tl" id="odkaz-podpis">🔗 Poslat odkaz k podpisu</button></div></div>`)
             : pdf?.cekaPodpis ? `<div class="info pozor" style="text-align:left">Zákazník ještě nepodepsal. Pošlete mu odkaz na E-servisku – ${pdf.druh === "faktura" ? "fakturu" : pdf.druh === "zalohova" ? "zálohovou fakturu" : pdf.druh === "nabidka" ? "cenovou nabídku" : pdf.druh === "predavaci_protokol" ? "předávací protokol" : "zakázkový list"} tam podepíše prstem z domu.
-        <div class="radek-tlacitek" style="margin-top:10px"><button class="tl tl-hlavni" id="odkaz-podpis">🔗 Poslat odkaz k podpisu</button></div></div>`
+        <div class="radek-tlacitek" style="margin-top:10px"><button class="tl" id="odkaz-podpis">🔗 Poslat odkaz k podpisu</button></div></div>`
         : `<p class="mutted">PDF je uložené u zakázky. Zákazníkovi ho můžete hned poslat.</p>`}
       ${!autoPodpis && pdf?.email ? (pdf.email.ok
         ? `<div class="info" style="text-align:left;font-size:17px">📧 ${pdf.jazyk === "en" ? `We sent a copy with our terms to <b>${esc(pdf.email.komu)}</b>. If it does not arrive within a few minutes, please check your spam folder.`
             : `Kopii spolu s obchodními podmínkami jsme poslali na <b>${esc(pdf.email.komu)}</b>. Pokud do pár minut nedorazí, zkontrolujte prosím i složku Spam / Hromadné.`}</div>`
         : `<div class="info pozor" style="text-align:left">📧 E-mail zákazníkovi se neodeslal: ${esc(pdf.email.chyba || "neznámá chyba")}<br>Pošlete ho znovu z detailu zakázky.</div>`) : ""}
       <div class="radek-tlacitek">
-        ${pdf ? `<button class="tl tl-hlavni tl-velke" id="sdilet">Poslat / sdílet PDF</button><button class="tl tl-velke" id="otevrit">Otevřít PDF</button>` : ""}
-        <a class="tl tl-velke" href="#/zakazka/${id}">Detail zakázky</a>
+        <a class="tl tl-hlavni tl-velke" href="#/zakazka/${id}">Detail zakázky</a>
+        ${pdf ? `<button class="tl tl-velke" id="sdilet">Poslat / sdílet PDF</button><button class="tl tl-velke" id="otevrit">Otevřít PDF</button>` : ""}
         <a class="tl tl-velke" href="#/">Přehled</a>
       </div></div>`;
     if (!pdf) return;
@@ -2091,6 +2091,7 @@
     };
     const odsouhlaseni = d => stavPodpisu(d, "Odsouhlaseno", d.data?.cekaPodpis && (d.verze || 1) >= posledniNabidka ? "čeká na odsouhlasení" : "");
     const podpisListu = d => stavPodpisu(d, "Podepsáno", d.data?.cekaPodpis ? "čeká na podpis" : "");
+    const EMAIL_DOKLADY = ["zakazkovy_list", "nabidka", "faktura", "zalohova", "predavaci_protokol"];   // „📧 Poslat znovu“ u všech dokladů (Vašek 31.10.2026)
     app.innerHTML = `
       <div class="hlavicka-prehledu">
         <div><div class="mutted">Zakázka · ${esc(c.jmeno || "")}</div><h1 style="margin:0">#${z.cislo} · ${esc([v.typ, v.model].filter(Boolean).join(" ") || "Mercedes-Benz")}</h1></div>
@@ -2119,16 +2120,15 @@
         ${cekajiciFaktury(doklady).map(d => { const dp = dalkovyPodpis(d), [co, coAk] = NAZEV_CEKAJICIHO[d.druh];
           const kdy = dp ? esc(new Date(dp.podepsano).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })) : "";
           if (dp) return `<div class="info ok-podpis"><span>✍️ Zákazník ${d.druh === "nabidka" ? "odsouhlasil" : "podepsal"} ${coAk} ${esc(d.cislo)} v E-servisce ${kdy}.${dp.vystaveny_doklad_id ? " Podepsané PDF je uložené u dokladu i v E-servisce." : " Podpis je uložený, do PDF se ho vložit nepodařilo."}</span></div>`;
-          if (d.druh === "nabidka") return `<div class="info pozor"><span>⏳ ${co} ${esc(d.cislo)} čeká na odsouhlasení zákazníkem v E-servisce.</span>${!v.vin ? "" : maEmail ? ` <button class="tl tl-male" data-poslat-email="${d.id}" title="Poslat zákazníkovi znovu e-mail s nabídkou k odsouhlasení">📧 Poslat znovu</button>` : ` <button class="tl tl-male" data-odkaz-faktura="${d.id}">🔗 Poslat odkaz k podpisu</button>`}</div>`;
-          return `<div class="info pozor"><span>⏳ ${co} ${esc(d.cislo)} čeká na podpis zákazníka v E-servisce.</span>${v.vin ? ` <button class="tl tl-male" data-odkaz-faktura="${d.id}">🔗 Poslat odkaz k podpisu</button>` : ""}</div>`; }).join("")}
+          return `<div class="info pozor"><span>⏳ ${co} ${esc(d.cislo)} čeká na ${d.druh === "nabidka" ? "odsouhlasení zákazníkem" : "podpis zákazníka"} v E-servisce.</span>${!v.vin ? "" : maEmail ? ` <button class="tl tl-male" data-poslat-email="${d.id}" title="Poslat zákazníkovi znovu e-mail s odkazem k podpisu">📧 Poslat znovu</button>` : ` <button class="tl tl-male" data-odkaz-faktura="${d.id}">🔗 Poslat odkaz k podpisu</button>`}</div>`; }).join("")}
         <div class="doklady">${doklady.map(d => `
           <div class="doklad"><span><b>${esc(d.cislo)}</b> · ${DRUHY[d.druh] || d.druh}${d.celkem != null ? ` · <b>${kc(d.celkem)}</b>` : ""}<br>
-            <small class="mutted">vystaveno ${datumCz(d.vystaveno)}${d.splatnost ? ` · ${d.druh === "nabidka" ? "platnost" : "splatnost"} ${datumCz(d.splatnost)}` : ""}${["faktura", "zalohova", "opravny"].includes(d.druh) ? (d.zaplaceno ? ` · <b style="color:var(--zelena)">${d.druh === "opravny" && Number(d.celkem) < 0 ? "vráceno" : "zaplaceno"} ${datumCz(d.zaplaceno)}</b>` : Number(d.celkem) < 0 ? " · nevráceno" : " · nezaplaceno") : ""}${d.druh === "nabidka" ? odsouhlaseni(d) : d.druh === "zakazkovy_list" ? podpisListu(d) : ""}${["zakazkovy_list", "nabidka"].includes(d.druh) ? stavEmailu(d) : ""}</small></span>
+            <small class="mutted">vystaveno ${datumCz(d.vystaveno)}${d.splatnost ? ` · ${d.druh === "nabidka" ? "platnost" : "splatnost"} ${datumCz(d.splatnost)}` : ""}${["faktura", "zalohova", "opravny"].includes(d.druh) ? (d.zaplaceno ? ` · <b style="color:var(--zelena)">${d.druh === "opravny" && Number(d.celkem) < 0 ? "vráceno" : "zaplaceno"} ${datumCz(d.zaplaceno)}</b>` : Number(d.celkem) < 0 ? " · nevráceno" : " · nezaplaceno") : ""}${d.druh === "nabidka" ? odsouhlaseni(d) : EMAIL_DOKLADY.includes(d.druh) ? podpisListu(d) : ""}${EMAIL_DOKLADY.includes(d.druh) ? stavEmailu(d) : ""}</small></span>
             <span class="radek-tlacitek">
               ${["faktura", "zalohova", "opravny"].includes(d.druh) && jeMajitel() ? (d.zaplaceno ? `<button class="tl tl-male" data-nezaplaceno="${d.id}" style="color:var(--zelena);border-color:var(--zelena)" title="Uhrazeno ${datumCz(d.zaplaceno)} – omylem? Kliknutím úhradu zrušíte">✓ ${d.druh === "opravny" && Number(d.celkem) < 0 ? "Vráceno" : "Zaplaceno"}</button>`
                 : `<button class="tl tl-male" data-zaplaceno="${d.id}" title="Až přijde platba, klikněte – doklad se označí jako zaplacený">${d.druh === "opravny" && Number(d.celkem) < 0 ? "Nevráceno" : "Neuhrazeno"}</button>`) : ""}
               ${d.soubory?.klic ? `<button class="tl tl-male" data-pdf="${esc(d.soubory.klic)}">Otevřít PDF</button>` : ""}
-              ${d.druh === "zakazkovy_list" && (!d.data?.cekaPodpis || dalkovyPodpis(d)) ? `<button class="tl tl-male" data-poslat-email="${d.id}" title="Poslat zákazníkovi podepsaný zakázkový list a obchodní podmínky e-mailem">📧 ${(d.emaily || []).length ? "Poslat znovu" : "Poslat e-mailem"}</button>` : ""}
+              ${maEmail && EMAIL_DOKLADY.includes(d.druh) && !(d.data?.cekaPodpis && !podpisZakaznika(d)) ? `<button class="tl tl-male" data-poslat-email="${d.id}" title="Poslat zákazníkovi ${esc((DRUHY[d.druh] || "doklad").toLowerCase())} e-mailem">📧 ${(d.emaily || []).length ? "Poslat znovu" : "Poslat e-mailem"}</button>` : ""}
               ${(z.soubory || []).filter(f => f.doklad_id === d.id && f.klic !== d.soubory?.klic && f.druh === "pdf").map(f => `<button class="tl tl-male" data-pdf="${esc(f.klic)}">${/parts list/.test(f.nazev || "") ? "Parts list" : "Příloha"}</button>`).join("")}
               ${lzeSmazatDoklad(d, doklady) ? `<button class="tl tl-male tl-kos" data-smazat-doklad="${d.id}" title="Smazat doklad ${esc(d.cislo)}" aria-label="Smazat doklad ${esc(d.cislo)}">🗑</button>` : ""}</span></div>`).join("")
           || ((z.soubory || []).some(f => f.druh === "archiv" && !f.smazano)
@@ -2229,7 +2229,9 @@
       const d = (z.doklady || []).find(x => x.id === b.dataset.poslatEmail); if (!d || b.dataset.bezi) return;
       const komu = String(z.zakaznici?.email || "").trim();
       if (!komu) return hlaska("Zákazník nemá e-mail – doplňte ho u zákazníka.", true);
-      const coPoslat = d.druh === "nabidka" ? `cenovou nabídku ${d.cislo} k odsouhlasení` : d.data?.cekaPodpis && !dalkovyPodpis(d) ? `zakázkový list ${d.cislo} k podpisu a obchodní podmínky` : `zakázkový list ${d.cislo} a obchodní podmínky`;
+      const ceka = d.data?.cekaPodpis && !dalkovyPodpis(d) && !(d.podpisy || []).some(x => x.role === "zakaznik");
+      const coPoslat = d.druh === "zakazkovy_list" ? `zakázkový list ${d.cislo}${ceka ? " k podpisu" : ""} a obchodní podmínky`
+        : `${(NAZEV_CEKAJICIHO[d.druh] || [, "doklad"])[1]} ${d.cislo}${ceka ? (d.druh === "nabidka" ? " k odsouhlasení" : " k podpisu") : ""}`;
       if (!confirm(`Poslat ${coPoslat} na ${komu}?`)) return;
       b.dataset.bezi = "1"; b.disabled = true;
       try {
@@ -3279,7 +3281,7 @@
     }
     // výchozí hodnoty formuláře
     const f = druh === "nabidka" ? { vystaveno: dnes(), platnost: plusDni(dnes(), 7) }
-      : druh === "faktura" ? { vystaveno: dnes(), splatnost: plusDni(dnes(), 14), odecist: Object.fromEntries(zalohy.map(d => [d.cislo, !!d.zaplaceno])) }   // předvybrat jen zaplacené zálohy
+      : druh === "faktura" ? { vystaveno: dnes(), splatnost: plusDni(dnes(), 7), odecist: Object.fromEntries(zalohy.map(d => [d.cislo, !!d.zaplaceno])) }   // předvybrat jen zaplacené zálohy
       : druh === "opravny" ? { vystaveno: dnes(), splatnost: plusDni(dnes(), 14), opravuje: opravitelne[0].cislo, duvod: "", radky: [{ popis: "", castka: "" }] }
       : druh === "zalohova" ? { vystaveno: dnes(), splatnost: plusDni(dnes(), 7), castka: s.material || "",
           popis: en ? `Advance payment for parts${nabidkaCislo ? ` according to quotation ${nabidkaCislo}` : ""}` : `Záloha na materiál${nabidkaCislo ? ` dle cenové nabídky ${nabidkaCislo}` : ""}` }
@@ -3357,7 +3359,7 @@
       <div class="akce-dole"><div class="vnitrek">
         <a class="tl" href="#/zakazka/${id}">← Zpět</a>
         <span class="co-chybi" id="co-chybi" hidden></span>
-        ${lzePozdeji ? `<button type="button" class="tl tl-velke" id="pozdeji" disabled title="${druh === "nabidka" ? "Nabídka se vystaví bez podpisu zákazníka, zákazníkovi hned odejde e-mail a nabídku odsouhlasí podpisem v E-servisce" : druh === "predavaci_protokol" ? "Zákazník spěchá nebo auto předává někdo jiný: protokol se vystaví bez jeho podpisu a zákazník ho podepíše z domu v E-servisce" : "Zákazník spěchá nebo auto předává někdo jiný: faktura se vystaví bez jeho podpisu a zákazník ji podepíše z domu v E-servisce"}">${druh === "nabidka" ? `📧 <span class="jen-siroke">Odeslat k podpisu</span><span class="jen-uzke">Odeslat</span>` : `✍️ <span class="jen-siroke">Podepíše později</span><span class="jen-uzke">Později</span>`}</button>` : ""}
+        ${lzePozdeji ? `<button type="button" class="tl tl-velke" id="pozdeji" disabled title="${druh === "nabidka" ? "Nabídka se vystaví bez podpisu zákazníka, zákazníkovi hned odejde e-mail a nabídku odsouhlasí podpisem v E-servisce" : druh === "predavaci_protokol" ? "Zákazník spěchá nebo auto předává někdo jiný: protokol se vystaví bez jeho podpisu a zákazník ho podepíše z domu v E-servisce" : druh === "zalohova" ? "Zálohová faktura se vystaví bez podpisu zákazníka, zákazníkovi hned odejde e-mail a podepíše ji v E-servisce" : "Zákazník spěchá nebo auto předává někdo jiný: faktura se vystaví bez jeho podpisu a zákazník ji podepíše z domu v E-servisce"}">${druh === "nabidka" || druh === "zalohova" ? `📧 <span class="jen-siroke">Odeslat k podpisu</span><span class="jen-uzke">Odeslat</span>` : `✍️ <span class="jen-siroke">Podepíše později</span><span class="jen-uzke">Později</span>`}</button>` : ""}
         <button type="button" class="tl tl-hlavni tl-velke" id="vystavit" disabled>Vystavit ${esc(cislo)}</button>
       </div></div>`;
 
@@ -3492,7 +3494,10 @@
       if (pozdeji && !pad.prazdny()) return hlaska("Zákazník už se podepsal – použijte „Vystavit“ (nebo podpis smažte).", true);
       const kUhrade = druh === "zalohova" ? cisloZ(f.castka) : druh === "opravny" ? celkemOpravy() : s.celkem + odecty().reduce((a, o) => a + o.castka, 0);
       if (praceNedokoncene && !confirm(`⚠️ ${praceNedokoncene}\n\nOpravdu vystavit fakturu, i když nejsou všechny práce odkliknuté?`)) return;
-      if ((druh === "faktura" || druh === "zalohova") && !confirm(`Vystavit ${druh === "zalohova" ? "zálohovou fakturu" : "fakturu"} ${cislo} na ${kc(kUhrade)}${pozdeji ? " bez podpisu zákazníka" : ""}? Vydaná faktura se už nedá změnit (oprava jen opravným dokladem).${pozdeji ? "\n\nZákazník ji podepíše z domu v E-servisce (pošlete mu odkaz). Podpis se pak do faktury doplní sám." : ""}`)) return;
+      const emZak = String(z.zakaznici?.email || "").trim(), maEmailZak = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emZak);
+      const poZaloze = druh === "zalohova" && pozdeji ? (maEmailZak ? `\n\nNa ${emZak} hned odejde e-mail se zálohovou fakturou a tlačítkem k podpisu v E-servisce. Po podpisu se u faktury v Dokladech objeví ✓.`
+        : "\n\nZákazník nemá e-mail – odkaz k podpisu mu pošlete jinak (WhatsApp, zpráva).") : pozdeji ? "\n\nZákazník ji podepíše z domu v E-servisce (pošlete mu odkaz). Podpis se pak do faktury doplní sám." : "";
+      if ((druh === "faktura" || druh === "zalohova") && !confirm(`${druh === "zalohova" && pozdeji ? "Odeslat zákazníkovi k podpisu zálohovou fakturu" : `Vystavit ${druh === "zalohova" ? "zálohovou fakturu" : "fakturu"}`} ${cislo} na ${kc(kUhrade)}${pozdeji && druh !== "zalohova" ? " bez podpisu zákazníka" : ""}? Vydaná faktura se už nedá změnit (oprava jen opravným dokladem).${poZaloze}`)) return;
       if (druh === "predavaci_protokol" && pozdeji && !confirm(`Vystavit předávací protokol ${cislo} bez podpisu zákazníka?\n\nZakázka se přepne na Předáno. Zákazník protokol podepíše z domu v E-servisce (pošlete mu odkaz) a podpis se do protokolu doplní sám.`)) return;
       if (druh === "nabidka" && pozdeji) {
         const em = String(z.zakaznici?.email || "").trim(), maEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em);

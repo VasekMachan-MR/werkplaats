@@ -66,7 +66,7 @@ window.__WERK_DB__ = (() => {
     async smazatKoncept() { await cekej(); sessionStorage.removeItem("mock-koncept"); },
     async odeslatEmail(doklad_id) { await cekej(); const d = T.doklady.find(x => x.id === doklad_id); const z = d && T.zakazky.find(x => x.id === d.zakazka_id); const c = z && T.zakaznici.find(x => x.id === z.zakaznik_id);
       const podepsano = T.podpisy.some(x => x.doklad_id === doklad_id && x.role === "zakaznik") || T.dalkove_podpisy.some(x => x.doklad_id === doklad_id);
-      const ucel = d?.druh === "nabidka" ? "nabidka_podpis" : podepsano ? "zakazkovy_list" : "zakazkovy_list_podpis";
+      const ucel = d?.druh + (!podepsano && d?.data?.cekaPodpis ? "_podpis" : "");
       (window.__ULOZENO__.emaily ||= []).push({ doklad_id, komu: c?.email || null, ucel, stav: c?.email ? "odeslano" : "chyba", zmeneno: new Date().toISOString() });
       return c?.email ? { ok: true, komu: c.email, stav: "odeslano" } : { ok: false, stav: "chyba", chyba: "Zákazník nemá platný e-mail." }; },
     odeslatZakazkovyList(doklad_id) { return this.odeslatEmail(doklad_id); },

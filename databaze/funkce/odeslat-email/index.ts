@@ -1,7 +1,8 @@
 // Automatické e-maily zákazníkovi (Vašek 31.10.2026):
 //  • podepsaný zakázkový list (po podpisu na iPadu nebo v E-servisce) – PDF + VOP, tlačítko „Otevřít E-servisku“
 //  • zakázkový list „Odeslat k podpisu“ – nepodepsané PDF + VOP, tlačítko k podpisu v E-servisce
-//  • cenová nabídka „Odeslat k podpisu“ – PDF nabídky (+ parts list), tlačítko „Odsouhlasení cenové nabídky“ (bez VOP a bez „Otevřít E-servisku“ – zákazník ji už má)
+//  • cenová nabídka / zálohová faktura „Odeslat k podpisu“ – PDF (+ parts list), tlačítko k podpisu (bez VOP a bez „Otevřít E-servisku“ – zákazník ji už má)
+//  • „Poslat znovu“ z detailu zakázky u nabídky, faktury, zálohové faktury a předávacího protokolu – čeká-li na podpis, s tlačítkem k podpisu, jinak kopie dokladu
 // Odesílá přes Resend z info@mercedesrest.cz, odpověď a skrytá kopie na info@mercedesrest.cz. Záznam o odeslání v tabulce emaily (ucel = druh e-mailu).
 // Volá: aplikace (přihlášený člen dílny) po vystavení dokladu, funkce eserviska po podpisu z domu (tajný klíč service role).
 // POST { doklad_id } nebo { cislo }  →  { ok, komu, stav, chyba? }
@@ -26,18 +27,26 @@ function hlavicky(origin: string | null) {
 const b64 = (u: Uint8Array) => { let s = ""; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
 const esc = (t: string) => t.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
 
-type Druh = "zakazkovy_list" | "zakazkovy_list_podpis" | "nabidka_podpis";
-type X = { cislo: string; zakazka: string; model: string; spz: string; odkaz: string; jmeno: string };
+// Druh e-mailu = druh dokladu, „_podpis“ = doklad čeká na podpis zákazníka v E-servisce (tlačítko k podpisu), jinak kopie dokladu
+type Druh = "zakazkovy_list" | "zakazkovy_list_podpis" | "nabidka" | "nabidka_podpis" | "faktura" | "faktura_podpis" | "zalohova" | "zalohova_podpis" | "predavaci_protokol" | "predavaci_protokol_podpis";
+const DOKLADY = ["zakazkovy_list", "nabidka", "faktura", "zalohova", "predavaci_protokol"];
+type X = { cislo: string; zakazka: string; model: string; spz: string; odkaz: string; jmeno: string; platba: string; podepsano: boolean };
+const castka = (n: number, en: boolean) => en ? "CZK " + Math.round(n).toLocaleString("en-GB") : Math.round(n).toLocaleString("cs-CZ").replace(/\s/g, " ") + " Kč";
+const datum = (d: string, en: boolean) => { const m = String(d || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return !m ? "" : en ? `${+m[3]}/${+m[2]}/${m[1]}` : `${+m[3]}. ${+m[2]}. ${m[1]}`; };
 // texty e-mailů – CZ firemní „my“, bez oslovení jménem (Vašek 31.10.2026); EN jednoduchou angličtinou
 function textEmailu(druh: Druh, en: boolean, x: X): { predmet: string; text: string; tlacitko: string } {
   const auto = x.spz ? `${x.model} (${x.spz})` : x.model;
   const konec = (en ? "Best regards,\n\n" : "S pozdravem,\n\n") + `${x.jmeno}\n${PODPIS_FIRMY}`;
+  const dotaz = en ? "If you have any questions, we are happy to help." : "Kdybyste měli jakýkoli dotaz, jsme k dispozici.";
+  const pred = (cz: string, eng: string) => `${en ? eng : cz} ${x.cislo}${druh.endsWith("_podpis") ? (en ? " to sign" : " k podpisu") : ""} – ${x.model} – Mercedes Restorations`;
+  const podepsat = (co: string, coEn: string) => en ? `Please check the ${coEn} and sign it online. You can sign it with your finger or mouse after clicking the button below:\n${x.odkaz}`
+    : `Prosíme o kontrolu a podpis. ${co} můžete podepsat online prstem nebo myší po kliknutí na tlačítko níže:\n${x.odkaz}`;
   if (druh === "zakazkovy_list_podpis") return en ? {
-    predmet: `Work order ${x.cislo} to sign – ${x.model} – Mercedes Restorations`, tlacitko: "Sign the work order",
-    text: `Hello,\n\nthank you for your trust. Attached you will find work order no. ${x.cislo} for your ${auto} and our General Terms and Conditions.\n\nPlease check the work order and sign it online. You can sign it with your finger or mouse after clicking the button below:\n${x.odkaz}\n\nAfter you sign, we will send you the signed version by e-mail. In the E-serviska of your car you can then follow the work, see photos and the service history.\n\nIf you have any questions, we are happy to help.\n\n${konec}`
+    predmet: pred("", "Work order"), tlacitko: "Sign the work order",
+    text: `Hello,\n\nthank you for your trust. Attached you will find work order no. ${x.cislo} for your ${auto} and our General Terms and Conditions.\n\nPlease check the work order and sign it online. You can sign it with your finger or mouse after clicking the button below:\n${x.odkaz}\n\nAfter you sign, we will send you the signed version by e-mail. In the E-serviska of your car you can then follow the work, see photos and the service history.\n\n${dotaz}\n\n${konec}`
   } : {
-    predmet: `Zakázkový list ${x.cislo} k podpisu – ${x.model} – Mercedes Restorations`, tlacitko: "Podepsat zakázkový list",
-    text: `Dobrý den,\n\nděkujeme za důvěru. V příloze zasíláme zakázkový list č. ${x.cislo} k vašemu vozu ${auto} a Všeobecné obchodní podmínky.\n\nProsíme o kontrolu a podpis zakázkového listu. Podepsat ho můžete online prstem nebo myší po kliknutí na tlačítko níže:\n${x.odkaz}\n\nPo podpisu vám podepsanou verzi zašleme e-mailem. V E-servisce vašeho vozu pak najdete průběh prací, fotografie a historii servisu.\n\nKdybyste měli jakýkoli dotaz, jsme k dispozici.\n\n${konec}`
+    predmet: pred("Zakázkový list", ""), tlacitko: "Podepsat zakázkový list",
+    text: `Dobrý den,\n\nděkujeme za důvěru. V příloze zasíláme zakázkový list č. ${x.cislo} k vašemu vozu ${auto} a Všeobecné obchodní podmínky.\n\nProsíme o kontrolu a podpis zakázkového listu. Podepsat ho můžete online prstem nebo myší po kliknutí na tlačítko níže:\n${x.odkaz}\n\nPo podpisu vám podepsanou verzi zašleme e-mailem. V E-servisce vašeho vozu pak najdete průběh prací, fotografie a historii servisu.\n\n${dotaz}\n\n${konec}`
   };
   if (druh === "nabidka_podpis") return en ? {
     predmet: `Quotation ${x.cislo} – ${x.model} – Mercedes Restorations`, tlacitko: "Approve the quotation",
@@ -46,6 +55,34 @@ function textEmailu(druh: Druh, en: boolean, x: X): { predmet: string; text: str
     predmet: `Cenová nabídka ${x.cislo} – ${x.model} – Mercedes Restorations`, tlacitko: "Odsouhlasení cenové nabídky",
     text: `Dobrý den,\n\nv příloze zasíláme cenovou nabídku č. ${x.cislo} k vašemu vozu ${auto} (zakázka č. ${x.zakazka}).\n\nProsíme o kontrolu. Pokud s nabídkou souhlasíte, odsouhlaste ji prosím online podpisem po kliknutí na tlačítko níže:\n${x.odkaz}\n\nPokud máte k nabídce dotaz nebo byste chtěli něco upravit, odpovězte prosím na tento e-mail nebo nám zavolejte.\n\n${konec}`
   };
+  if (druh === "nabidka") return en ? {
+    predmet: pred("", "Quotation"), tlacitko: "",
+    text: `Hello,\n\nattached you will find quotation no. ${x.cislo} for your ${auto} (order no. ${x.zakazka}).${x.podepsano ? " Thank you for approving it." : ""}\n\nIf you have a question about the quotation, just reply to this e-mail or call us.\n\n${konec}`
+  } : {
+    predmet: pred("Cenová nabídka", ""), tlacitko: "",
+    text: `Dobrý den,\n\nv příloze zasíláme cenovou nabídku č. ${x.cislo} k vašemu vozu ${auto} (zakázka č. ${x.zakazka}).${x.podepsano ? " Děkujeme za její odsouhlasení." : ""}\n\nPokud máte k nabídce dotaz, odpovězte prosím na tento e-mail nebo nám zavolejte.\n\n${konec}`
+  };
+  if (druh.startsWith("faktura") || druh.startsWith("zalohova")) {
+    const zal = druh.startsWith("zalohova"), k = druh.endsWith("_podpis");
+    const co = zal ? "zálohovou fakturu" : "fakturu", coEn = zal ? "advance invoice" : "invoice";
+    return en ? {
+      predmet: pred("", zal ? "Advance invoice" : "Invoice"), tlacitko: k ? `Sign the ${coEn}` : "",
+      text: `Hello,\n\nattached you will find ${coEn} no. ${x.cislo} for your ${auto} (order no. ${x.zakazka}).${x.platba ? `\n\n${x.platba}` : ""}${k ? `\n\n${podepsat("", coEn)}` : ""}\n\n${dotaz}\n\n${konec}`
+    } : {
+      predmet: pred(zal ? "Zálohová faktura" : "Faktura", ""), tlacitko: k ? `Podepsat ${co}` : "",
+      text: `Dobrý den,\n\nv příloze zasíláme ${co} č. ${x.cislo} k vašemu vozu ${auto} (zakázka č. ${x.zakazka}).${x.platba ? `\n\n${x.platba}` : ""}${k ? `\n\n${podepsat(zal ? "Zálohovou fakturu" : "Fakturu", coEn)}` : ""}\n\n${dotaz}\n\n${konec}`
+    };
+  }
+  if (druh.startsWith("predavaci_protokol")) {
+    const k = druh.endsWith("_podpis");
+    return en ? {
+      predmet: pred("", "Handover protocol"), tlacitko: k ? "Sign the handover protocol" : "",
+      text: `Hello,\n\nthank you for collecting your ${auto}. Attached you will find handover protocol no. ${x.cislo} (order no. ${x.zakazka}).${k ? `\n\nPlease check the handover protocol and sign it online to confirm that you have received the car. You can sign it with your finger or mouse after clicking the button below:\n${x.odkaz}` : ""}\n\n${dotaz}\n\n${konec}`
+    } : {
+      predmet: pred("Předávací protokol", ""), tlacitko: k ? "Podepsat předávací protokol" : "",
+      text: `Dobrý den,\n\nděkujeme za převzetí vašeho vozu ${auto}. V příloze zasíláme předávací protokol č. ${x.cislo} (zakázka č. ${x.zakazka}).${k ? `\n\nProsíme o kontrolu a podpis, podpisem potvrdíte převzetí vozu. Předávací protokol můžete podepsat online prstem nebo myší po kliknutí na tlačítko níže:\n${x.odkaz}` : ""}\n\n${dotaz}\n\n${konec}`
+    };
+  }
   // podepsaný zakázkový list – text schválený Vaškem 31.10.2026
   return en ? {
     predmet: `Work order ${x.cislo} – ${x.model} – Mercedes Restorations`, tlacitko: "Open E-serviska",
@@ -57,10 +94,11 @@ function textEmailu(druh: Druh, en: boolean, x: X): { predmet: string; text: str
 }
 // odkaz jako tmavé tlačítko na vlastním řádku (Vašek 31.10.2026: modrý odkaz v textu byl špatně vidět)
 const naHtml = (t: string, odkaz: string, tlacitko: string) => `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#092b50">` +
-  t.split("\n\n").map(p => p.endsWith("\n" + odkaz)
+  t.split("\n\n").map(p => tlacitko && p.endsWith("\n" + odkaz)
     ? `<p style="margin:0 0 8px">${esc(p.slice(0, -odkaz.length - 1))}</p><p style="margin:0 0 18px"><a href="${esc(odkaz)}" style="display:inline-block;background:#092b50;color:#ffffff;font-size:13px;font-weight:700;text-decoration:none;padding:7px 14px">${esc(tlacitko)} &rarr;</a></p>`
     : `<p style="margin:0 0 14px">${esc(p).replace(/\n/g, "<br>")}</p>`).join("") + `</div>`;
-const NAZEV_PDF: Record<Druh, [string, string]> = { zakazkovy_list: ["Zakazkovy_list", "Work_order"], zakazkovy_list_podpis: ["Zakazkovy_list", "Work_order"], nabidka_podpis: ["Cenova_nabidka", "Quotation"] };
+const NAZEV_PDF: Record<string, [string, string]> = { zakazkovy_list: ["Zakazkovy_list", "Work_order"], nabidka: ["Cenova_nabidka", "Quotation"], faktura: ["Faktura", "Invoice"],
+  zalohova: ["Zalohova_faktura", "Advance_invoice"], predavaci_protokol: ["Predavaci_protokol", "Handover_protocol"] };
 
 Deno.serve(async req => {
   const origin = req.headers.get("origin");
@@ -80,16 +118,15 @@ Deno.serve(async req => {
   }
 
   let b: any; try { b = await req.json(); } catch { return odp(400, { chyba: "spatny-pozadavek" }); }
-  let q = sb.from("doklady").select("id,cislo,druh,jazyk,zamceno,zakazka_id,data,pdf_soubor_id,soubory!doklady_pdf_soubor_id_fkey(klic),podpisy(role,jmeno),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id),zakazky!inner(id,cislo,zakaznici(email,jazyk),vozidla(model,typ,spz,vin,eserviska_kod))");
+  let q = sb.from("doklady").select("id,cislo,druh,jazyk,zamceno,zakazka_id,data,pdf_soubor_id,celkem,splatnost,zaplaceno,variabilni_symbol,soubory!doklady_pdf_soubor_id_fkey(klic),podpisy(role,jmeno),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id),zakazky!inner(id,cislo,zakaznici(email,jazyk),vozidla(model,typ,spz,vin,eserviska_kod))");
   q = b?.doklad_id ? q.eq("id", String(b.doklad_id)) : q.eq("cislo", String(b?.cislo || ""));
   const { data: d } = await q.maybeSingle();
-  if (!d || !["zakazkovy_list", "nabidka"].includes(d.druh) || !d.zamceno) return odp(404, { chyba: "nenalezeno" });
+  if (!d || !DOKLADY.includes(d.druh) || !d.zamceno) return odp(404, { chyba: "nenalezeno" });
   const podepsano = (d.podpisy || []).some((x: any) => x.role === "zakaznik") || (Array.isArray(d.dalkove_podpisy) ? d.dalkove_podpisy.length > 0 : !!d.dalkove_podpisy);
-  // co poslat: podepsaný list / list k podpisu / nabídka k odsouhlasení
-  let druh: Druh;
-  if (d.druh === "zakazkovy_list") druh = podepsano ? "zakazkovy_list" : d.data?.cekaPodpis ? "zakazkovy_list_podpis" : (null as any);
-  else druh = !podepsano && d.data?.cekaPodpis ? "nabidka_podpis" : (null as any);
-  if (!druh) return odp(409, { chyba: podepsano ? "uz-podepsano" : "nepodepsano" });
+  // čeká na podpis zákazníka → e-mail s tlačítkem k podpisu; jinak kopie dokladu (zakázkový list jen podepsaný)
+  const ceka = !podepsano && !!d.data?.cekaPodpis;
+  if (d.druh === "zakazkovy_list" && !podepsano && !ceka) return odp(409, { chyba: "nepodepsano" });
+  const druh = (ceka ? d.druh + "_podpis" : d.druh) as Druh;
 
   const komu = String(d.zakazky?.zakaznici?.email || "").trim();
   const zapis = async (o: Record<string, unknown>) => {
@@ -104,7 +141,11 @@ Deno.serve(async req => {
   const odkaz = v.eserviska_kod ? "https://www.mercedesrestorations.cz/e-serviska?k=" + encodeURIComponent(v.eserviska_kod)
     : "https://www.mercedesrestorations.cz/e-serviska?vin=" + encodeURIComponent(String(v.vin || "").toUpperCase().replace(/[^A-Z0-9]/g, ""));
   const jmeno = (d.podpisy || []).find((x: any) => x.role === "vyhotovil")?.jmeno || "Václav Macháň";
-  const { predmet, text, tlacitko } = textEmailu(druh, en, { cislo: d.cislo, zakazka: String(d.zakazky?.cislo || ""), model, spz: v.spz || "", odkaz, jmeno: en ? jmeno.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : jmeno });
+  const fa = d.druh === "faktura" || d.druh === "zalohova";
+  const platba = !fa || d.celkem == null ? "" : d.zaplaceno ? (en ? "This invoice has already been paid. Thank you." : "Faktura je již uhrazena, děkujeme.")
+    : en ? `Amount to pay: ${castka(Number(d.celkem), true)}${d.splatnost ? `, due date ${datum(d.splatnost, true)}` : ""}${d.variabilni_symbol ? `, payment reference (variable symbol) ${d.variabilni_symbol}` : ""}. You will find the bank details on the invoice.`
+    : `Částka k úhradě: ${castka(Number(d.celkem), false)}${d.splatnost ? `, splatnost ${datum(d.splatnost, false)}` : ""}${d.variabilni_symbol ? `, variabilní symbol ${d.variabilni_symbol}` : ""}. Platební údaje najdete na faktuře.`;
+  const { predmet, text, tlacitko } = textEmailu(druh, en, { platba, podepsano, cislo: d.cislo, zakazka: String(d.zakazky?.cislo || ""), model, spz: v.spz || "", odkaz, jmeno: en ? jmeno.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : jmeno });
 
   const klic = Deno.env.get("RESEND_API_KEY");
   if (!klic) { await zapis({ predmet, stav: "chyba", chyba: "Odesílání e-mailů ještě není nastavené (chybí RESEND_API_KEY)." }); return odp(200, { ok: false, komu, stav: "chyba", chyba: "Odesílání e-mailů ještě není nastavené." }); }
@@ -115,8 +156,8 @@ Deno.serve(async req => {
     if (!d.soubory?.klic) throw new Error("PDF dokladu chybí");
     const { data: pdf, error } = await sb.storage.from("soubory").download(d.soubory.klic);
     if (error || !pdf) throw new Error("PDF dokladu se nepodařilo načíst");
-    pril.push({ filename: `${NAZEV_PDF[druh][en ? 1 : 0]}_${d.cislo}.pdf`, content: b64(new Uint8Array(await pdf.arrayBuffer())) });
-    if (druh === "nabidka_podpis") {                       // parts list k nabídce (když je)
+    pril.push({ filename: `${NAZEV_PDF[d.druh][en ? 1 : 0]}_${d.cislo}.pdf`, content: b64(new Uint8Array(await pdf.arrayBuffer())) });
+    if (d.druh !== "zakazkovy_list") {                     // parts list k nabídce / faktuře (když je)
       const { data: dalsi } = await sb.from("soubory").select("klic,nazev").eq("doklad_id", d.id).eq("druh", "pdf").is("smazano", null).neq("klic", d.soubory.klic);
       for (const f of dalsi || []) {
         const { data: x } = await sb.storage.from("soubory").download(f.klic);

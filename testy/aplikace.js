@@ -258,28 +258,34 @@ const server = http.createServer((q, r) => {
   await p.click("text=💰 Zálohová faktura");
   await p.waitForSelector("#vystavit:not([disabled])");
   kontrola(await p.inputValue('[data-d="castka"]') === "13325" && /dle cenové nabídky 7377-2/.test(await p.inputValue('[data-d="popis"]')), "zálohová: předvyplněno 13 325 Kč a text „Záloha na materiál dle cenové nabídky 7377-2“");
-  // zákazník spěchá → „Podepíše později“: záloha se vystaví bez jeho podpisu a podepíše ji v E-servisce
-  kontrola(await p.isEnabled("#pozdeji"), "zálohová: tlačítko „✍️ Podepíše později“");
+  // zálohová faktura „📧 Odeslat k podpisu“ – stejně jako nabídka: hned e-mail s odkazem k podpisu v E-servisce (Vašek 31.10.2026)
+  kontrola(await p.isEnabled("#pozdeji") && /Odeslat k podpisu/.test(await p.textContent("#pozdeji")), "zálohová: tlačítko „📧 Odeslat k podpisu“");
   await p.click("#pozdeji");
   await p.waitForSelector(".velke-cislo >> text=7377-5");
-  kontrola(/zálohovou fakturu tam podepíše/.test(await p.textContent(".hotovo")) && await p.isVisible("#odkaz-podpis"), "po vystavení: záloha čeká na podpis + „Poslat odkaz k podpisu“");
-  kontrola(await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === "7377-5"); return d.data.cekaPodpis === true && !T.podpisy.some(x => x.doklad_id === d.id && x.role === "zakaznik"); }),
-    "záloha uložená s „čeká na podpis“ a bez podpisu zákazníka");
+  kontrola(/se zálohovou fakturou k podpisu jsme poslali na/.test(await p.textContent(".hotovo")) && await p.locator("#odkaz-podpis").count() === 0, "po vystavení: e-mail se zálohovou fakturou k podpisu odešel sám");
+  kontrola(await p.evaluate(() => document.querySelector(".hotovo .tl-hlavni")?.textContent.trim() === "Detail zakázky" && document.querySelectorAll(".hotovo .tl-hlavni").length === 1), "potvrzovací stránka: modré je jen „Detail zakázky“");
+  kontrola(await p.evaluate(() => { const T = window.__ULOZENO__, d = T.tabulky.doklady.find(x => x.cislo === "7377-5"); return d.data.cekaPodpis === true && !T.tabulky.podpisy.some(x => x.doklad_id === d.id && x.role === "zakaznik") && (T.emaily || []).filter(e => e.doklad_id === d.id && e.ucel === "zalohova_podpis").length === 1; }),
+    "záloha uložená s „čeká na podpis“, bez podpisu zákazníka, e-mail k podpisu právě jednou");
   await p.click("text=Detail zakázky");
   await p.waitForSelector("[data-zaplaceno]");
-  kontrola(/Zálohová faktura 7377-5 čeká na podpis zákazníka/.test(await p.textContent("body")), "Doklady: „Zálohová faktura 7377-5 čeká na podpis zákazníka v E-servisce“");
-  await p.evaluate(() => { window.__MAILTO__ = u => { window.__MAIL__ = u; }; window.__MAIL__ = null; });
-  await p.click("[data-odkaz-faktura]");
-  { const m = decodeURIComponent(await p.evaluate(() => window.__MAIL__ || ""));
-    kontrola(/subject=Mercedes-Benz W126 - Zálohová faktura č\. 7377-5&/.test(m) && /podepsání zálohové faktury k vašemu vozu Mercedes-Benz W126 \(zálohová faktura č\. 7377-5, zakázka č\. 7377\)/.test(m) && /e-serviska\?k=[0-9a-f]{20}/.test(m),
-      "e-mail k podpisu zálohy: předmět „Mercedes-Benz W126 - Zálohová faktura č. 7377-5“, text o záloze, odkaz do E-servisky"); }
+  kontrola(/Zálohová faktura 7377-5 čeká na podpis zákazníka/.test(await p.textContent("body")) && /⏳ čeká na podpis/.test(await p.textContent(".doklady")), "Doklady: „Zálohová faktura 7377-5 čeká na podpis zákazníka v E-servisce“ + ⏳");
+  await p.click(".info.pozor [data-poslat-email]"); await p.waitForSelector("#hlaska >> text=Odesláno na");
+  kontrola(await p.evaluate(() => { const T = window.__ULOZENO__, d = T.tabulky.doklady.find(x => x.cislo === "7377-5"); return (T.emaily || []).filter(e => e.doklad_id === d.id && e.ucel === "zalohova_podpis").length === 2; }), "„📧 Poslat znovu“ u zálohy pošle znovu e-mail k podpisu");
+  await p.waitForSelector("[data-zaplaceno]");
   await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === "7377-5");   // zákazník podepsal v E-servisce (server vloží podpis do PDF)
     T.dalkove_podpisy.push({ id: "dp-za", doklad_id: d.id, soubor_id: null, podepsano: new Date().toISOString(), vystaveny_doklad_id: d.id }); });
   await p.evaluate(() => { const h = location.hash; location.hash = "#/zakazky"; location.hash = h; });
   await p.waitForSelector("[data-zaplaceno]");
-  kontrola(/Zákazník podepsal zálohovou fakturu 7377-5 v E-servisce/.test(await p.textContent("body")) && await p.locator("[data-odkaz-faktura]").count() === 0, "po podpisu v E-servisce: „Zákazník podepsal zálohovou fakturu…“, bez odkazu");
+  kontrola(/Zákazník podepsal zálohovou fakturu 7377-5 v E-servisce/.test(await p.textContent("body")) && await p.locator("[data-odkaz-faktura], .info.pozor [data-poslat-email]").count() === 0, "po podpisu v E-servisce: „Zákazník podepsal zálohovou fakturu…“, bez odkazu");
+  kontrola(/✓ Podepsáno \d+\. \d+\. \d{4} \d{1,2}:\d{2} \(online\)/.test(await p.textContent(".doklady")), "Doklady: u zálohy ✓ Podepsáno s datem a časem (online)");
+  { const id5 = await p.evaluate(() => window.__ULOZENO__.tabulky.doklady.find(x => x.cislo === "7377-5").id);
+    const n5 = await p.evaluate(() => (window.__ULOZENO__.emaily || []).length);
+    await p.click(`.doklad [data-poslat-email="${id5}"]`); await p.waitForFunction(n => (window.__ULOZENO__.emaily || []).length > n, n5);
+    kontrola(await p.evaluate(i => (window.__ULOZENO__.emaily || []).at(-1)?.ucel === "zalohova" && window.__ULOZENO__.emaily.at(-1).doklad_id === i, id5), "podepsaná záloha: „📧 Poslat znovu“ v Dokladech pošle kopii zálohové faktury");
+    await p.waitForSelector("[data-zaplaceno]"); }
   // nezaplacená záloha se do faktury sama neodečte (jinak by chyběly peníze)
   await p.click("text=💳 Faktura"); await p.waitForSelector('[data-odecist="7377-5"]');
+  kontrola(await p.evaluate(() => { const v = document.querySelector('[data-d="vystaveno"]').value, sp = document.querySelector('[data-d="splatnost"]').value; return (new Date(sp) - new Date(v)) / 864e5 === 7; }), "faktura: splatnost předvyplněná na 7 dní");
   kontrola(!(await p.isChecked('[data-odecist="7377-5"]')), "faktura: nezaplacená záloha není předvybraná k odečtu");
   await p.goBack(); await p.waitForSelector("[data-zaplaceno]");
   await p.click("[data-zaplaceno]");
@@ -1134,12 +1140,12 @@ const server = http.createServer((q, r) => {
     kontrola(await p.evaluate(([c, id]) => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === c), z = T.zakazky.find(x => x.id === id);
       return d.druh === "predavaci_protokol" && d.data.cekaPodpis === true && !T.podpisy.some(x => x.doklad_id === d.id && x.role === "zakaznik") && z.stav === "predano" && !!z.datum_predani; }, [cisloPp, zid]),
       "protokol uložený s „čeká na podpis“, bez podpisu zákazníka; zakázka předaná s datem předání");
-    await p.evaluate(() => { window.__MAIL__ = null; });
+    await p.evaluate(() => { window.__MAILTO__ = u => { window.__MAIL__ = u; }; window.__MAIL__ = null; });
     await p.click("#odkaz-podpis"); await p.waitForFunction(() => !!window.__MAIL__);
     { const m = decodeURIComponent(await p.evaluate(() => window.__MAIL__ || ""));
       kontrola(new RegExp(`subject=Mercedes-Benz W126 - Předávací protokol č\\. ${cisloPp}&`).test(m) && /děkujeme za převzetí vašeho vozu Mercedes-Benz W126/.test(m) && /podpisem potvrdíte převzetí vozu/.test(m) && /e-serviska\?k=[0-9a-f]{20}/.test(m),
         `e-mail k podpisu protokolu: předmět „Mercedes-Benz W126 - Předávací protokol č. ${cisloPp}“, poděkování za převzetí, odkaz do E-servisky`); }
-    await p.click("text=Detail zakázky"); await p.waitForSelector("[data-odkaz-faktura]");
+    await p.click("text=Detail zakázky"); await p.waitForSelector(".info.pozor [data-poslat-email]");
     kontrola(new RegExp(`Předávací protokol ${cisloPp} čeká na podpis zákazníka`).test(await p.textContent("body")), `zakázka: „Předávací protokol ${cisloPp} čeká na podpis zákazníka v E-servisce“`);
     await p.evaluate(([id, st]) => { const z = window.__ULOZENO__.tabulky.zakazky.find(x => x.id === id); z.stav = st.stav; z.datum_predani = st.d; z.km_predani = st.km; }, [zid, stavPred]);   // úklid testu
   }
