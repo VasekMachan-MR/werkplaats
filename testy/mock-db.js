@@ -155,6 +155,7 @@ window.__WERK_DB__ = (() => {
       T.doklady = T.doklady.filter(d => !ids.includes(d.id)); window.__ULOZENO__.tabulky.doklady = T.doklady;
       return ids.length;
     },
+    async kliceSouboruDokladu(did) { return T.soubory.filter(f => f.doklad_id === did).map(f => f.klic); },
     async smazatDoklad(did) {
       const d = T.doklady.find(x => x.id === did); if (!d) throw new Error("Doklad nenalezen");
       if (!["nabidka", "faktura", "zalohova", "predavaci_protokol"].includes(d.druh)) throw new Error("Doklad nejde smazat");
