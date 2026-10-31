@@ -1094,6 +1094,26 @@ const server = http.createServer((q, r) => {
     await p.evaluate(() => { const h = location.hash; location.hash = "#/zakazky"; location.hash = h; });
     await p.waitForSelector("text=Zákazník podepsal cenovou nabídku");
     kontrola(new RegExp(`Zákazník podepsal cenovou nabídku ${cisloNab} v E-servisce`).test(await p.textContent("body")), "po podpisu v E-servisce: „Zákazník podepsal cenovou nabídku…“");
+    // ---------- předávací protokol „Podepíše později“ (Vašek 31.10.2026) ----------
+    const stavPred = await p.evaluate(id => { const z = window.__ULOZENO__.tabulky.zakazky.find(x => x.id === id); return { stav: z.stav, d: z.datum_predani ?? null, km: z.km_predani ?? null }; }, zid);
+    await p.click("text=🔑 Předávací protokol"); await p.waitForSelector("#co-chybi");
+    await p.click("[data-cip-stav] >> nth=0");
+    await p.waitForSelector("#pozdeji:not([disabled])", { timeout: 10000 });
+    kontrola(await p.isDisabled("#vystavit"), "protokol: bez podpisu zákazníka nejde „Vystavit“, ale jde „✍️ Podepíše později“");
+    const cisloPp = (await p.textContent("#vystavit")).replace(/^\D*/, "").trim();
+    await p.click("#pozdeji"); await p.waitForSelector(`.velke-cislo >> text=${cisloPp}`, { timeout: 15000 });
+    kontrola(/předávací protokol tam podepíše/.test(await p.textContent(".hotovo")) && await p.isVisible("#odkaz-podpis"), `protokol ${cisloPp}: „čeká na podpis“ + „Poslat odkaz k podpisu“`);
+    kontrola(await p.evaluate(([c, id]) => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === c), z = T.zakazky.find(x => x.id === id);
+      return d.druh === "predavaci_protokol" && d.data.cekaPodpis === true && !T.podpisy.some(x => x.doklad_id === d.id && x.role === "zakaznik") && z.stav === "predano" && !!z.datum_predani; }, [cisloPp, zid]),
+      "protokol uložený s „čeká na podpis“, bez podpisu zákazníka; zakázka předaná s datem předání");
+    await p.evaluate(() => { window.__MAIL__ = null; });
+    await p.click("#odkaz-podpis"); await p.waitForFunction(() => !!window.__MAIL__);
+    { const m = decodeURIComponent(await p.evaluate(() => window.__MAIL__ || ""));
+      kontrola(new RegExp(`subject=Mercedes-Benz W126 - Předávací protokol č\\. ${cisloPp}&`).test(m) && /děkujeme za převzetí vašeho vozu Mercedes-Benz W126/.test(m) && /podpisem potvrdíte převzetí vozu/.test(m) && /e-serviska\?k=[0-9a-f]{20}/.test(m),
+        `e-mail k podpisu protokolu: předmět „Mercedes-Benz W126 - Předávací protokol č. ${cisloPp}“, poděkování za převzetí, odkaz do E-servisky`); }
+    await p.click("text=Detail zakázky"); await p.waitForSelector("[data-odkaz-faktura]");
+    kontrola(new RegExp(`Předávací protokol ${cisloPp} čeká na podpis zákazníka`).test(await p.textContent("body")), `zakázka: „Předávací protokol ${cisloPp} čeká na podpis zákazníka v E-servisce“`);
+    await p.evaluate(([id, st]) => { const z = window.__ULOZENO__.tabulky.zakazky.find(x => x.id === id); z.stav = st.stav; z.datum_predani = st.d; z.km_predani = st.km; }, [zid, stavPred]);   // úklid testu
   }
 
   // ---------- výchozí řazení zakázek podle stavu; smazání řádku práce se potvrzuje ----------

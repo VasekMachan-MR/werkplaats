@@ -142,7 +142,9 @@ Deno.serve(async req => {
     const zl = HOTOVO.includes(z.stav) ? null : (dok || []).filter((d: any) => d.zakazka_id === z.id && d.druh === "zakazkovy_list")[0] as any;
     // cenová nabídka s „Podepíše později“ (Vašek 31.10.2026): jen poslední verze a jen u rozpracované zakázky
     const nb = HOTOVO.includes(z.stav) ? null : (dok || []).filter((x: any) => x.zakazka_id === z.id && x.druh === "nabidka")[0] as any;
-    const d = ceka(zl) ? zl : ((dok || []).find((x: any) => x.zakazka_id === z.id && (x.druh === "faktura" || x.druh === "zalohova") && ceka(x)) as any) || (ceka(nb) ? nb : null);
+    // předávací protokol s „Podepíše později“ (Vašek 31.10.2026): jen poslední protokol, i u předané zakázky
+    const pp = (dok || []).filter((x: any) => x.zakazka_id === z.id && x.druh === "predavaci_protokol")[0] as any;
+    const d = ceka(zl) ? zl : ((dok || []).find((x: any) => x.zakazka_id === z.id && (x.druh === "faktura" || x.druh === "zalohova") && ceka(x)) as any) || (ceka(nb) ? nb : null) || (ceka(pp) ? pp : null);
     if (!d) continue;
     podpis = { cislo: d.cislo, druh: d.druh, zakazka: z.cislo, url: url[d.soubory?.klic] || null, podepsano: null, jazyk: d.jazyk || null };
     break;
@@ -167,7 +169,7 @@ Deno.serve(async req => {
   });
 });
 
-// POST {k, cislo, druh?, podpis: "data:image/png;base64,…", souhlas: true} – zákazník dopodepíše zakázkový list z domu
+// POST {k, cislo, druh?, podpis: "data:image/png;base64,…", souhlas: true} – zákazník dopodepíše zakázkový list / nabídku / fakturu / předávací protokol z domu
 async function podepsat(req: Request, sb: any, odp: (s: number, o: unknown) => Response) {
   let b: any; try { b = await req.json(); } catch { return odp(400, { chyba: "spatny-pozadavek" }); }
   const kod = String(b?.k || "").replace(/[^0-9a-zA-Z_-]/g, "");
@@ -178,11 +180,12 @@ async function podepsat(req: Request, sb: any, odp: (s: number, o: unknown) => R
   const { data: v } = await sb.from("vozidla").select("id").eq("eserviska_kod", kod).maybeSingle();
   if (!v) return odp(404, { chyba: "nenalezeno" });
   if (b?.archiv) return podepsatArchiv(req, sb, odp, v, String(b.archiv), png);
-  const druh = ["faktura", "zalohova", "nabidka"].includes(b?.druh) ? b.druh : "zakazkovy_list";
-  const jenPosledni = druh === "zakazkovy_list" || druh === "nabidka";       // zakázkový list i nabídka: podepsat jde jen poslední verzi
+  const druh = ["faktura", "zalohova", "nabidka", "predavaci_protokol"].includes(b?.druh) ? b.druh : "zakazkovy_list";
+  const jenPosledni = druh === "zakazkovy_list" || druh === "nabidka" || druh === "predavaci_protokol";   // podepsat jde jen poslední verzi
+  const jenRozpracovana = druh === "zakazkovy_list" || druh === "nabidka";   // protokol se podepisuje u už předané zakázky
   const { data: d } = await sb.from("doklady").select("id,cislo,druh,verze,data,zakazka_id,zamceno,zakazky!inner(id,cislo,stav,vozidlo_id,zakaznik_id),podpisy(role),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id)")
     .eq("cislo", String(b?.cislo || "")).eq("druh", druh).maybeSingle();
-  if (!d || !d.zamceno || d.zakazky?.vozidlo_id !== v.id || !d.data?.cekaPodpis || (jenPosledni && HOTOVO.includes(d.zakazky.stav))) return odp(404, { chyba: "nenalezeno" });
+  if (!d || !d.zamceno || d.zakazky?.vozidlo_id !== v.id || !d.data?.cekaPodpis || (jenRozpracovana && HOTOVO.includes(d.zakazky.stav))) return odp(404, { chyba: "nenalezeno" });
   // zakázkový list: podepsat jde jen poslední verzi (tu, kterou zákazník v E-servisce vidí)
   if (jenPosledni) {
     const { data: novejsi } = await sb.from("doklady").select("id").eq("zakazka_id", d.zakazka_id).eq("druh", druh).gt("verze", d.verze ?? 1).limit(1);
@@ -215,7 +218,7 @@ const POLE_PODPISU: Record<string, { x: number; top: number; w: number; stred: n
   faktura: { x: 200, top: 707, w: 115, stred: 256.8, text: 735.6 }
 };
 async function razitkoPodpisu(pdfBytes: Uint8Array, png: Uint8Array, en: boolean, druh = "zakazkovy_list"): Promise<Uint8Array> {
-  const P = POLE_PODPISU[druh === "zakazkovy_list" ? druh : "faktura"];
+  const P = POLE_PODPISU[druh === "zakazkovy_list" || druh === "predavaci_protokol" ? "zakazkovy_list" : "faktura"];   // protokol = stejná šablona jako zakázkový list
   const pdf = await PDFDocument.load(pdfBytes);
   const str = pdf.getPage(0), H = str.getHeight();
   const obr = await pdf.embedPng(png), box = { x: P.x, y: H - P.top - 30, w: P.w, h: 30 };
