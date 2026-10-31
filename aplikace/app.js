@@ -263,6 +263,8 @@
       async novaPolozkaSkladu(p) { return ok(await sb.from("sklad").insert(p).select().single()); },
       async pohybSkladu(p) { return ok(await sb.from("sklad_pohyby").insert(p).select("id")); },
       async inventura(sid, stav) { return ok(await sb.rpc("inventura_skladu", { p_sklad: sid, p_stav: stav })); },
+      // doklady čekající na podpis / odsouhlasení zákazníkem (Přehled → „Čeká na zákazníka“)
+      async cekajiciPodpisy() { return ok(await sb.from("doklady").select("id,zakazka_id,druh,verze,cislo,vystaveno,data->cekaPodpis,podpisy(role),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id),zakazky(id,cislo,stav,zakaznici(jmeno),vozidla(typ,model))").eq("data->>cekaPodpis", "true").order("vystaveno", { ascending: false }).limit(200)); },
       async kalendar(od, doo) { return ok(await sb.from("kalendar").select("id,datum,cas,text,zakazka_id").gte("datum", od).lte("datum", doo).order("datum").order("cas", { nullsFirst: true })); },
       async smazatRadek(tabulka, id) { return ok(await sb.from(tabulka).delete().eq("id", id).select("id")); },
       async vsechnyDoklady() {
@@ -484,6 +486,8 @@
   const oznaceniVozu = v => [kodKaroserie(v?.typ, v?.model), String(v?.model || "").trim()].filter(Boolean).join(" ") || "Mercedes-Benz";
   // skupina intervalů MB podle modelového roku (A 1986+, B 1981–85, C do 1980); jde přepsat u vozidla
   const skupinaServisu = v => v?.servisni_skupina || (!v?.rok ? "A" : v.rok >= 1986 ? "A" : v.rok >= 1981 ? "B" : "C");
+  // odkaz do chatu (WhatsApp, iMessage…): werk.mercedesrestorations.cz/s/<kód> – v náhledu je název auta a jeho profilová fotka, pak přesměruje do E-servisky (Vašek 31.10.2026)
+  const odkazSdileni = (v, en = false) => v?.eserviska_kod ? `https://werk.mercedesrestorations.cz/s/${encodeURIComponent(v.eserviska_kod)}${en ? "?l=en" : ""}` : odkazEservisky(v);
   // tajný odkaz na E-servisku konkrétního auta (VIN sám nestačí); při změně majitele se odkaz změní
   const odkazEservisky = v => v?.eserviska_kod ? "https://www.mercedesrestorations.cz/e-serviska?k=" + encodeURIComponent(v.eserviska_kod)
     : "https://www.mercedesrestorations.cz/e-serviska?vin=" + encodeURIComponent(String(v?.vin || "").toUpperCase().replace(/[^A-Z0-9]/g, ""));
@@ -548,7 +552,10 @@
         <div class="dlazdice-k ${poSpl.length ? "cervena" : ""}"><small>Nezaplaceno</small><b>${kc(suma(nezapl))}</b><span>${nezapl.length} ks${poSpl.length ? ` · ${poSpl.length} po splatnosti` : ""}</span></div>
         <div class="dlazdice-k"><small>Fakturováno – ${esc(nazevMesice(mesic))}</small><b>${kc(suma(faMesic))}</b><span>${faMesic.length} ks</span></div>
       </div>
-      <section class="karta kalendar" id="kalendar"></section>
+      <div class="uvod-horni">
+        <section class="karta kalendar" id="kalendar"></section>
+        <section class="karta" id="ceka-zakaznik"><h2>Čeká na zákazníka</h2><p class="mutted" style="margin:0">Načítám…</p></section>
+      </div>
       <div class="uvod-mrizka">
         <section class="karta"><h2>V dílně</h2>
           ${vDilne.length ? `<div class="zakazky">${vDilne.slice(0, MAX).map(z => radek(z, termin(z))).join("")}</div>${vice(vDilne.length, "#/zakazky", "Všechny rozpracované").replace("<a ", '<a data-filtr="otevrene" ')}` : `<p class="mutted" style="margin:0">Teď v dílně nic není.</p>`}
@@ -565,21 +572,45 @@
               ${d.celkem != null && jeFa(d) ? `<b>${kc(d.celkem)}</b>` : ""}</a>`).join("")}</div></section>` : ""}
         </div>
       </div>`;
-    if (!prazdno) vykresliKalendar(zak);
+    if (!prazdno) { vykresliKalendar(zak); vykresliCekajici(); }
+  }
+  // Přehled → „Čeká na zákazníka“: doklady odeslané k podpisu, které zákazník ještě nepodepsal / neodsouhlasil (Vašek 31.10.2026)
+  async function vykresliCekajici() {
+    const el = document.getElementById("ceka-zakaznik"); if (!el) return;
+    let d = [];
+    try { d = await db.cekajiciPodpisy(); } catch (e) { el.querySelector("p").textContent = "Nepodařilo se načíst."; return; }
+    if (!document.body.contains(el)) return;
+    // jen nepodepsané, u zakázkového listu a nabídky jen poslední verze, ne u zrušených zakázek
+    const max = {}; d.forEach(x => { const k = x.zakazka_id + x.druh; max[k] = Math.max(max[k] || 0, x.verze || 1); });
+    const ceka = d.filter(x => !(x.podpisy || []).some(p => p.role === "zakaznik") && !(Array.isArray(x.dalkove_podpisy) ? x.dalkove_podpisy.length : x.dalkove_podpisy)
+      && x.zakazky?.stav !== "zruseno" && (!["zakazkovy_list", "nabidka", "predavaci_protokol"].includes(x.druh) || (x.verze || 1) >= max[x.zakazka_id + x.druh]));
+    const CO = { zakazkovy_list: "Zakázkový list", nabidka: "Cenová nabídka", zalohova: "Zálohová faktura", faktura: "Faktura", predavaci_protokol: "Předávací protokol" };
+    const D = dnes(), stari = v => { const n = Math.round((new Date(D) - new Date(String(v).slice(0, 10))) / 864e5); return n <= 0 ? "dnes" : n === 1 ? "včera" : `před ${n} dny`; };
+    el.innerHTML = `<h2>Čeká na zákazníka${ceka.length ? ` <span class="mutted" style="font-weight:400;font-size:15px">· ${ceka.length}</span>` : ""}</h2>
+      ${ceka.length ? `<div class="doklady">${ceka.slice(0, 8).map(x => `<a class="doklad odkaz-radek" href="#/zakazka/${x.zakazky?.id || x.zakazka_id}"><span>⏳ <b>${esc(CO[x.druh] || x.druh)}</b> ${esc(x.cislo)}
+          <br><small class="mutted">${esc([x.zakazky?.zakaznici?.jmeno, oznaceniVozu(x.zakazky?.vozidla || {})].filter(Boolean).join(" · "))} · ${x.druh === "nabidka" ? "k odsouhlasení" : "k podpisu"} ${stari(x.vystaveno)}</small></span></a>`).join("")}</div>
+        ${ceka.length > 8 ? `<p class="mutted" style="margin:8px 0 0">a další (${ceka.length - 8})</p>` : ""}`
+        : `<p class="mutted" style="margin:0">Nic – všechno odeslané k podpisu je podepsané. 👍</p>`}`;
   }
   /* ---------- kalendář: příjmy, termíny dokončení, předání + vlastní termíny ---------- */
   const MESICE = ["leden", "únor", "březen", "duben", "květen", "červen", "červenec", "srpen", "září", "říjen", "listopad", "prosinec"];
   const isoDen = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   let K_STAV = null;
+  // Přehled: kompaktní kalendář (Vašek 31.10.2026: „je moc velký“) – výchozí jeden týden, celý měsíc na přání; nový termín až po klepnutí
   async function vykresliKalendar(zak) {
     const el = document.getElementById("kalendar"); if (!el) return;
-    const D = dnes();
-    K_STAV ||= { mesic: D.slice(0, 7), den: D };
+    const D = dnes(), pondeli = iso => { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return isoDen(d); };
+    K_STAV ||= { mesic: D.slice(0, 7), den: D, rezim: "tyden", tyden: pondeli(D), formular: false };
+    K_STAV.rezim ||= "tyden"; K_STAV.tyden ||= pondeli(K_STAV.den);
+    const tyden = K_STAV.rezim === "tyden";
     const [r, m] = K_STAV.mesic.split("-").map(Number), prvni = new Date(r, m - 1, 1), posledni = new Date(r, m, 0);
-    const start = new Date(prvni); start.setDate(1 - ((prvni.getDay() + 6) % 7));            // pondělí
-    const konec = new Date(posledni); konec.setDate(posledni.getDate() + (7 - ((posledni.getDay() + 6) % 7)) - 1);
+    let start, konec;
+    if (tyden) { start = new Date(K_STAV.tyden + "T12:00:00"); konec = new Date(start); konec.setDate(start.getDate() + 6); }
+    else { start = new Date(prvni); start.setDate(1 - ((prvni.getDay() + 6) % 7)); konec = new Date(posledni); konec.setDate(posledni.getDate() + (7 - ((posledni.getDay() + 6) % 7)) - 1); }
+    const doNej = new Date(D + "T12:00:00"); doNej.setDate(doNej.getDate() + 30);   // „Nejbližší“ – 30 dní dopředu
+    const od = isoDen(start) < D ? isoDen(start) : D, doo = isoDen(konec) > isoDen(doNej) ? isoDen(konec) : isoDen(doNej);
     let vlastni = [];
-    try { vlastni = await db.kalendar(isoDen(start), isoDen(konec)); } catch (e) { /* bez tabulky jen zakázky */ }
+    try { vlastni = await db.kalendar(od, doo); } catch (e) { /* bez tabulky jen zakázky */ }
     if (!document.body.contains(el)) return;
     const U = {};                                     // datum → události
     const pridej = (d, u) => { if (d) (U[d] ||= []).push(u); };
@@ -592,38 +623,53 @@
     vlastni.forEach(k => { const z = zak.find(x => x.id === k.zakazka_id); pridej(k.datum, { druh: "vlastni", id: k.id, cas: k.cas ? String(k.cas).slice(0, 5) : "", text: k.text, pod: z ? nazev(z) : "", href: z ? `#/zakazka/${z.id}` : "" }); });
     const dny = []; for (let d = new Date(start); d <= konec; d.setDate(d.getDate() + 1)) dny.push(isoDen(d));
     const vyb = U[K_STAV.den] || [], denObj = new Date(K_STAV.den + "T12:00:00");
-    el.innerHTML = `<div class="kal-hlava"><h2 style="margin:0">Kalendář</h2>
-        <span class="radek-tlacitek"><button type="button" class="tl tl-male tl-ikona" data-kal="-1" aria-label="Předchozí měsíc">‹</button>
-        <b class="kal-mesic">${MESICE[m - 1]} ${r}</b>
-        <button type="button" class="tl tl-male tl-ikona" data-kal="1" aria-label="Další měsíc">›</button>
-        ${K_STAV.mesic !== D.slice(0, 7) ? `<button type="button" class="tl tl-male" data-kal="0">Dnes</button>` : ""}</span></div>
-      <div class="kal-mrizka">${["po", "út", "st", "čt", "pá", "so", "ne"].map(x => `<div class="kal-dn">${x}</div>`).join("")}
-        ${dny.map(d => { const u = U[d] || []; const druhy = [...new Set(u.map(x => x.druh))];
-          return `<button type="button" class="kal-den${d.slice(0, 7) !== K_STAV.mesic ? " jiny" : ""}${d === D ? " dnes" : ""}${d === K_STAV.den ? " vybrany" : ""}" data-den="${d}" aria-label="${datumCz(d)}${u.length ? `, ${u.length} událostí` : ""}">
-            <span>${+d.slice(8)}</span><span class="kal-tecky">${druhy.map(x => `<i class="kal-${x}"></i>`).join("")}</span></button>`; }).join("")}</div>
-      <div class="kal-legenda"><span><i class="kal-prijem"></i>příjem</span><span><i class="kal-termin"></i>termín dokončení</span><span><i class="kal-predani"></i>předání</span><span><i class="kal-vlastni"></i>vlastní</span></div>
-      <div class="kal-detail"><b>${denObj.toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long" })}</b>
-        ${vyb.length ? `<div class="kal-udalosti">${vyb.sort((a, b) => String(a.cas || "").localeCompare(String(b.cas || ""))).map(u => `<div class="kal-udalost"><i class="kal-${u.druh}"></i>
+    const radekUd = u => `<div class="kal-udalost"><i class="kal-${u.druh}"></i>
           ${u.href ? `<a href="${u.href}">` : "<span>"}${u.cas ? `<b>${esc(u.cas)}</b> ` : ""}${esc(u.text)}${u.pod ? `<small class="mutted"> · ${esc(u.pod)}</small>` : ""}${u.href ? "</a>" : "</span>"}
-          ${u.id ? `<button type="button" class="tl tl-male tl-kos" data-kal-smazat="${u.id}" aria-label="Smazat termín">🗑</button>` : ""}</div>`).join("")}</div>`
+          ${u.id ? `<button type="button" class="tl tl-male tl-kos" data-kal-smazat="${u.id}" aria-label="Smazat termín">🗑</button>` : ""}</div>`;
+    // nejbližší události od zítřka (příjmy a termíny dokončení, předání, vlastní)
+    const nejblizsi = Object.keys(U).filter(d => d > D && d <= isoDen(doNej)).sort().flatMap(d => U[d].map(u => ({ ...u, d }))).slice(0, 5);
+    const konecT = new Date(start); konecT.setDate(start.getDate() + 6);
+    const popis = tyden ? `${start.getDate()}. ${start.getMonth() + 1}. – ${konecT.getDate()}. ${konecT.getMonth() + 1}.` : `${MESICE[m - 1]} ${r}`;
+    const jeDnes = tyden ? K_STAV.tyden === pondeli(D) : K_STAV.mesic === D.slice(0, 7);
+    el.innerHTML = `<div class="kal-hlava"><h2 style="margin:0">Kalendář</h2>
+        <span class="radek-tlacitek"><button type="button" class="tl tl-male tl-ikona" data-kal="-1" aria-label="${tyden ? "Předchozí týden" : "Předchozí měsíc"}">‹</button>
+        <b class="kal-mesic">${popis}</b>
+        <button type="button" class="tl tl-male tl-ikona" data-kal="1" aria-label="${tyden ? "Další týden" : "Další měsíc"}">›</button>
+        ${jeDnes ? "" : `<button type="button" class="tl tl-male" data-kal="0">Dnes</button>`}
+        <button type="button" class="tl tl-male" id="kal-rezim">${tyden ? "Měsíc" : "Týden"}</button></span></div>
+      <div class="kal-mrizka${tyden ? " kal-tyden" : ""}">${["po", "út", "st", "čt", "pá", "so", "ne"].map(x => `<div class="kal-dn">${x}</div>`).join("")}
+        ${dny.map(d => { const u = U[d] || []; const druhy = [...new Set(u.map(x => x.druh))];
+          return `<button type="button" class="kal-den${!tyden && d.slice(0, 7) !== K_STAV.mesic ? " jiny" : ""}${d === D ? " dnes" : ""}${d === K_STAV.den ? " vybrany" : ""}" data-den="${d}" aria-label="${datumCz(d)}${u.length ? `, ${u.length} událostí` : ""}">
+            <span>${+d.slice(8)}</span><span class="kal-tecky">${druhy.map(x => `<i class="kal-${x}"></i>`).join("")}</span></button>`; }).join("")}</div>
+      <div class="kal-detail"><div class="kal-detail-hlava"><b>${denObj.toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long" })}</b>
+          <button type="button" class="tl tl-male" id="kal-pridat" aria-expanded="${!!K_STAV.formular}">＋ Termín</button></div>
+        ${vyb.length ? `<div class="kal-udalosti">${vyb.sort((a, b) => String(a.cas || "").localeCompare(String(b.cas || ""))).map(radekUd).join("")}</div>`
           : `<p class="mutted" style="margin:6px 0 0">Nic naplánováno.</p>`}
-        <form class="kal-novy" id="kal-novy">
+        ${K_STAV.formular ? `<form class="kal-novy" id="kal-novy">
           <input class="vstup" name="text" placeholder="Nový termín – např. přivezou 280 SL" required maxlength="200">
           <input class="vstup" name="cas" type="time" aria-label="Čas (nepovinné)">
           <select class="vstup" name="zakazka" aria-label="K zakázce (nepovinné)"><option value="">bez zakázky</option>${zak.filter(z => z.stav !== "zruseno").slice(0, 60).map(z => `<option value="${z.id}">${esc(nazev(z))}</option>`).join("")}</select>
-          <button class="tl tl-hlavni">＋ Přidat</button></form></div>`;
+          <button class="tl tl-hlavni">＋ Přidat</button></form>` : ""}
+        ${nejblizsi.length ? `<div class="kal-nejblizsi"><small class="mutted">Nejbližší</small>${nejblizsi.map(u => radekUd({ ...u, text: `${datumCz(u.d).replace(/ \d{4}$/, "")} · ${u.text}` })).join("")}</div>` : ""}
+      </div>
+      <div class="kal-legenda"><span><i class="kal-prijem"></i>příjem</span><span><i class="kal-termin"></i>termín dokončení</span><span><i class="kal-predani"></i>předání</span><span><i class="kal-vlastni"></i>vlastní</span></div>`;
     el.querySelectorAll("[data-kal]").forEach(b => b.onclick = () => {
-      const k = +b.dataset.kal; if (!k) { K_STAV = { mesic: D.slice(0, 7), den: D }; }
-      else { const n = new Date(r, m - 1 + k, 1); K_STAV.mesic = isoDen(n).slice(0, 7); K_STAV.den = isoDen(n); }
+      const k = +b.dataset.kal;
+      if (!k) Object.assign(K_STAV, { mesic: D.slice(0, 7), den: D, tyden: pondeli(D) });
+      else if (tyden) { const n = new Date(K_STAV.tyden + "T12:00:00"); n.setDate(n.getDate() + 7 * k); K_STAV.tyden = isoDen(n); K_STAV.den = K_STAV.tyden <= D && D <= isoDen(new Date(n.getTime() + 6 * 864e5)) ? D : K_STAV.tyden; K_STAV.mesic = K_STAV.den.slice(0, 7); }
+      else { const n = new Date(r, m - 1 + k, 1); K_STAV.mesic = isoDen(n).slice(0, 7); K_STAV.den = isoDen(n); K_STAV.tyden = pondeli(K_STAV.den); }
       vykresliKalendar(zak); });
-    el.querySelectorAll("[data-den]").forEach(b => b.onclick = () => { K_STAV.den = b.dataset.den; if (b.dataset.den.slice(0, 7) !== K_STAV.mesic) K_STAV.mesic = b.dataset.den.slice(0, 7); vykresliKalendar(zak); });
+    el.querySelector("#kal-rezim").onclick = () => { K_STAV.rezim = tyden ? "mesic" : "tyden"; K_STAV.mesic = K_STAV.den.slice(0, 7); K_STAV.tyden = pondeli(K_STAV.den); vykresliKalendar(zak); };
+    el.querySelector("#kal-pridat").onclick = () => { K_STAV.formular = !K_STAV.formular; vykresliKalendar(zak).then(() => document.querySelector("#kal-novy input[name=text]")?.focus()); };
+    el.querySelectorAll("[data-den]").forEach(b => b.onclick = () => { K_STAV.den = b.dataset.den; K_STAV.tyden = pondeli(K_STAV.den); if (b.dataset.den.slice(0, 7) !== K_STAV.mesic) K_STAV.mesic = b.dataset.den.slice(0, 7); vykresliKalendar(zak); });
     el.querySelectorAll("[data-kal-smazat]").forEach(b => b.onclick = async () => {
       if (!confirm("Smazat tento termín?")) return;
       try { await db.smazatRadek("kalendar", b.dataset.kalSmazat); vykresliKalendar(zak); } catch (e) { hlaska(chybaText(e), true); } });
-    el.querySelector("#kal-novy").onsubmit = async e => {
+    const f0 = el.querySelector("#kal-novy");
+    if (f0) f0.onsubmit = async e => {
       e.preventDefault(); const f = e.target, t = f.text.value.trim(); if (!t) return;
       f.querySelector("button").disabled = true;
-      try { await db.vlozit("kalendar", [{ datum: K_STAV.den, cas: f.cas.value || null, text: t, zakazka_id: f.zakazka.value || null }]); hlaska("Termín přidán."); vykresliKalendar(zak); }
+      try { await db.vlozit("kalendar", [{ datum: K_STAV.den, cas: f.cas.value || null, text: t, zakazka_id: f.zakazka.value || null }]); K_STAV.formular = false; hlaska("Termín přidán."); vykresliKalendar(zak); }
       catch (err) { f.querySelector("button").disabled = false; hlaska(chybaText(err), true); }
     };
   }
@@ -2081,7 +2127,7 @@
     if (window.__MAILTO__) window.__MAILTO__(u); else location.href = u;     // (testy si mailto zachytí)
   }
   async function sdiletOdkazEservisky(v, en = false, kPodpisu = true) {
-    const url = odkazEservisky(v), auto = oznaceniVozu(v);
+    const url = odkazSdileni(v, en), auto = oznaceniVozu(v);
     const fa = kPodpisu === "faktura" ? ["invoice", "faktury"] : kPodpisu === "zalohova" ? ["advance invoice", "zálohové faktury"] : kPodpisu === "nabidka" ? ["quotation", "cenové nabídky"] : kPodpisu === "predavaci_protokol" ? ["handover protocol", "předávacího protokolu"] : ["work order", "zakázkového listu"];
     const titul = kPodpisu ? (en ? `Please sign the ${fa[0]} for your ${auto}: ` : `Prosím o podpis ${fa[1]} k vašemu vozu ${auto}: `) : `E-servisní knížka – ${auto}`;
     try { if (navigator.share) { await navigator.share({ title: titul, text: titul, url }); return; } } catch (e) { if (e?.name === "AbortError") return; }
@@ -2424,7 +2470,7 @@
   const FAZE_FOTEK = [["profil", "⭐ Profilové (E-serviska nahoře)"], ["prijem", "Při příjmu"], ["prubeh", "Během opravy"], ["predani", "Při předání"]];
   // fotky zákazníkovi: iPhone/iPad otevře nabídku Sdílet (WhatsApp, Zprávy…) přímo s fotkami; jinde WhatsApp s odkazem na E-servisku
   async function poslatFotky(vybrane) {
-    const v = E.z.vozidla || {}, c = E.z.zakaznici || {}, en = E.z.jazyk === "en", odkaz = v.vin ? odkazEservisky(v) : "";
+    const v = E.z.vozidla || {}, c = E.z.zakaznici || {}, en = E.z.jazyk === "en", odkaz = v.vin ? odkazSdileni(v, en) : "";
     const text = (en ? `Hello, here are photos from the work on your ${oznaceniVozu(v)}.` : `Dobrý den, posílám fotky z opravy vašeho vozu ${oznaceniVozu(v)}.`)
       + (odkaz ? (en ? ` More in your e-service book: ${odkaz}` : ` Další najdete v E-servisní knížce: ${odkaz}`) : "");
     const tl = app.querySelector("#odeslat-fotky"); if (tl) { tl.disabled = true; tl.textContent = "Připravuji fotky…"; }

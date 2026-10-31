@@ -2,6 +2,7 @@
 // GET                      → veřejný klíč VAPID pro aplikaci (při prvním volání se vytvoří; soukromý klíč zůstává jen v databázi)
 // POST {test:true}         → zkušební notifikace na zařízení přihlášeného uživatele (Werkplaats, tlačítko „Poslat zkušební“)
 // POST {udalost:"podpis"}  → jen interně z E-servisky (hlavička x-werk-interni): notifikace všem zařízením, kde je zapnutá
+// POST {udalost:"chyba"}   → jen interně (odeslat-email, email-udalosti, eserviska): chyba v systému → zařízení majitele
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { novyVapid, posli } from "./webpush.ts";
 
@@ -56,6 +57,13 @@ Deno.serve(async req => {
 
   // interně z E-servisky: zákazník podepsal / odsouhlasil
   if (req.headers.get("x-werk-interni") === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) {
+    // chyba v systému (e-mail se neodeslal / nedoručil, podpis se nevložil do PDF…) → jen zařízení majitele (Vašek 31.10.2026)
+    if (b?.udalost === "chyba") {
+      const { data: odbery } = await sb.from("push_odbery").select("id,endpoint,p256dh,auth,uzivatele!inner(aktivni,role)").eq("uzivatele.aktivni", true).eq("uzivatele.role", "majitel");
+      const n = await rozeslat(sb, odbery || [], { titulek: String(b.titulek || "⚠️ Chyba ve Werkplaats").slice(0, 80), text: String(b.text || "").slice(0, 300),
+        url: b.zakazka_id ? `/#/zakazka/${b.zakazka_id}` : "/#/", tag: "chyba-" + Date.now() });
+      return odp(200, { ok: true, doruceno: n });
+    }
     if (b?.udalost !== "podpis") return odp(400, { chyba: "neznama-udalost" });
     const { data: z } = await sb.from("zakazky").select("id,cislo,vozidla(typ,model,spz),zakaznici(jmeno)").eq("id", String(b.zakazka_id || "")).maybeSingle();
     if (!z) return odp(404, { chyba: "nenalezeno" });

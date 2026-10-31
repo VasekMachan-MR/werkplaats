@@ -33,6 +33,15 @@ const DOKLADY = ["zakazkovy_list", "nabidka", "faktura", "zalohova", "predavaci_
 type X = { cislo: string; zakazka: string; model: string; spz: string; odkaz: string; jmeno: string; platba: string; podepsano: boolean };
 const castka = (n: number, en: boolean) => en ? "CZK " + Math.round(n).toLocaleString("en-GB") : Math.round(n).toLocaleString("cs-CZ").replace(/\s/g, " ") + " Kč";
 const datum = (d: string, en: boolean) => { const m = String(d || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return !m ? "" : en ? `${+m[3]}/${+m[2]}/${m[1]}` : `${+m[3]}. ${+m[2]}. ${m[1]}`; };
+// chyba → notifikace majiteli na telefon (Vašek 31.10.2026: „hlídání chyb“) – na pozadí, nikdy nic nezastaví
+function hlasitChybu(titulek: string, text: string, zakazka_id?: string | null) {
+  const p = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/notifikace`, {
+    method: "POST", headers: { "content-type": "application/json", "x-werk-interni": Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")! },
+    body: JSON.stringify({ udalost: "chyba", titulek, text: String(text).slice(0, 300), zakazka_id: zakazka_id || null })
+  }).catch(() => {});
+  // @ts-ignore EdgeRuntime existuje jen v Supabase
+  if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(p);
+}
 // označení vozu do e-mailů: kód karoserie + model, např. „W126 300 SE“, „R107 560 SL“, „C124 300 CE“ (Vašek 31.10.2026: vždy písmeno a typ)
 function kodKaroserie(typ: unknown, model: unknown) {
   const t = String(typ || "").toUpperCase().replace(/\s+/g, ""), mo = String(model || "").toUpperCase(), m = t.match(/^([WRCSAV])?(\d{3})(C)?/);
@@ -164,7 +173,7 @@ Deno.serve(async req => {
   const { predmet, text, tlacitko } = textEmailu(druh, en, { platba, podepsano, cislo: d.cislo, zakazka: String(d.zakazky?.cislo || ""), model, spz: v.spz || "", odkaz, jmeno: en ? jmeno.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : jmeno });
 
   const klic = Deno.env.get("RESEND_API_KEY");
-  if (!klic) { await zapis({ predmet, stav: "chyba", chyba: "Odesílání e-mailů ještě není nastavené (chybí RESEND_API_KEY)." }); return odp(200, { ok: false, komu, stav: "chyba", chyba: "Odesílání e-mailů ještě není nastavené." }); }
+  if (!klic) { hlasitChybu("⚠️ E-maily se neodesílají", "Chybí klíč RESEND_API_KEY v Supabase.", d.zakazka_id); await zapis({ predmet, stav: "chyba", chyba: "Odesílání e-mailů ještě není nastavené (chybí RESEND_API_KEY)." }); return odp(200, { ok: false, komu, stav: "chyba", chyba: "Odesílání e-mailů ještě není nastavené." }); }
 
   // přílohy
   const pril: { filename: string; content: string }[] = [];
@@ -186,6 +195,7 @@ Deno.serve(async req => {
     }
   } catch (e) {
     const chyba = String((e as Error).message || e);
+    hlasitChybu("⚠️ E-mail zákazníkovi se neodeslal", `${predmet} → ${komu}: ${chyba}`, d.zakazka_id);
     await zapis({ predmet, stav: "chyba", chyba }); return odp(200, { ok: false, komu, stav: "chyba", chyba });
   }
 
@@ -200,6 +210,7 @@ Deno.serve(async req => {
   if (!r.ok || !j?.id) {
     const chyba = `Odeslání se nepodařilo (${r.status}): ${j?.message || j?.name || "neznámá chyba"}`;
     await sb.from("emaily").update({ stav: "chyba", chyba, zmeneno: new Date().toISOString() }).eq("id", id);
+    hlasitChybu("⚠️ E-mail zákazníkovi se neodeslal", `${predmet} → ${komu}: ${chyba}`, d.zakazka_id);
     return odp(200, { ok: false, komu, stav: "chyba", chyba });
   }
   await sb.from("emaily").update({ stav: "odeslano", zprava_id: j.id, odeslano: new Date().toISOString(), zmeneno: new Date().toISOString() }).eq("id", id);

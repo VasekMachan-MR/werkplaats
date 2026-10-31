@@ -18,6 +18,15 @@ async function overPodpis(req: Request, telo: string): Promise<boolean> {
   return pod.split(" ").some(p => p.split(",")[1] === ocekavany);
 }
 
+// chyba → notifikace majiteli na telefon (Vašek 31.10.2026: „hlídání chyb“) – na pozadí, nikdy nic nezastaví
+function hlasitChybu(titulek: string, text: string, zakazka_id?: string | null) {
+  const p = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/notifikace`, {
+    method: "POST", headers: { "content-type": "application/json", "x-werk-interni": Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")! },
+    body: JSON.stringify({ udalost: "chyba", titulek, text: String(text).slice(0, 300), zakazka_id: zakazka_id || null })
+  }).catch(() => {});
+  // @ts-ignore EdgeRuntime existuje jen v Supabase
+  if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(p);
+}
 Deno.serve(async req => {
   if (req.method !== "POST") return new Response("jen POST", { status: 405 });
   const telo = await req.text();
@@ -26,12 +35,14 @@ Deno.serve(async req => {
   const stav = STAVY[u?.type]; const zid = u?.data?.email_id;
   if (!stav || !zid) return new Response("ok");                                   // ostatní události (odesláno, otevřeno…) nás nezajímají
   const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
-  const { data: e } = await sb.from("emaily").select("id,stav,komu,predmet,doklady(cislo),zakazky(cislo)").eq("zprava_id", zid).maybeSingle();
+  const { data: e } = await sb.from("emaily").select("id,stav,komu,predmet,zakazka_id,doklady(cislo),zakazky(cislo)").eq("zprava_id", zid).maybeSingle();
   if (!e) return new Response("ok");
   if (e.stav === "nedoruceno" || e.stav === "spam" || (e.stav === "doruceno" && stav === "zpozdeno")) return new Response("ok");   // horší stav nepřepisovat
   const chyba = stav === "nedoruceno" ? String(u?.data?.bounce?.message || u?.data?.bounce?.subType || "e-mail se nepodařilo doručit").slice(0, 500)
     : stav === "spam" ? "zákazník označil e-mail jako spam" : null;
   await sb.from("emaily").update({ stav, chyba, zmeneno: new Date().toISOString() }).eq("id", e.id);
+  if (stav === "nedoruceno" || stav === "spam") hlasitChybu(stav === "spam" ? "⚠️ Zákazník označil e-mail jako spam" : "⚠️ E-mail zákazníkovi nedošel",
+    `${e.predmet || "E-mail"} → ${e.komu}${chyba ? ": " + chyba : ""}`, (e as any).zakazka_id);
 
   if (stav === "nedoruceno" && Deno.env.get("RESEND_API_KEY")) {
     const zak = e.zakazky?.cislo ? `zakázka ${e.zakazky.cislo}` : "zakázka";

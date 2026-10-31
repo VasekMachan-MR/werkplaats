@@ -68,6 +68,7 @@ function intKratce(s,t,lang,unit){var a=[],j=intJ(s,unit);if(j[0])a.push(num(j[0
 function intDlouze(s,t,lang,unit){var j=intJ(s,unit),ik=j[0];unit=j[1];if(ik&&s.interval_mesice)return t.every+' '+num(ik,lang)+' '+unit+' '+t.or+' '+roky(s.interval_mesice,t)+' – '+t.first;if(ik)return t.every+' '+num(ik,lang)+' '+unit;var y=s.interval_mesice/12;return (y===1?t.everyY:t.everyYs)+' '+roky(s.interval_mesice,t)}
 var S={tahy:[],souhlas:false,odesilam:false,podChyba:false,podOk:false,lang:'cs',langOpen:false,open:{0:true},slide:0,wheels:false,cust:false,sa:false,due:null,pozn:null,copied:false,gal:null,dily:{},fz:{},dz:{}};
 try{var sl=localStorage.getItem('sk-lang');if(L[sl])S.lang=sl}catch(e){}
+try{var ul=new URLSearchParams(location.search).get('lang');if(L[ul])S.lang=ul}catch(e){}   // odkaz ze sdílení pro zahraničního zákazníka (?lang=en)
 var kod=(new URLSearchParams(location.search).get('k')||'').replace(/[^0-9a-zA-Z_-]/g,''),nacteno=0;
 var D=null,stav='';
 var root=document.createElement('div');root.id='es';document.body.appendChild(root);

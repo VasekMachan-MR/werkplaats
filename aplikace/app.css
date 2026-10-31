@@ -531,6 +531,12 @@ details.postup-prace[open] > summary .postup { display: none; }
 
 /* kalendář v Přehledu */
 .kalendar { margin-bottom: 16px; }
+.uvod-horni { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 0 16px; align-items: start; }
+.uvod-horni > .karta { margin-bottom: 16px; }
+.kal-tyden .kal-den { min-height: 46px; }
+.kal-detail-hlava { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.kal-detail-hlava > b::first-letter { text-transform: uppercase; }
+.kal-nejblizsi { margin-top: 12px; padding-top: 10px; border-top: 1px dashed #e3e6ea; display: flex; flex-direction: column; gap: 6px; }
 .kal-hlava { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .kal-mesic { min-width: 8.5em; text-align: center; text-transform: capitalize; }
 .kal-mrizka { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
@@ -542,7 +548,7 @@ details.postup-prace[open] > summary .postup { display: none; }
 .kal-tecky { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; }
 .kalendar i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
 .kal-prijem { background: #2f6fd6; } .kal-termin { background: #d97706; } .kal-predani { background: #1e7a4c; } .kal-vlastni { background: #092a4f; }
-.kal-legenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--sedy); margin: 10px 0 0; }
+.kal-legenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--sedy); margin: 10px 0 0; }
 .kal-legenda span { display: inline-flex; align-items: center; gap: 6px; }
 .kal-detail { margin-top: 14px; padding-top: 12px; border-top: 1px solid #e3e6ea; }
 .kal-detail > b:first-child { display: inline-block; } .kal-detail > b:first-child::first-letter { text-transform: uppercase; }

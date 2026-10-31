@@ -1,2 +1,4 @@
 User-agent: *
+# /s/ = odkaz na E-servisku s náhledem v chatu – náhled si ho musí umět načíst; indexovat se nesmí (X-Robots-Tag: noindex)
+Allow: /s/
 Disallow: /

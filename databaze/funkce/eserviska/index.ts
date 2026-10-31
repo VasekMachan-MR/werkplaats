@@ -32,6 +32,21 @@ function druhPrevodovky(v: any) {
   if (k.some((x: any) => /^42[01]$/.test(String(x?.kod || "").trim()) || /automatic transmission|automatikgetriebe/i.test(String(x?.popis || "")))) return "automat";
   return null;
 }
+// označení vozu pro náhled odkazu: „W126 300 SE“ (stejně jako v e-mailech – odeslat-email)
+function kodKaroserie(typ: unknown, model: unknown) {
+  const t = String(typ || "").toUpperCase().replace(/\s+/g, ""), mo = String(model || "").toUpperCase(), m = t.match(/^([WRCSAV])?(\d{3})(C)?/);
+  if (!m) return String(typ || "").trim();
+  if (m[1]) return m[1] + m[2];
+  const d = m[2];
+  if (m[3]) return "C" + d;
+  if (d === "107") return /SLC/.test(mo) ? "C107" : "R107";
+  if (["129", "170", "230"].includes(d)) return "R" + d;
+  if (/CABRIO/.test(mo)) return d === "124" ? "A124" : "W" + d;
+  if ((d === "123" || d === "124") && /\d\s*C[ED]?\b|\bCE\b/.test(mo)) return "C" + d;
+  if (d === "126" && /SEC/.test(mo)) return "C126";
+  if (d === "140" && /SEC|\bCL\b/.test(mo)) return "C140";
+  return "W" + d;
+}
 const plusMesice = (d: string, m: number) => { const x = new Date(d + "T12:00:00Z"); x.setUTCMonth(x.getUTCMonth() + m); return x.toISOString().slice(0, 10); };
 
 function hlavicky(origin: string | null) {
@@ -54,6 +69,16 @@ Deno.serve(async req => {
     .select("id,vin,spz,znacka,typ,model,rok,mesic,verze,cislo_motoru,prevodovka,barva,rafky,pneu_letni,pneu_zimni,sady_kol,kody_vybavy,km_posledni,jednotka_tachometru,servisni_skupina,motor,eserviska_kod")
     .eq("eserviska_kod", kod).maybeSingle();
   if (!v) return odp(404, { chyba: "nenalezeno" });
+
+  // náhled odkazu v chatu (werk.mercedesrestorations.cz/s/<kód>): jen název auta a první profilová fotka zmenšená na 1200×630 (Vašek 31.10.2026)
+  if (new URL(req.url).searchParams.get("jen") === "nahled") {
+    const { data: f } = await sb.from("soubory").select("klic,verejne").eq("vozidlo_id", v.id).eq("druh", "foto").eq("faze", "profil").is("smazano", null)
+      .order("profil_od", { ascending: true, nullsFirst: false }).order("vytvoreno").limit(5);
+    const prvni = (f || []).find((x: any) => x.verejne !== false);
+    let foto: string | null = null;
+    if (prvni) { const { data: u } = await sb.storage.from("soubory").createSignedUrl(prvni.klic, 3600, { transform: { width: 1200, height: 630, resize: "cover", quality: 72 } }); foto = u?.signedUrl || null; }
+    return odp(200, { nazev: [kodKaroserie(v.typ, v.model), v.model].filter(Boolean).join(" ") || "Mercedes-Benz", foto });
+  }
 
   const sk = skupina(v);
   const [{ data: vl }, { data: zak }, { data: tp }, { data: intervaly }, { data: motory }, { data: typy }, { data: ukony }, { data: intMot }, { data: intPal }, { data: prof }] = await Promise.all([
@@ -222,9 +247,9 @@ async function podepsat(req: Request, sb: any, odp: (s: number, o: unknown) => R
   const bin = Uint8Array.from(atob(png.split(",")[1]), c => c.charCodeAt(0));
   const klic = `zakazky/${d.zakazky.cislo}/eserviska-${Date.now().toString(36)}/podpis-zakaznika-${d.cislo}.png`;
   const { error: eu } = await sb.storage.from("soubory").upload(klic, bin, { contentType: "image/png", upsert: false });
-  if (eu) return odp(500, { chyba: "ulozeni" });
+  if (eu) { hlasitChybu("⚠️ Podpis v E-servisce selhal", `Zákazník podepisoval ${d.cislo}, ale podpis se nepodařilo uložit. Ozvěte se mu.`, d.zakazka_id); return odp(500, { chyba: "ulozeni" }); }
   const { data: sf, error: es } = await sb.from("soubory").insert({ zakazka_id: d.zakazka_id, vozidlo_id: v.id, druh: "podpis", klic, nazev: "podpis zákazníka (E-serviska)", mime: "image/png", velikost: bin.length, verejne: false }).select("id").single();
-  if (es) { await sb.storage.from("soubory").remove([klic]); return odp(500, { chyba: "ulozeni" }); }
+  if (es) { await sb.storage.from("soubory").remove([klic]); hlasitChybu("⚠️ Podpis v E-servisce selhal", `Zákazník podepisoval ${d.cislo}, ale podpis se nepodařilo uložit. Ozvěte se mu.`, d.zakazka_id); return odp(500, { chyba: "ulozeni" }); }
   // nejdřív si podpis „zabrat“ (dalkove_podpisy má unikátní doklad_id): když přijdou dva podpisy naráz (dvě okna, opakované
   // odeslání), druhý tady skončí a do PDF se razítkuje jen jednou (noční kontrola 31.10.2026). IP adresa se neukládá (Vašek 30.10.2026).
   const { data: dp, error: ed } = await sb.from("dalkove_podpisy").insert({ doklad_id: d.id, soubor_id: sf.id, ip: null, zarizeni: (req.headers.get("user-agent") || "").slice(0, 300), vystaveny_doklad_id: null }).select("id").single();
@@ -233,6 +258,7 @@ async function podepsat(req: Request, sb: any, odp: (s: number, o: unknown) => R
   let nahrazeno = false;
   try { nahrazeno = await vlozitPodpisDoDokladu(sb, d, v, bin); } catch (_) { nahrazeno = false; }
   if (nahrazeno) await sb.from("dalkove_podpisy").update({ vystaveny_doklad_id: d.id }).eq("id", dp.id);
+  else hlasitChybu("⚠️ Podpis se nevložil do PDF", `Zákazník podepsal ${d.cislo} v E-servisce, podpis je uložený, ale do PDF se ho vložit nepodařilo – otevřete zakázku.`, d.zakazka_id);
   // podepsaný zakázkový list + VOP hned zákazníkovi e-mailem (Vašek 31.10.2026) – na pozadí, podpis tím nečeká
   if (druh === "zakazkovy_list" && nahrazeno) {
     const odeslat = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/odeslat-email`, {
@@ -244,6 +270,16 @@ async function podepsat(req: Request, sb: any, odp: (s: number, o: unknown) => R
   }
   upozornit({ zakazka_id: d.zakazka_id, druh, cislo: d.cislo });
   return odp(200, { ok: true, email: druh === "zakazkovy_list" });
+}
+
+// chyba → notifikace majiteli na telefon (Vašek 31.10.2026: „hlídání chyb“) – na pozadí, nikdy nic nezastaví
+function hlasitChybu(titulek: string, text: string, zakazka_id?: string | null) {
+  const p = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/notifikace`, {
+    method: "POST", headers: { "content-type": "application/json", "x-werk-interni": Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")! },
+    body: JSON.stringify({ udalost: "chyba", titulek, text: String(text).slice(0, 300), zakazka_id: zakazka_id || null })
+  }).catch(() => {});
+  // @ts-ignore EdgeRuntime existuje jen v Supabase
+  if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(p);
 }
 
 // notifikace na telefon dílně (Vašek 31.10.2026) – na pozadí, podpis tím nečeká; chyba notifikace podpis nikdy nezastaví

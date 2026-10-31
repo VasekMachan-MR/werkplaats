@@ -642,7 +642,8 @@ const server = http.createServer((q, r) => {
   kontrola(/mercedesrestorations\.cz\/e-serviska\?k=[0-9a-f]{20}$/.test(await p.getAttribute("#odkaz-eservisky", "href")), "detail zakázky má tajný odkaz do E-servisky (VIN sám nestačí)");
   await p.evaluate(() => { navigator.share = async d => { window.__SDILENO__ = d.url; }; });
   await p.click("#sdilet-eservisku");
-  kontrola(await p.evaluate(() => window.__SDILENO__) === await p.getAttribute("#odkaz-eservisky", "href"), "ikona 🔗 vedle E-servisky pošle zákazníkovi tajný odkaz (Sdílet)");
+  { const sd = await p.evaluate(() => window.__SDILENO__), kod = (await p.getAttribute("#odkaz-eservisky", "href")).split("k=")[1];
+    kontrola(new RegExp(`^https://werk\\.mercedesrestorations\\.cz/s/${kod}(\\?l=en)?$`).test(sd), "ikona 🔗 vedle E-servisky pošle zákazníkovi tajný odkaz s náhledem (werk…/s/<kód>)"); }
   await p.check('#sekce-servis [data-servis="olej"]');
   await p.waitForSelector("#stav-servisu >> text=✓ Uloženo");
   await p.check('#sekce-servis [data-servis="brzdy"]');
@@ -704,7 +705,7 @@ const server = http.createServer((q, r) => {
   await p.evaluate(() => { navigator.share = async d => { window.__SDILENO__ = d.url; }; window.__SDILENO__ = null; });
   await p.click("#sekce-archiv [data-archiv-podpis]");
   await p.waitForSelector("#sekce-archiv >> text=čeká na podpis zákazníka");
-  kontrola(await p.evaluate(() => !!window.__ULOZENO__.tabulky.soubory.find(f => f.druh === "archiv").podpis_pozadan && /e-serviska\?k=/.test(window.__SDILENO__ || "")),
+  kontrola(await p.evaluate(() => !!window.__ULOZENO__.tabulky.soubory.find(f => f.druh === "archiv").podpis_pozadan && /werk\.mercedesrestorations\.cz\/s\/[0-9a-f]{20}/.test(window.__SDILENO__ || "")),
     "u starého PDF jde „Nechat podepsat“ – označí se k podpisu a otevře se sdílení odkazu do E-servisky");
   await p.click("#sekce-archiv [data-archiv-podpis-zrusit]");
   await p.waitForSelector("#sekce-archiv [data-archiv-podpis]");
@@ -1292,11 +1293,20 @@ const server = http.createServer((q, r) => {
     await p.evaluate(() => { location.hash = "#/"; }); await p.waitForSelector("#kalendar .kal-den.dnes .kal-prijem");
     kontrola(await p.locator("#kalendar .kal-den.dnes .kal-termin").count() === 1 && await p.locator(".kal-udalost >> text=Příjem #").count() === 1, "kalendář: příjem a termín dokončení zakázky jsou v kalendáři");
     await p.evaluate(() => { window.__ULOZENO__.tabulky.zakazky[0].stav = "zruseno"; });
+    await p.waitForFunction(() => !/Načítám/.test(document.getElementById("ceka-zakaznik")?.textContent || "Načítám"));
+    { const t = await p.textContent("#ceka-zakaznik"); 
+      kontrola(/Čeká na zákazníka/.test(t) && (/⏳/.test(t) || /Nic –/.test(t)), "Přehled: karta „Čeká na zákazníka“ (doklady odeslané k podpisu)"); }
+    kontrola(await p.locator("#kalendar .kal-den").count() === 7 && await p.locator("#kal-novy").count() === 0, "kalendář: kompaktní – výchozí jeden týden, formulář nového termínu schovaný");
+    await p.click("#kal-pridat"); await p.waitForSelector("#kal-novy input[name=text]");
     await p.fill("#kal-novy input[name=text]", "Přivezou 280 SL na prohlídku"); await p.fill("#kal-novy input[name=cas]", "09:30");
     await p.click("#kal-novy button"); await p.waitForSelector(".kal-udalost >> text=Přivezou 280 SL");
     kontrola(await p.evaluate(() => window.__ULOZENO__.tabulky.kalendar.some(k => k.text === "Přivezou 280 SL na prohlídku" && k.cas === "09:30")), "kalendář: vlastní termín s časem se uloží");
+    kontrola(await p.locator("#kal-novy").count() === 0, "kalendář: po přidání se formulář zase schová");
     await p.click("#kalendar [data-kal='1']"); await p.waitForSelector("#kalendar [data-kal='0']");
-    kontrola(true, "kalendář: jde listovat po měsících");
+    kontrola(true, "kalendář: jde listovat po týdnech");
+    await p.click("#kal-rezim"); await p.waitForFunction(() => document.querySelectorAll("#kalendar .kal-den").length >= 28);
+    kontrola(true, "kalendář: tlačítko Měsíc ukáže celý měsíc");
+    await p.click("#kal-rezim"); await p.waitForFunction(() => document.querySelectorAll("#kalendar .kal-den").length === 7);
     await p.click("#kalendar [data-kal='0']"); await p.waitForSelector(".kal-udalost >> text=Přivezou 280 SL");
     await p.screenshot({ path: "testy/vystup-app/kalendar.png", fullPage: true });
     await p.click("[data-kal-smazat]"); await p.waitForFunction(() => !window.__ULOZENO__.tabulky.kalendar.length);

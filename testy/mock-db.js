@@ -81,6 +81,9 @@ window.__WERK_DB__ = (() => {
       await cekej();
       return kopie(T.dily.filter(d => d.stav !== "nepouzito").map(d => { const z = T.zakazky.find(x => x.id === d.zakazka_id); return { ...d, zakazky: z && { ...z, vozidla: T.vozidla.find(v => v.id === z.vozidlo_id) } }; }));
     },
+    async cekajiciPodpisy() { await cekej(); return kopie(T.doklady.filter(d => d.data?.cekaPodpis).map(d => { const z = T.zakazky.find(x => x.id === d.zakazka_id) || {};
+      return { ...d, cekapodpis: true, podpisy: T.podpisy.filter(p => p.doklad_id === d.id), dalkove_podpisy: T.dalkove_podpisy.filter(p => p.doklad_id === d.id),
+        zakazky: { id: z.id, cislo: z.cislo, stav: z.stav, zakaznici: T.zakaznici.find(c => c.id === z.zakaznik_id) || null, vozidla: T.vozidla.find(v => v.id === z.vozidlo_id) || null } }; })); },
     async kalendar(od, doo) { await cekej(); return kopie(T.kalendar.filter(k => k.datum >= od && k.datum <= doo)); },
     async smazatRadek(tab, rid) { await cekej(); T[tab] = T[tab].filter(x => x.id !== rid); window.__ULOZENO__.tabulky[tab] = T[tab]; return [{ id: rid }]; },
     async zakazky() {

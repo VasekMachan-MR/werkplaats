@@ -15,7 +15,8 @@ const zGitHubu = async (t: string) => {
 const OTISK = "81f89862ecb5b10711c83ca2d0d2c64e407a8aa6de7db077389e97cb504ccbad";
 const TABULKY = ["ciselne_rady","dalkove_podpisy","dily","dodavatele","doklady","emaily","kalendar","katalog_modely","katalog_motorizace","katalog_rady","katalog_vozu",
   "motory","nabidky","nakupni_doklady","nastaveni","podpisy","polozky","postupy","sazby","servisni_intervaly","servisni_intervaly_motoru","servisni_plan",
-  "servisni_ukony","soubory","typy_motoru","uzivatele","vlastnictvi","vozidla","zakazky","zakaznici","koncepty_prijmu","sklad","sklad_pohyby","preklady"];
+  "servisni_ukony","soubory","typy_motoru","uzivatele","vlastnictvi","vozidla","zakazky","zakaznici","koncepty_prijmu","sklad","sklad_pohyby","preklady",
+  "servisni_intervaly_paliva","push_odbery"];   // push_vapid záměrně ne (soukromý klíč notifikací; po obnově se vytvoří nový)
 const hex = (b: ArrayBuffer) => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
 Deno.serve(async req => {
   const k = req.headers.get("x-zaloha") || "";

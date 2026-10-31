@@ -14,6 +14,12 @@ jobs:
   zaloha:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:   # prázdný server na zkoušku obnovy nanečisto
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: zkouska, POSTGRES_HOST_AUTH_METHOD: trust }
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -37,6 +43,9 @@ jobs:
         run: |
           echo "DEN=$(TZ=Europe/Prague date +%F)" >> "$GITHUB_ENV"
           VYSTUP="$RUNNER_TEMP/balicek/zaloha-$(TZ=Europe/Prague date +%F)" zaloha/denni-zaloha.sh
+      - name: Zkouška obnovy nanečisto (migrace + obnova-dat.sql + kontrola počtů)
+        env: { PGHOST: localhost, PGPORT: "5432", PGUSER: postgres }
+        run: zaloha/zkouska-obnovy.sh "$RUNNER_TEMP/balicek/zaloha-$DEN"
       - name: Nahrát balíček do R2
         run: aws --endpoint-url "$R2_ENDPOINT" s3 sync --only-show-errors "$RUNNER_TEMP/balicek/zaloha-$DEN" "s3://werkplaats-zalohy/$DEN/"
       - name: Zrcadlo fotek a PDF
