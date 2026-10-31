@@ -30,3 +30,5 @@ if spatne:
     print("::error::Obnova nesedí – " + "; ".join(spatne)); sys.exit(1)
 print(f"Zkouška obnovy OK: {len(d)} tabulek, {celkem} řádků – všechno sedí")
 PY
+# zkušební databáze se po porovnání smaže (nic se nehromadí); samotná záloha v R2 zůstává
+$P -d postgres -c "drop database if exists zkouska_obnovy"

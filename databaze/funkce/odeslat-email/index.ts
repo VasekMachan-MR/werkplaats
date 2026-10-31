@@ -52,6 +52,7 @@ function kodKaroserie(typ: unknown, model: unknown) {
   if (d === "107") return /SLC/.test(mo) ? "C107" : "R107";
   if (["129", "170", "230"].includes(d)) return "R" + d;
   if (/CABRIO/.test(mo)) return d === "124" ? "A124" : "W" + d;
+    if ((d === "123" || d === "124") && /\d\s*T(D|E|DT)?\b/.test(mo)) return "S" + d;   // kombi (T-model): 300 TD → S123 (Vašek 31.10.2026)
   if ((d === "123" || d === "124") && /\d\s*C[ED]?\b|\bCE\b/.test(mo)) return "C" + d;
   if (d === "126" && /SEC/.test(mo)) return "C126";
   if (d === "140" && /SEC|\bCL\b/.test(mo)) return "C140";
