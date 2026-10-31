@@ -4312,8 +4312,16 @@
     let verze = v.verze || "EU", jedn = v.jednotka_tachometru || "km";
     navazPoznamky(app, (tab, h) => { v.poznamky = h; });
     const seg = (sel, fn) => app.querySelector(sel).onclick = e => { const b = e.target.closest("button"); if (!b) return; fn(b.dataset.h); app.querySelectorAll(sel + " button").forEach(x => x.setAttribute("aria-pressed", x === b)); };
-    seg("#verze", h => { verze = h; if (h === "US" && jedn !== "mi") { jedn = "mi"; app.querySelectorAll("#jedn button").forEach(x => x.setAttribute("aria-pressed", x.dataset.h === "mi")); } });
-    seg("#jedn", h => (jedn = h));
+    // verze a tachometr se uloží hned po klepnutí (bez „Uložit změny“); US = míle, EU/JP = km (Vašek 31.10.2026)
+    const ulozVerzi = async () => {
+      const st = app.querySelector("#stav"); if (st) st.textContent = "Ukládám…";
+      try { await db.upravit("vozidla", id, { verze, jednotka_tachometru: jedn }); v.verze = verze; v.jednotka_tachometru = jedn; if (st) st.textContent = "✓ Uloženo"; }
+      catch (err) { if (st) st.textContent = ""; hlaska("Nepodařilo se uložit: " + chybaText(err), true); }
+    };
+    seg("#verze", h => { verze = h; const j = h === "US" ? "mi" : "km";
+      if (jedn !== j) { jedn = j; app.querySelectorAll("#jedn button").forEach(x => x.setAttribute("aria-pressed", x.dataset.h === j)); }
+      ulozVerzi(); });
+    seg("#jedn", h => { jedn = h; ulozVerzi(); });
     const f = app.querySelector("#f");
     napojSadyKol(f);
     f.addEventListener("input", e => { if (e.target.name && !e.target.name.startsWith("sk-")) zkontrolujPole(e.target, e.target.name); });

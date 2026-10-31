@@ -499,6 +499,16 @@ const server = http.createServer((q, r) => {
     await p.evaluate(id => { location.hash = "#/vozidlo/" + id; }, vid);
     await p.waitForSelector("#profilovky-vozu .fotka img", { timeout: 8000 }).catch(() => null);
     kontrola(await p.locator("#profilovky-vozu .fotka").count() === 1, "detail vozidla: sekce ⭐ Profilové fotky");
+    // verze → tachometr (US = míle, EU/JP = km) a hned uloženo bez „Uložit změny“ (Vašek 31.10.2026)
+    const vz = () => p.evaluate(id => { const v = window.__ULOZENO__.tabulky.vozidla.find(x => x.id === id); return v.verze + "/" + v.jednotka_tachometru + "/" + document.querySelector('#jedn button[aria-pressed="true"]').dataset.h; }, vid);
+    const puvodni = await p.evaluate(id => { const v = window.__ULOZENO__.tabulky.vozidla.find(x => x.id === id); return [v.verze || "EU", v.jednotka_tachometru || "km"]; }, vid);
+    await p.click('#verze button[data-h="US"]'); await p.waitForFunction(id => window.__ULOZENO__.tabulky.vozidla.find(x => x.id === id).verze === "US", vid);
+    kontrola(await vz() === "US/mi/mi", "detail vozidla: US → tachometr míle, uloženo hned");
+    await p.click('#verze button[data-h="JP"]'); await p.waitForFunction(id => window.__ULOZENO__.tabulky.vozidla.find(x => x.id === id).verze === "JP", vid);
+    kontrola(await vz() === "JP/km/km", "detail vozidla: JP → tachometr km, uloženo hned");
+    await p.click('#verze button[data-h="EU"]'); await p.waitForFunction(id => window.__ULOZENO__.tabulky.vozidla.find(x => x.id === id).verze === "EU", vid);
+    kontrola(await vz() === "EU/km/km", "detail vozidla: EU → tachometr km, uloženo hned");
+    await p.evaluate(([id, a, b]) => { const v = window.__ULOZENO__.tabulky.vozidla.find(x => x.id === id); v.verze = a; v.jednotka_tachometru = b; }, [vid, ...puvodni]);
   }
   await p.evaluate(() => { location.hash = "#/"; });
   await p.waitForSelector(".dlazdice-k");
