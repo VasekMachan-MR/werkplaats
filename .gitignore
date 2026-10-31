@@ -5,3 +5,4 @@ dokumenty/sablony/assets/podpis*.png
 testy/vystup/
 dist/
 testy/vystup-app/
+!aplikace/vop.pdf
