@@ -62,8 +62,10 @@ function kodModelu(vin,typ){var v=String(vin||'').toUpperCase().replace(/\s/g,''
 function typKod(t){t=String(t||'').toUpperCase().replace(/\s+/g,'');var m=t.match(/^([WRC])?(\d{3})/);if(!m)return t;return (m[1]||(m[2]==='107'?'R':m[2]==='124'&&/C$/.test(t)?'C':'W'))+m[2]}
 function kody(k){if(!k)return[];if(Array.isArray(k))return k.map(function(x){return typeof x==='string'?[x,'']:[x.kod||x.code||'',x.popis||x.text||x.desc||'']});if(typeof k==='object')return Object.keys(k).map(function(c){return[c,k[c]]});return[]}
 function roky(m,t){var y=m/12;return y===1?'1 '+t.y1:y+' '+(y<5?t.y24:t.y5)}
-function intKratce(s,t,lang,unit){var a=[];if(s.interval_km)a.push(num(s.interval_km,lang)+' '+unit);if(s.interval_mesice)a.push(roky(s.interval_mesice,t));return a.join(' / ')}
-function intDlouze(s,t,lang,unit){if(s.interval_km&&s.interval_mesice)return t.every+' '+num(s.interval_km,lang)+' '+unit+' '+t.or+' '+roky(s.interval_mesice,t)+' – '+t.first;if(s.interval_km)return t.every+' '+num(s.interval_km,lang)+' '+unit;var y=s.interval_mesice/12;return (y===1?t.everyY:t.everyYs)+' '+roky(s.interval_mesice,t)}
+// interval podle verze vozu: US = míle, EU/JP = km (Vašek 31.10.2026); MB hodnoty 1 mi = 1,6 km → vždy kulatá čísla (24 000 km = 15 000 mi)
+function intJ(s,unit){var us=D&&D.vuz&&D.vuz.verze==='US';if(s.int_km!=null)return us?[Math.round(s.int_km/1.6/100)*100,'mi']:[s.int_km,'km'];return[s.interval_km,unit]}
+function intKratce(s,t,lang,unit){var a=[],j=intJ(s,unit);if(j[0])a.push(num(j[0],lang)+' '+j[1]);if(s.interval_mesice)a.push(roky(s.interval_mesice,t));return a.join(' / ')}
+function intDlouze(s,t,lang,unit){var j=intJ(s,unit),ik=j[0];unit=j[1];if(ik&&s.interval_mesice)return t.every+' '+num(ik,lang)+' '+unit+' '+t.or+' '+roky(s.interval_mesice,t)+' – '+t.first;if(ik)return t.every+' '+num(ik,lang)+' '+unit;var y=s.interval_mesice/12;return (y===1?t.everyY:t.everyYs)+' '+roky(s.interval_mesice,t)}
 var S={tahy:[],souhlas:false,odesilam:false,podChyba:false,podOk:false,lang:'cs',langOpen:false,open:{0:true},slide:0,wheels:false,cust:false,sa:false,due:null,pozn:null,copied:false,gal:null,dily:{},fz:{},dz:{}};
 try{var sl=localStorage.getItem('sk-lang');if(L[sl])S.lang=sl}catch(e){}
 var kod=(new URLSearchParams(location.search).get('k')||'').replace(/[^0-9a-zA-Z_-]/g,''),nacteno=0;

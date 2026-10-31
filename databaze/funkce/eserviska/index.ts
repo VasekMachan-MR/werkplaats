@@ -92,13 +92,14 @@ Deno.serve(async req => {
   const servis = (intervaly || []).filter(it => platne.has(it.ukon)).map(it => (intMot || []).find(x => x.motor === motor && x.ukon === it.ukon) || podlePaliva(it.ukon) || it).map(it => {
     const z = hotove.find(x => (x.servisni_ukony || []).includes(it.ukon));
     const interval = naJed(it.interval_km);
-    if (!z) return { ukon: it.ukon, interval_km: interval, interval_mesice: it.interval_mesice, zdroj: it.zdroj, posledni: null, pristi: null, stav: "nezname" };
+    // interval_km = v jednotkách tachometru (výpočet „Příště“); int_km = původní interval v km (zobrazení podle verze EU/US/JP – Vašek 31.10.2026)
+    if (!z) return { ukon: it.ukon, interval_km: interval, int_km: it.interval_km, interval_mesice: it.interval_mesice, zdroj: it.zdroj, posledni: null, pristi: null, stav: "nezname" };
     const datum = z.datum_predani || z.datum_prijmu, km = z.km_prijem ?? z.km_predani ?? null;   // km se zapisují při převzetí (F4)
     const pDatum = it.interval_mesice ? plusMesice(datum, it.interval_mesice) : null, pKm = interval != null && km != null ? km + interval : null;
     const nyni = v.km_posledni;
     const po = (pDatum && pDatum <= dnes) || (pKm != null && nyni != null && nyni >= pKm);
     const brzy = (pDatum && pDatum <= za60) || (pKm != null && nyni != null && nyni >= pKm - Math.min(1500, Math.round(interval! / 10)));
-    return { ukon: it.ukon, interval_km: interval, interval_mesice: it.interval_mesice, zdroj: it.zdroj,
+    return { ukon: it.ukon, interval_km: interval, int_km: it.interval_km, interval_mesice: it.interval_mesice, zdroj: it.zdroj,
       posledni: { datum, km, cislo: z.cislo }, pristi: { datum: pDatum, km: pKm }, stav: po ? "po" : brzy ? "brzy" : "ok" };
   });
   // nejnaléhavější nahoře: Po termínu → Brzy → V pořádku → Nezaznamenáno (v rámci skupiny pořadí z manuálu) – Vašek 31.10.2026
