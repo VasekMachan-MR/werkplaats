@@ -876,7 +876,9 @@ const server = http.createServer((q, r) => {
 
   // ---------- Dopodepsání zakázkového listu z E-servisky ----------
   {
-    const zid = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const d = T.doklady.find(x => x.druh === "zakazkovy_list"); d.data = { ...d.data, cekaPodpis: true }; return d.zakazka_id; });
+    const zid = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const d = T.doklady.find(x => x.druh === "zakazkovy_list"); d.data = { ...d.data, cekaPodpis: true };
+      for (let i = T.podpisy.length - 1; i >= 0; i--) if (T.podpisy[i].doklad_id === d.id && T.podpisy[i].role === "zakaznik") T.podpisy.splice(i, 1);   // list opravdu bez podpisu zákazníka
+      return d.zakazka_id; });
     await p.evaluate(id => { location.hash = "#/zakazky"; location.hash = "#/zakazka/" + id; }, zid);
     await p.waitForSelector(".info.pozor [data-poslat-email]");
     kontrola(/čeká na podpis zákazníka/.test(await p.textContent(".info.pozor")), "zakázka ukazuje, že list čeká na podpis zákazníka (+ „📧 Poslat znovu“)");
