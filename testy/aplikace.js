@@ -604,6 +604,8 @@ const server = http.createServer((q, r) => {
   await p.click('#sekce-fotky-detail [data-faze="prubeh"] [data-profil]');
   await p.waitForFunction(() => window.__ULOZENO__.tabulky.soubory.filter(f => f.druh === "foto" && f.faze === "profil").length === 2);
   await p.waitForSelector('#sekce-fotky-detail [data-faze="profil"] .fotka:not(:has(.od-auta)) img', { timeout: 15000 });
+  kontrola(await p.evaluate(() => { const b = [...document.querySelectorAll('#sekce-fotky-detail [data-faze="profil"] .fotka')]; return b.length === 2 && !!b[0].querySelector(".od-auta") && !b[1].querySelector(".od-auta"); })
+    && /výchozí je první/.test(await p.textContent('#sekce-fotky-detail details[data-faze-sbal="profil"] > summary')), "nově označená ⭐ profilovka je až za tou dřívější (výchozí v E-servisce zůstává první)");
   kontrola(/Profilové/.test(await p.textContent("#sekce-fotky-detail")) && await p.locator('#faze-fotek option[value="profil"]').count() === 1,
     "fotka jde označit ⭐ jako profilová (E-serviska nahoře) a jde rovnou nahrát jako profilová");
   await p.click('#sekce-fotky-detail [data-faze="profil"] .fotka:not(:has(.od-auta)) [data-verejne]');

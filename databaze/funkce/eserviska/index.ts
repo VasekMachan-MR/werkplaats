@@ -67,7 +67,7 @@ Deno.serve(async req => {
     sb.from("servisni_intervaly_motoru").select("motor,ukon,interval_km,interval_mesice,zdroj"),
     sb.from("servisni_intervaly_paliva").select("palivo,ukon,rok_od,rok_do,krome_typu,interval_km,interval_mesice,zdroj").eq("skupina", sk),
     // profilové fotky patří k autu – ze všech návštěv, i ze smazaných / zrušených zakázek (Vašek 30.10.2026)
-    sb.from("soubory").select("klic,verejne,vytvoreno").eq("vozidlo_id", v.id).eq("druh", "foto").eq("faze", "profil").is("smazano", null).order("vytvoreno")
+    sb.from("soubory").select("klic,verejne,vytvoreno,profil_od").eq("vozidlo_id", v.id).eq("druh", "foto").eq("faze", "profil").is("smazano", null).order("profil_od", { ascending: true, nullsFirst: false }).order("vytvoreno")
   ]);
   const motor = urciMotor(v, motory || [], typy || []), mInfo = (motory || []).find(m => m.kod === motor);
   const palivo = mInfo ? mInfo.palivo : /\b\d{3}\s*(D|TD|SD|CD|SDL)\b/i.test(v.model || "") ? "diesel" : "benzin";
@@ -185,8 +185,8 @@ Deno.serve(async req => {
     vuz,
     zakaznik: aktualni?.zakaznici || null,
     tp: tpVidi.filter((f: any) => url[f.klic]).map(f => ({ nazev: f.nazev, url: url[f.klic], pdf: f.mime === "application/pdf" })),
-    // profilové fotky auta (nahoře vpravo) – jen fotky označené ⭐, nejnovější první; servisní fotky jsou jen u návštěv
-    profil: (prof || []).filter((f: any) => f.verejne !== false && url[f.klic]).reverse().map((f: any) => url[f.klic]),
+    // profilové fotky auta (nahoře vpravo) – jen fotky označené ⭐; výchozí je ta, která se profilovou stala jako první (Vašek 31.10.2026)
+    profil: (prof || []).filter((f: any) => f.verejne !== false && url[f.klic]).map((f: any) => url[f.klic]),
     navstevy, podpis,
     servis, servis_skupina: sk, motor, palivo, prevodovka,
     platnost_odkazu_s: PLATNOST

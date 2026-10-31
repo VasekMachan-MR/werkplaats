@@ -232,7 +232,7 @@
         return ok(await sb.from("vozidla").select("*,vlastnictvi(id,vlastni_od,vlastni_do,zakaznici(id,jmeno,telefon,email)),zakazky(id,cislo,stav,datum_prijmu,km_prijem,km_predani)").eq("id", id).maybeSingle());
       },
       // profilové fotky patří k autu (ze všech zakázek i po smazané zakázce) – Vašek 30.10.2026
-      async profilovkyVozu(vid) { return ok(await sb.from("soubory").select("id,zakazka_id,vozidlo_id,doklad_id,druh,faze,klic,nazev,mime,vytvoreno,smazano,verejne").eq("vozidlo_id", vid).eq("druh", "foto").eq("faze", "profil").is("smazano", null).order("vytvoreno")); },
+      async profilovkyVozu(vid) { return ok(await sb.from("soubory").select("id,zakazka_id,vozidlo_id,doklad_id,druh,faze,klic,nazev,mime,vytvoreno,smazano,verejne,profil_od").eq("vozidlo_id", vid).eq("druh", "foto").eq("faze", "profil").is("smazano", null).order("vytvoreno")); },
       async dokumentyVozidla(vid) { return ok(await sb.from("soubory").select("id,druh,klic,nazev,mime,verejne,vytvoreno").eq("vozidlo_id", vid).eq("druh", "tp").is("smazano", null).order("vytvoreno")); },
       async polozky(zid) { return ok(await sb.from("polozky").select("typ,popis,mnozstvi,jednotka,sazba,castka,poradi,poznamka").eq("zakazka_id", zid).is("nabidka_id", null).order("poradi")); },
       async ulozitPolozky(zid, polozky) { return ok(await sb.rpc("ulozit_polozky", { p_zakazka: zid, p_polozky: polozky })); },
@@ -309,7 +309,7 @@
       async upravit(tabulka, id, zmeny) { return ok(await sb.from(tabulka).update(zmeny).eq("id", id).select()); },
       async detail(id) {
         return ok(await sb.from("zakazky")
-          .select("*,vozidla(*),zakaznici(*),doklady(id,druh,cislo,verze,vystaveno,splatnost,zamceno,celkem,zaplaceno,odeslano_uol,data,jazyk,pdf_soubor_id,soubory!doklady_pdf_soubor_id_fkey(klic),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id,podepsano,vystaveny_doklad_id,soubory(klic)),podpisy(role,podepsano,zpusob),emaily(id,komu,stav,chyba,odeslano,zmeneno)),soubory!soubory_zakazka_id_fkey(id,druh,faze,klic,nazev,mime,vytvoreno,smazano,doklad_id,verejne,podpis_pozadan,podepsany_z)")
+          .select("*,vozidla(*),zakaznici(*),doklady(id,druh,cislo,verze,vystaveno,splatnost,zamceno,celkem,zaplaceno,odeslano_uol,data,jazyk,pdf_soubor_id,soubory!doklady_pdf_soubor_id_fkey(klic),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id,podepsano,vystaveny_doklad_id,soubory(klic)),podpisy(role,podepsano,zpusob),emaily(id,komu,stav,chyba,odeslano,zmeneno)),soubory!soubory_zakazka_id_fkey(id,druh,faze,klic,nazev,mime,vytvoreno,smazano,doklad_id,verejne,podpis_pozadan,podepsany_z,profil_od)")
           .eq("id", id).maybeSingle());
       }
     };
@@ -2465,7 +2465,9 @@
       ${E.vyber ? `<div class="info vyber-fotek"><span>Klepnutím vyberte fotky (<b id="pocet-vybranych">${E.vyber.size}</b>).</span>
         <span class="radek-tlacitek"><button type="button" class="tl tl-male" id="vybrat-vse" title="Vybere všechny kromě skrytých (🚫)">Vybrat vše</button>
         <button type="button" class="tl tl-hlavni" id="odeslat-fotky" ${E.vyber.size ? "" : "disabled"}>📤 Poslat (WhatsApp…)</button></span></div>` : ""}
-      ${[FAZE_FOTEK[0], ["skryte", "🚫 Neveřejné"], ...FAZE_FOTEK.slice(1)].map(([k, t]) => { const f = fotky.filter(x => k === "skryte" ? x.verejne === false : x.verejne !== false && (x.faze || "prijem") === k); return f.length ? `<details class="faze-sbal" data-faze-sbal="${k}" ${sbaleneFaze().has(k) ? "" : "open"}><summary class="faze-nadpis"><span class="sipka" aria-hidden="true">▸</span> <b>${t}</b> <span class="mutted">${popisPoctu(f)}${k === "profil" ? " · v E-servisce nahoře vpravo" : k === "skryte" ? " · zákazník je v E-servisce nevidí (👁 je vrátí zpět)" : ""}</span></summary><div class="fotky" data-faze="${k}">${f.map(x => `<div class="fotka" data-klic="${esc(x.klic)}"><span class="mutted" style="font-size:12px">Načítám…</span></div>`).join("")}</div></details>` : ""; }).join("")}
+      ${[FAZE_FOTEK[0], ["skryte", "🚫 Neveřejné"], ...FAZE_FOTEK.slice(1)].map(([k, t]) => { const f = fotky.filter(x => k === "skryte" ? x.verejne === false : x.verejne !== false && (x.faze || "prijem") === k);
+        if (k === "profil") f.sort((a, b) => String(a.profil_od || a.vytvoreno || "").localeCompare(String(b.profil_od || b.vytvoreno || "")));   // stejně jako E-serviska: první = výchozí
+        return f.length ? `<details class="faze-sbal" data-faze-sbal="${k}" ${sbaleneFaze().has(k) ? "" : "open"}><summary class="faze-nadpis"><span class="sipka" aria-hidden="true">▸</span> <b>${t}</b> <span class="mutted">${popisPoctu(f)}${k === "profil" ? " · v E-servisce nahoře vpravo" + (f.length > 1 ? ", výchozí je první" : "") : k === "skryte" ? " · zákazník je v E-servisce nevidí (👁 je vrátí zpět)" : ""}</span></summary><div class="fotky" data-faze="${k}">${f.map(x => `<div class="fotka" data-klic="${esc(x.klic)}"><span class="mutted" style="font-size:12px">Načítám…</span></div>`).join("")}</div></details>` : ""; }).join("")}
       ${fotky.length ? "" : `<p class="mutted" style="margin:12px 0 0">Zatím žádné fotky.</p>`}`;
     el.querySelector("#faze-fotek").onchange = e => { E.fazeFotek = e.target.value; };
     // skupiny fotek jde sbalit (Vašek 31.10.2026: „ať to v zakázce nezabírá tolik místa“) – zapamatuje se v zařízení pro všechny zakázky
@@ -2503,7 +2505,7 @@
       el.querySelectorAll("[data-profil]").forEach(b => b.onclick = async () => {        // profilová ⭐ / servisní fotka
         const s = E.z.soubory.find(x => x.id === b.dataset.profil); if (!s) return;
         const nova = s.faze === "profil" ? "prubeh" : "profil";
-        try { await db.upravit("soubory", s.id, { faze: nova }); s.faze = nova;
+        try { await db.upravit("soubory", s.id, { faze: nova }); s.faze = nova; s.profil_od = nova === "profil" ? new Date().toISOString() : null;
           if (s.odAuta && nova !== "profil") E.z.soubory = E.z.soubory.filter(x => x !== s);   // fotka z jiné návštěvy se vrátí mezi její servisní fotky
           vykresliFotkyDetail(); hlaska(nova === "profil" ? "Profilová fotka – v E-servisce bude nahoře vpravo." : "Fotka přesunuta mezi servisní (Během opravy)."); }
         catch (e) { hlaska(chybaText(e), true); }
