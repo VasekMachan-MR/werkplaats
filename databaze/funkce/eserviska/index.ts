@@ -208,7 +208,16 @@ async function podepsat(req: Request, sb: any, odp: (s: number, o: unknown) => R
   let nahrazeno = false;
   try { nahrazeno = await vlozitPodpisDoDokladu(sb, d, v, bin); } catch (_) { nahrazeno = false; }
   if (nahrazeno) await sb.from("dalkove_podpisy").update({ vystaveny_doklad_id: d.id }).eq("id", dp.id);
-  return odp(200, { ok: true });
+  // podepsaný zakázkový list + VOP hned zákazníkovi e-mailem (Vašek 31.10.2026) – na pozadí, podpis tím nečeká
+  if (druh === "zakazkovy_list" && nahrazeno) {
+    const odeslat = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/odeslat-email`, {
+      method: "POST", headers: { "content-type": "application/json", "x-werk-interni": Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")! },
+      body: JSON.stringify({ doklad_id: d.id })
+    }).catch(() => {});
+    // @ts-ignore EdgeRuntime existuje jen v Supabase
+    if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(odeslat); else await odeslat;
+  }
+  return odp(200, { ok: true, email: druh === "zakazkovy_list" });
 }
 
 // podpis zákazníka do PDF (stránka 1, políčko „Převzal“ nad tečkami – stejné místo v šabloně i ve starých listech z Excelu)

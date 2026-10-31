@@ -64,6 +64,8 @@ window.__WERK_DB__ = (() => {
     async koncept() { await cekej(); if (window.__OFFLINE__) throw new Error("Failed to fetch"); const k = sessionStorage.getItem("mock-koncept"); return k ? JSON.parse(k) : null; },
     async ulozitKoncept(data) { await cekej(); if (window.__OFFLINE__) throw new Error("Failed to fetch"); sessionStorage.setItem("mock-koncept", JSON.stringify({ data, upraveno: new Date().toISOString() })); return [{}]; },
     async smazatKoncept() { await cekej(); sessionStorage.removeItem("mock-koncept"); },
+    async odeslatZakazkovyList(doklad_id) { await cekej(); const d = T.doklady.find(x => x.id === doklad_id); const z = d && T.zakazky.find(x => x.id === d.zakazka_id); const c = z && T.zakaznici.find(x => x.id === z.zakaznik_id);
+      (window.__ULOZENO__.emaily ||= []).push({ doklad_id, komu: c?.email || null }); return c?.email ? { ok: true, komu: c.email, stav: "odeslano" } : { ok: false, stav: "chyba", chyba: "Zákazník nemá platný e-mail." }; },
     async dalsiCisloOdhad() { return window.__ULOZENO__.citac + 1; },
     async katalogVozu() { return kopie(window.__KATALOG__ || []); },
     async vsechnyDily() {

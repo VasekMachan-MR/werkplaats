@@ -199,6 +199,7 @@
       async zalozitZakazku(p) { return ok(await sb.rpc("zalozit_zakazku", { p })); },
       async zmenitMajitele(vid, zid) { return ok(await sb.rpc("zapsat_vlastnictvi", { p_vozidlo: vid, p_zakaznik: zid, p_zmena: true })); },
       async smazatZaznamSouboru(id) { return ok(await sb.from("soubory").delete().eq("id", id).select("id")); },
+      async odeslatZakazkovyList(doklad_id) { const { data, error } = await sb.functions.invoke("odeslat-email", { body: { doklad_id } }); if (error) throw error; return data; },
       async smazatSoubory(telo) { const { data, error } = await sb.functions.invoke("smazat-soubory", { body: telo }); if (error) throw error; return data; },
       async vystavitDoklad(p) { return ok(await sb.rpc("vystavit_doklad", { p })); },
       async smazatZakazku(id) { return ok(await sb.rpc("smazat_zakazku", { p_id: id })); },
@@ -293,7 +294,7 @@
       async upravit(tabulka, id, zmeny) { return ok(await sb.from(tabulka).update(zmeny).eq("id", id).select()); },
       async detail(id) {
         return ok(await sb.from("zakazky")
-          .select("*,vozidla(*),zakaznici(*),doklady(id,druh,cislo,verze,vystaveno,splatnost,zamceno,celkem,zaplaceno,odeslano_uol,data,jazyk,pdf_soubor_id,soubory!doklady_pdf_soubor_id_fkey(klic),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id,podepsano,vystaveny_doklad_id,soubory(klic))),soubory!soubory_zakazka_id_fkey(id,druh,faze,klic,nazev,mime,vytvoreno,smazano,doklad_id,verejne,podpis_pozadan,podepsany_z)")
+          .select("*,vozidla(*),zakaznici(*),doklady(id,druh,cislo,verze,vystaveno,splatnost,zamceno,celkem,zaplaceno,odeslano_uol,data,jazyk,pdf_soubor_id,soubory!doklady_pdf_soubor_id_fkey(klic),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id,podepsano,vystaveny_doklad_id,soubory(klic)),emaily(id,komu,stav,chyba,odeslano,zmeneno)),soubory!soubory_zakazka_id_fkey(id,druh,faze,klic,nazev,mime,vytvoreno,smazano,doklad_id,verejne,podpis_pozadan,podepsany_z)")
           .eq("id", id).maybeSingle());
       }
     };
@@ -1437,10 +1438,12 @@
   }
 
   /* ---------- náhled a podpis ---------- */
+  const VOP_URL = "https://www.mercedesrestorations.cz/vop";
   // ctx = znovu vystavení listu z „Upravit příjem“ (Vašek 30.10.2026): { Q – údaje zakázky, ulozit(…), zpet() }; bez ctx = příjem (P)
   async function prijemPodpis(ctx = null) {
     const Q = ctx?.Q || P;
     const en = Q.zakazka.jazyk === "en";
+    const emailZak = String(Q.zakaznik.email || "").trim();
     app.innerHTML = `
       <h1>Zakázkový list – náhled a podpis</h1>
       <p class="popis">Zkontrolujte se zákazníkem údaje. Podpisem zákazník potvrzuje předání vozu a podmínky na zadní straně.</p>
@@ -1450,6 +1453,17 @@
         <div class="podpis-pole"><canvas id="podpis"></canvas><div class="linka-podpisu"></div><div class="text-podpisu">${en ? "Customer signature" : "Podpis zákazníka (prstem nebo pero)"}</div></div>
         <div class="radek-tlacitek" style="margin-top:10px"><button type="button" class="tl tl-male" id="smazat-podpis">Smazat podpis</button>
           <span class="napoveda">Podpis se propíše do políčka „${en ? "Received by" : "Převzal"}“.</span></div>
+      </section>
+      <section class="karta" id="souhlas-sekce">
+        <h2>${en ? "E-mail and terms" : "E-mail a obchodní podmínky"}</h2>
+        ${emailZak ? `<p class="popis">${en ? "A copy of the signed work order and our terms will be sent to:" : "Kopie podepsaného zakázkového listu a obchodní podmínky přijdou na:"}</p>
+          <p style="font-size:22px;font-weight:700;margin:4px 0 12px;word-break:break-all">${esc(emailZak)}</p>`
+          : `<div class="info pozor">${en ? "The customer has no e-mail – the copy will not be sent. Go back and add it." : "Zákazník nemá e-mail – kopie se nepošle. Vraťte se a doplňte ho."}</div>`}
+        <label style="display:flex;gap:12px;align-items:flex-start;cursor:pointer;font-size:17px;line-height:1.4">
+          <input type="checkbox" id="souhlas-vop" style="width:26px;height:26px;flex:0 0 auto;margin:2px 0 0;accent-color:#092b50">
+          <span>${en ? `I have read and accept the <a href="${VOP_URL}" target="_blank" rel="noopener">General Terms and Conditions</a>, and I confirm that the e-mail above is correct and is the main way to contact me about this job.`
+            : `Seznámil/a jsem se se <a href="${VOP_URL}" target="_blank" rel="noopener">Všeobecnými obchodními podmínkami</a> a souhlasím s nimi. Potvrzuji, že uvedený e-mail je správný a je mým hlavním komunikačním kanálem pro tuto zakázku.`}</span>
+        </label>
       </section>
       <section class="karta" id="muj-podpis-sekce" hidden>
         <h2>Váš podpis – ${esc(uzivatel.jmeno)}</h2>
@@ -1475,7 +1489,9 @@
 
     let vyh = await podpisVyhotovil();
     let mujPad = null;
-    const pripraveno = () => !!(pad && !pad.prazdny() && (vyh || (mujPad && !mujPad.prazdny())));
+    const souhlas = () => !!app.querySelector("#souhlas-vop")?.checked;   // VOP + e-mail jako hlavní kanál (Vašek 31.10.2026)
+    const pripraveno = () => !!(pad && !pad.prazdny() && (vyh || (mujPad && !mujPad.prazdny())) && souhlas());
+    app.querySelector("#souhlas-vop").onchange = () => { app.querySelector("#ulozit").disabled = !pripraveno(); };
     let odhadCisla = Q.vysledek?.cislo || null;
     if (!odhadCisla) try { odhadCisla = await db.dalsiCisloOdhad(); } catch (e) { /* bez čísla */ }
 
@@ -1513,6 +1529,7 @@
       const b = e.currentTarget;
       if (b.dataset.bezi || app.querySelector("#pozdeji")?.dataset.bezi) return;   // dvojí klepnutí nesmí založit dvě zakázky
       if (pretece) return hlaska(pretece + " – vraťte se a zkraťte text.", true, 8000);
+      if (!souhlas()) return hlaska("Zákazník musí zaškrtnout souhlas s obchodními podmínkami.", true);
       b.dataset.bezi = "1"; b.disabled = true;
       try {
         if (!vyh && mujPad && !mujPad.prazdny()) {         // nový podpis přihlášeného → uložit do profilu
@@ -1639,6 +1656,12 @@
       throw new Error(`číslo ${cislo} už mezitím dostal jiný doklad (jiné zařízení nebo podpis v E-servisce). Načtěte zakázku znovu (obnovte stránku) a vystavte doklad znovu.`);
     }
     posledniPdf = { zakazka_id, cislo, bytes, nazev: `${cislo}.pdf`, druh, jazyk, prilohy: hotovePrilohy };
+    // podepsaný zakázkový list + VOP hned zákazníkovi e-mailem (Vašek 31.10.2026); neúspěch nic nezastaví – jde poslat znovu z detailu
+    if (druh === "zakazkovy_list" && podpisZak && doklad?.id) {
+      prubeh("Posílám kopii zákazníkovi…");
+      try { posledniPdf.email = await db.odeslatZakazkovyList(doklad.id); }
+      catch (e) { posledniPdf.email = { ok: false, chyba: chybaText(e) }; }
+    }
     return { doklad, bytes, cislo };
   }
 
@@ -1703,6 +1726,10 @@
       ${pdf?.cekaPodpis ? `<div class="info pozor" style="text-align:left">Zákazník ještě nepodepsal. Pošlete mu odkaz na E-servisku – ${pdf.druh === "faktura" ? "fakturu" : pdf.druh === "zalohova" ? "zálohovou fakturu" : pdf.druh === "nabidka" ? "cenovou nabídku" : pdf.druh === "predavaci_protokol" ? "předávací protokol" : "zakázkový list"} tam podepíše prstem z domu.
         <div class="radek-tlacitek" style="margin-top:10px"><button class="tl tl-hlavni" id="odkaz-podpis">🔗 Poslat odkaz k podpisu</button></div></div>`
         : `<p class="mutted">PDF je uložené u zakázky. Zákazníkovi ho můžete hned poslat.</p>`}
+      ${pdf?.email ? (pdf.email.ok
+        ? `<div class="info" style="text-align:left;font-size:17px">📧 ${pdf.jazyk === "en" ? `We sent a copy with our terms to <b>${esc(pdf.email.komu)}</b>. If it does not arrive within a few minutes, please check your spam folder.`
+            : `Kopii spolu s obchodními podmínkami jsme poslali na <b>${esc(pdf.email.komu)}</b>. Pokud do pár minut nedorazí, zkontrolujte prosím i složku Spam / Hromadné.`}</div>`
+        : `<div class="info pozor" style="text-align:left">📧 E-mail zákazníkovi se neodeslal: ${esc(pdf.email.chyba || "neznámá chyba")}<br>Pošlete ho znovu z detailu zakázky.</div>`) : ""}
       <div class="radek-tlacitek">
         ${pdf ? `<button class="tl tl-hlavni tl-velke" id="sdilet">Poslat / sdílet PDF</button><button class="tl tl-velke" id="otevrit">Otevřít PDF</button>` : ""}
         <a class="tl tl-velke" href="#/zakazka/${id}">Detail zakázky</a>
@@ -1929,6 +1956,15 @@
   };
   const NAZEV_CEKAJICIHO = { faktura: ["Faktura", "fakturu"], zalohova: ["Zálohová faktura", "zálohovou fakturu"], nabidka: ["Cenová nabídka", "cenovou nabídku"],
     predavaci_protokol: ["Předávací protokol", "předávací protokol"] };
+  // stav e-mailu se zakázkovým listem (poslední pokus) – zpětná vazba od odesílací služby (Vašek 31.10.2026)
+  const STAV_EMAILU = { odesilam: ["⏳", "odesílá se"], odeslano: ["📧", "odesláno"], doruceno: ["✅", "doručeno"], zpozdeno: ["⏳", "doručení se zdržuje"],
+    nedoruceno: ["⚠️", "NEDORUČENO"], spam: ["⚠️", "označeno jako spam"], chyba: ["⚠️", "neodesláno"] };
+  const stavEmailu = d => {
+    const e = [...(d.emaily || [])].sort((a, b) => String(b.zmeneno || b.odeslano).localeCompare(String(a.zmeneno || a.odeslano)))[0];
+    if (!e) return "";
+    const [ik, txt] = STAV_EMAILU[e.stav] || ["📧", e.stav || ""], zle = ["nedoruceno", "spam", "chyba"].includes(e.stav);
+    return `<br><span${zle ? ` style="color:var(--cervena);font-weight:700"` : ""}>${ik} E-mail ${esc(e.komu || "")}: ${txt}${e.zmeneno ? " " + datumCz(e.zmeneno) : ""}${zle && e.chyba ? ` – ${esc(e.chyba)}` : ""}</span>`;
+  };
   const dalkovyPodpis = d => { const x = d?.dalkove_podpisy; return Array.isArray(x) ? x[0] || null : x || null; };
   const blobNaDataUrl = b => new Promise((ok, chyba) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = chyba; r.readAsDataURL(b); });
   async function vystavitPodepsanyList(z, zl) {
@@ -2059,11 +2095,12 @@
           return `<div class="info pozor"><span>⏳ ${co} ${esc(d.cislo)} čeká na podpis zákazníka v E-servisce.</span>${v.vin ? ` <button class="tl tl-male" data-odkaz-faktura="${d.id}">🔗 Poslat odkaz k podpisu</button>` : ""}</div>`; }).join("")}
         <div class="doklady">${doklady.map(d => `
           <div class="doklad"><span><b>${esc(d.cislo)}</b> · ${DRUHY[d.druh] || d.druh}${d.celkem != null ? ` · <b>${kc(d.celkem)}</b>` : ""}<br>
-            <small class="mutted">vystaveno ${datumCz(d.vystaveno)}${d.splatnost ? ` · ${d.druh === "nabidka" ? "platnost" : "splatnost"} ${datumCz(d.splatnost)}` : ""}${["faktura", "zalohova", "opravny"].includes(d.druh) ? (d.zaplaceno ? ` · <b style="color:var(--zelena)">${d.druh === "opravny" && Number(d.celkem) < 0 ? "vráceno" : "zaplaceno"} ${datumCz(d.zaplaceno)}</b>` : Number(d.celkem) < 0 ? " · nevráceno" : " · nezaplaceno") : ""}</small></span>
+            <small class="mutted">vystaveno ${datumCz(d.vystaveno)}${d.splatnost ? ` · ${d.druh === "nabidka" ? "platnost" : "splatnost"} ${datumCz(d.splatnost)}` : ""}${["faktura", "zalohova", "opravny"].includes(d.druh) ? (d.zaplaceno ? ` · <b style="color:var(--zelena)">${d.druh === "opravny" && Number(d.celkem) < 0 ? "vráceno" : "zaplaceno"} ${datumCz(d.zaplaceno)}</b>` : Number(d.celkem) < 0 ? " · nevráceno" : " · nezaplaceno") : ""}${d.druh === "zakazkovy_list" ? stavEmailu(d) : ""}</small></span>
             <span class="radek-tlacitek">
               ${["faktura", "zalohova", "opravny"].includes(d.druh) && jeMajitel() ? (d.zaplaceno ? `<button class="tl tl-male" data-nezaplaceno="${d.id}" style="color:var(--zelena);border-color:var(--zelena)" title="Uhrazeno ${datumCz(d.zaplaceno)} – omylem? Kliknutím úhradu zrušíte">✓ ${d.druh === "opravny" && Number(d.celkem) < 0 ? "Vráceno" : "Zaplaceno"}</button>`
                 : `<button class="tl tl-male" data-zaplaceno="${d.id}" title="Až přijde platba, klikněte – doklad se označí jako zaplacený">${d.druh === "opravny" && Number(d.celkem) < 0 ? "Nevráceno" : "Neuhrazeno"}</button>`) : ""}
               ${d.soubory?.klic ? `<button class="tl tl-male" data-pdf="${esc(d.soubory.klic)}">Otevřít PDF</button>` : ""}
+              ${d.druh === "zakazkovy_list" && (!d.data?.cekaPodpis || dalkovyPodpis(d)) ? `<button class="tl tl-male" data-poslat-email="${d.id}" title="Poslat zákazníkovi podepsaný zakázkový list a obchodní podmínky e-mailem">📧 ${(d.emaily || []).length ? "Poslat znovu" : "Poslat e-mailem"}</button>` : ""}
               ${(z.soubory || []).filter(f => f.doklad_id === d.id && f.klic !== d.soubory?.klic && f.druh === "pdf").map(f => `<button class="tl tl-male" data-pdf="${esc(f.klic)}">${/parts list/.test(f.nazev || "") ? "Parts list" : "Příloha"}</button>`).join("")}
               ${lzeSmazatDoklad(d, doklady) ? `<button class="tl tl-male tl-kos" data-smazat-doklad="${d.id}" title="Smazat doklad ${esc(d.cislo)}" aria-label="Smazat doklad ${esc(d.cislo)}">🗑</button>` : ""}</span></div>`).join("")
           || ((z.soubory || []).some(f => f.druh === "archiv" && !f.smazano)
@@ -2160,6 +2197,18 @@
     vykresliPrace(); vykresliDily(); vykresliSouhrnZakazky(); vykresliServisniUkony();
     navazPoznamky(app, (tab, h) => { if (tab === "zakazky") z.poznamky = h; else v.poznamky = h; });
     vykresliDokumentyVozidla(z.vozidlo_id || v.id, app.querySelector("#dokumenty-vozidla"));
+    app.querySelectorAll("[data-poslat-email]").forEach(b => b.onclick = async () => {
+      const d = (z.doklady || []).find(x => x.id === b.dataset.poslatEmail); if (!d || b.dataset.bezi) return;
+      const komu = String(z.zakaznici?.email || "").trim();
+      if (!komu) return hlaska("Zákazník nemá e-mail – doplňte ho u zákazníka.", true);
+      if (!confirm(`Poslat zakázkový list ${d.cislo} a obchodní podmínky na ${komu}?`)) return;
+      b.dataset.bezi = "1"; b.disabled = true;
+      try {
+        const r = await db.odeslatZakazkovyList(d.id);
+        if (r?.ok) hlaska(`📧 Odesláno na ${r.komu}.`); else hlaska("E-mail se neodeslal: " + (r?.chyba || "neznámá chyba"), true, 8000);
+      } catch (e) { hlaska("E-mail se neodeslal: " + chybaText(e), true, 8000); }
+      detail(z.id);
+    });
     app.querySelectorAll("[data-pdf]").forEach(b => b.onclick = async () => {
       const okno = window.open("", "_blank");
       try { const u = await db.odkaz(b.dataset.pdf, 600); if (okno) okno.location = u; else location.href = u; }

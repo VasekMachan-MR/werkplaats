@@ -2,6 +2,8 @@
    Běží proti zkušební databázi v paměti (mock-db.js) a sestavené aplikaci v dist/ – včetně bezpečnostních hlaviček z _headers. */
 const { chromium, devices } = require("playwright");
 const fs = require("fs"), path = require("path"), http = require("http");
+// zakázkový list: zákazník musí zaškrtnout souhlas s VOP (Vašek 31.10.2026)
+const souhlasVop = async p => { const c = p.locator("#souhlas-vop"); if (await c.count() && !(await c.isChecked())) await c.check(); };
 const DIST = path.resolve("dist"), OUT = path.resolve(process.argv[2] || "testy/vystup-app");
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -137,17 +139,22 @@ const server = http.createServer((q, r) => {
   await p.waitForSelector("#nahled");
   await p.waitForFunction(() => document.querySelector("#nahled").contentDocument?.querySelector("section.page"));
   kontrola(await p.isDisabled("#ulozit"), "bez podpisu nejde uložit");
-  await p.locator("#podpis").scrollIntoViewIfNeeded();
+  await p.evaluate(() => document.querySelector("#podpis").scrollIntoView({ block: "center" }));
   const c = await p.locator("#podpis").boundingBox();
   await p.mouse.move(c.x + 40, c.y + 140); await p.mouse.down();
   for (let i = 0; i <= 60; i++) await p.mouse.move(c.x + 40 + i * 6, c.y + 120 - Math.sin(i / 4) * 40 * Math.cos(i / 15), { steps: 1 });
   await p.mouse.up();
   await p.waitForTimeout(400);
-  kontrola(!(await p.isDisabled("#ulozit")), "po podpisu jde uložit");
+  kontrola(await p.isDisabled("#ulozit"), "bez souhlasu s VOP nejde uložit");
+  kontrola(await p.isVisible("a[href='https://www.mercedesrestorations.cz/vop']"), "u souhlasu je odkaz na VOP");
+  await p.check("#souhlas-vop");
+  kontrola(!(await p.isDisabled("#ulozit")), "po podpisu a souhlasu jde uložit");
   await foto("03-nahled-podpis");
-  await p.click("#ulozit");
+  await souhlasVop(p); await p.click("#ulozit");
   await p.waitForSelector("text=Zakázkový list uložen");
   kontrola(await p.isVisible("text=7377-1"), "uloženo jako 7377-1");
+  kontrola(await p.isVisible("text=jan.novak@example.cz") && await p.isVisible("text=zkontrolujte prosím i složku Spam"), "po podpisu: kopie e-mailem + upozornění na spam");
+  kontrola((await p.evaluate(() => window.__ULOZENO__.emaily || [])).length === 1, "e-mail se zakázkovým listem se odeslal právě jednou");
   await p.waitForTimeout(300);
   kontrola(!(await p.evaluate(() => sessionStorage.getItem("mock-koncept"))) && !(await p.evaluate(() => localStorage.getItem("werk-koncept-prijmu"))), "po uložení příjmu je koncept smazaný v zařízení i na serveru");
   kontrola((await p.evaluate(() => document.querySelector(".velke-cislo").textContent)) === "7377-1", "číslo dokladu 7377-1");
@@ -452,7 +459,7 @@ const server = http.createServer((q, r) => {
   await p.mouse.move(c2.x + 60, c2.y + 130); await p.mouse.down();
   for (let i = 0; i <= 40; i++) await p.mouse.move(c2.x + 60 + i * 8, c2.y + 110 - Math.cos(i / 3) * 30);
   await p.mouse.up(); await p.waitForTimeout(300);
-  await p.click("#ulozit");
+  await souhlasVop(p); await p.click("#ulozit");
   await p.waitForSelector("text=Zakázkový list uložen");
   kontrola(await p.isVisible("text=7378-1"), "druhá zakázka 7378-1 (anglicky)");
   const u2 = await p.evaluate(() => ({ t: window.__ULOZENO__.tabulky, pdf: Object.entries(window.__ULOZENO__.soubory).filter(([k]) => k.includes("7378") && k.endsWith(".pdf")).map(([k, v]) => [k, Array.from(v)]) }));
@@ -689,13 +696,14 @@ const server = http.createServer((q, r) => {
   await m.waitForSelector("#muj-podpis-sekce:not([hidden])");
   kontrola(true, "mechanik bez podpisu: zobrazí se pole pro jeho podpis");
   for (const sel of ["#podpis", "#muj-podpis"]) {
-    await m.locator(sel).scrollIntoViewIfNeeded(); const bb = await m.locator(sel).boundingBox();
+    await m.evaluate(s => document.querySelector(s).scrollIntoView({ block: "center" }), sel); const bb = await m.locator(sel).boundingBox();
     await m.mouse.move(bb.x + 50, bb.y + 120); await m.mouse.down();
     for (let i = 0; i <= 40; i++) await m.mouse.move(bb.x + 50 + i * 7, bb.y + 110 - Math.sin(i / 3) * 30);
     await m.mouse.up(); await m.waitForTimeout(250);
     if (sel === "#podpis") kontrola(await m.isDisabled("#ulozit"), "jen s podpisem zákazníka ještě nejde uložit");
   }
-  kontrola(!(await m.isDisabled("#ulozit")), "s oběma podpisy jde uložit");
+  await souhlasVop(m);
+  kontrola(!(await m.isDisabled("#ulozit")), "s oběma podpisy a souhlasem jde uložit");
   await m.evaluate(() => { const b = document.querySelector("#ulozit"); b.click(); b.click(); });   // dvojí klepnutí
   await m.waitForSelector("text=Zakázkový list uložen");
   const um = await m.evaluate(() => ({ lide: window.__ULOZENO__.lide, podpisy: window.__ULOZENO__.tabulky.podpisy, pdf: Object.entries(window.__ULOZENO__.soubory).filter(([k]) => k.endsWith(".pdf")).map(([, v]) => Array.from(v)) }));

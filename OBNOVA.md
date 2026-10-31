@@ -14,6 +14,8 @@ Ověřeno **31. 10. 2026** (noční kontrola): obsah tohoto repozitáře odpoví
 - sprava-uzivatelu v3
 - zaloha v5 (noční záloha, přihlášení tokenem GitHub OIDC)
 - import-archivu v2 (jednorázová, nepoužívá se)
+- odeslat-email (nová 31. 10. 2026, `verify_jwt = false` – ověřuje si přihlášení / interní klíč sama): e-mail se zakázkovým listem a VOP po podpisu
+- email-udalosti (nová 31. 10. 2026, `verify_jwt = false` – ověřuje podpis Svix): zpětná vazba doručení od Resend
 - `uklid-jednorazovy` – jen prázdná funkce po jednorázovém úklidu 31. 10. 2026 (není v gitu, dá se smazat; při obnově ji nezakládat)
 
 **Web E-serviska**
@@ -82,6 +84,8 @@ Další údaje:
 7. **Soubory (fotky, PDF, podpisy):** zkopírovat z R2 `werkplaats-soubory` do úložiště `soubory` se stejnými cestami (sloupec `soubory.klic`).
 
 8. **Noční záloha:** v GitHubu nastavit Secrets `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (klíč R2 jen pro koše `werkplaats-zalohy` a `werkplaats-soubory`).
+
+**Odesílání e-mailů (Resend):** Secrets v Supabase → Edge Functions: `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`. Doména `mercedesrest.cz` ověřená v Resend (DNS záznamy u WEDOS). Webhook v Resend → `https://yokbljdjcvwbadbcwmgx.supabase.co/functions/v1/email-udalosti` (události delivered, bounced, complained, delivery_delayed, failed). VOP pro přílohu: `aplikace/vop.pdf` → werk.mercedesrestorations.cz/vop.pdf (při změně VOP vyměnit soubor).
 
 ## Co v gitu záměrně není
 - Osobní údaje zákazníků, podpisy (`dokumenty/sablony/assets/podpis*.png`) a PDF dokladů. To je v databázi a úložišti, zálohuje se zvlášť.
