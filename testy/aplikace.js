@@ -642,19 +642,19 @@ const server = http.createServer((q, r) => {
   {
     const zid7378 = await p.evaluate(() => location.hash.split("/")[2]);
     await p.evaluate(() => { window.__SERVIS_ES__ = { servis_skupina: "B", motor: "M110", palivo: "benzin", prevodovka: null, servis: [
-      { ukon: "chladici", stav: "po" }, { ukon: "olej", stav: "ok" }, { ukon: "brzdy", stav: "ok" }, { ukon: "servis", stav: "nezname" }, { ukon: "ventily", stav: "brzy" }] }; location.hash = "#/zakazky"; });
+      { ukon: "chladici", stav: "po" }, { ukon: "olej", stav: "ok" }, { ukon: "brzdy", stav: "ok" }, { ukon: "remeny", stav: "nezname" }, { ukon: "ventily", stav: "brzy" }] }; location.hash = "#/zakazky"; });
     await p.waitForSelector("#seznam .zakazka-radek");
     await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid7378);
     await p.waitForSelector('#sekce-servis [data-servis="chladici"]');
     const sv = await p.evaluate(() => ({ poradi: [...document.querySelectorAll("#sekce-servis [data-servis]")].map(i => i.dataset.servis).join(","),
       t: document.getElementById("sekce-servis").textContent, kod: window.__SERVIS_ES_DOTAZ__ }));
-    kontrola(sv.poradi === "chladici,olej,brzdy,servis,ventily" && /Chladicí kapalina· Po termínu/.test(sv.t.replace(/\s+·/g, "·")) && /Seřízení ventilů· Brzy/.test(sv.t.replace(/\s+·/g, "·")) && /Velký servis \(prohlídka\)· Nezaznamenáno/.test(sv.t.replace(/\s+·/g, "·")) && /^[0-9a-f]{20}$/.test(sv.kod),
+    kontrola(sv.poradi === "chladici,olej,brzdy,remeny,ventily" && /Chladicí kapalina· Po termínu/.test(sv.t.replace(/\s+·/g, "·")) && /Seřízení ventilů· Brzy/.test(sv.t.replace(/\s+·/g, "·")) && /Klínové řemeny· Nezaznamenáno/.test(sv.t.replace(/\s+·/g, "·")) && /^[0-9a-f]{20}$/.test(sv.kod),
       "Servisní úkony v zakázce = „Co je příště na řadě“ z E-servisky (stejné položky, pořadí a stav)");
     kontrola(!/Olej automatické|Olej manuální/.test(sv.t) && /převodovka neurčena/.test(sv.t), "neurčená převodovka: olej převodovky se nenabízí ani ve Werkplaats (jako v E-servisce)");
     await p.evaluate(() => { window.__SERVIS_ES__.servis[0].stav = "ok"; });
     await p.check('#sekce-servis [data-servis="chladici"]');
     await p.waitForFunction(() => /V pořádku/.test(document.querySelector('[data-stav-servisu="chladici"]').textContent));
-    kontrola(await p.evaluate(() => [...document.querySelectorAll("#sekce-servis [data-servis]")].map(i => i.dataset.servis).join(",")) === "chladici,olej,brzdy,servis,ventily",
+    kontrola(await p.evaluate(() => [...document.querySelectorAll("#sekce-servis [data-servis]")].map(i => i.dataset.servis).join(",")) === "chladici,olej,brzdy,remeny,ventily",
       "po zaškrtnutí se stav obnoví z E-servisky na místě, pořadí neskáče");
     await p.uncheck('#sekce-servis [data-servis="chladici"]');
     await p.waitForFunction(() => JSON.stringify(window.__ULOZENO__.tabulky.zakazky.find(z => z.cislo === 7378).servisni_ukony) === '["olej","brzdy"]');

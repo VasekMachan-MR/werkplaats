@@ -60,7 +60,7 @@ window.__WERK_DB__ = (() => {
     async servisniKatalog() {
       return { motory: [{ kod: "M110", palivo: "benzin", serizovani_ventilu: true, popis: "6válec DOHC 2.8" }, { kod: "M117", palivo: "benzin", serizovani_ventilu: false, popis: "V8" }, { kod: "OM617", palivo: "diesel", serizovani_ventilu: true, popis: "5válec" }],
         typy: [{ klic: "107.048", motor: "M117" }, { klic: "560 SL", motor: "M117" }, { klic: "126.022", motor: "M110" }],
-        ukony: [["olej", "Motorový olej + filtr"], ["servis", "Velký servis (prohlídka)"], ["atf", "Olej automatické převodovky + filtr", null, false, "automat"], ["manual", "Olej manuální převodovky", null, false, "manual"], ["vzduch", "Vzduchový filtr"], ["svicky", "Zapalovací svíčky", "benzin"], ["palivo", "Palivový filtr"],
+        ukony: [["olej", "Motorový olej + filtr"], ["remeny", "Klínové řemeny"], ["atf", "Olej automatické převodovky + filtr", null, false, "automat"], ["manual", "Olej manuální převodovky", null, false, "manual"], ["vzduch", "Vzduchový filtr"], ["svicky", "Zapalovací svíčky", "benzin"], ["palivo", "Palivový filtr"],
           ["brzdy", "Brzdová kapalina"], ["chladici", "Chladicí kapalina"], ["diferencial", "Olej diferenciálu"], ["servo", "Olej servořízení"], ["ventily", "Seřízení ventilů", null, true]]
           .map(([ukon, nazev, jen_palivo = null, jen_serizovani_ventilu = false, jen_prevodovka = null], i) => ({ ukon, nazev, poradi: i + 1, jen_palivo, jen_serizovani_ventilu, jen_prevodovka })) };
     },
