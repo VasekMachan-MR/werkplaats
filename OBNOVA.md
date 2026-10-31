@@ -85,7 +85,7 @@ Další údaje:
 
 8. **Noční záloha:** v GitHubu nastavit Secrets `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (klíč R2 jen pro koše `werkplaats-zalohy` a `werkplaats-soubory`).
 
-**Odesílání e-mailů (Resend):** Secrets v Supabase → Edge Functions: `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`. Doména `mercedesrest.cz` ověřená v Resend (DNS záznamy u WEDOS). Webhook v Resend → `https://yokbljdjcvwbadbcwmgx.supabase.co/functions/v1/email-udalosti` (události delivered, bounced, complained, delivery_delayed, failed). VOP pro přílohu: `aplikace/vop.pdf` → werk.mercedesrestorations.cz/vop.pdf (při změně VOP vyměnit soubor).
+**Odesílání e-mailů (Resend):** Secrets v Supabase → Edge Functions: `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`. Doména `mercedesrest.cz` ověřená v Resend (DNS záznamy u WEDOS). Webhook v Resend → `https://yokbljdjcvwbadbcwmgx.supabase.co/functions/v1/email-udalosti` (události delivered, bounced, complained, delivery_delayed, failed). VOP pro přílohu: `aplikace/vop.pdf` → werk.mercedesrestorations.cz/vop.pdf, anglicky `aplikace/vop-en.pdf` → /vop-en.pdf (anglicky mluvící zákazníci; při změně VOP vyměnit oba soubory).
 
 ## Co v gitu záměrně není
 - Osobní údaje zákazníků, podpisy (`dokumenty/sablony/assets/podpis*.png`) a PDF dokladů. To je v databázi a úložišti, zálohuje se zvlášť.

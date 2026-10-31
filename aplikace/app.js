@@ -1439,7 +1439,7 @@
   }
 
   /* ---------- náhled a podpis ---------- */
-  const VOP_URL = "https://www.mercedesrestorations.cz/vop";
+  const VOP_URL = "https://www.mercedesrestorations.cz/vop", VOP_URL_EN = "https://www.mercedesrestorations.cz/en-version/general-terms";
   // ctx = znovu vystavení listu z „Upravit příjem“ (Vašek 30.10.2026): { Q – údaje zakázky, ulozit(…), zpet() }; bez ctx = příjem (P)
   async function prijemPodpis(ctx = null) {
     const Q = ctx?.Q || P;
@@ -1462,7 +1462,7 @@
           : `<div class="info pozor">${en ? "The customer has no e-mail – the copy will not be sent. Go back and add it." : "Zákazník nemá e-mail – kopie se nepošle. Vraťte se a doplňte ho."}</div>`}
         <label style="display:flex;gap:12px;align-items:flex-start;cursor:pointer;font-size:17px;line-height:1.4">
           <input type="checkbox" id="souhlas-vop" style="width:26px;height:26px;flex:0 0 auto;margin:2px 0 0;accent-color:#092b50">
-          <span>${en ? `I have read and accept the <a href="${VOP_URL}" target="_blank" rel="noopener">General Terms and Conditions</a>, and I confirm that the e-mail above is correct and is the main way to contact me about this job.`
+          <span>${en ? `I have read and accept the <a href="${VOP_URL_EN}" target="_blank" rel="noopener">General Terms and Conditions</a>, and I confirm that the e-mail above is correct and is the main way to contact me about this job.`
             : `Seznámil/a jsem se se <a href="${VOP_URL}" target="_blank" rel="noopener">Všeobecnými obchodními podmínkami</a> a souhlasím s nimi. Potvrzuji, že uvedený e-mail je správný a je mým hlavním komunikačním kanálem pro tuto zakázku.`}</span>
         </label>
       </section>

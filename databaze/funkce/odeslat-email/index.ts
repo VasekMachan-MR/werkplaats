@@ -12,6 +12,7 @@ const POVOLENE = [/^https:\/\/werk\.mercedesrestorations\.cz$/, /^https:\/\/([\w
 const FIRMA = "info@mercedesrest.cz";
 const OD = "Mercedes Restorations <info@mercedesrest.cz>";
 const VOP_PDF = "https://werk.mercedesrestorations.cz/vop.pdf";
+const VOP_PDF_EN = "https://werk.mercedesrestorations.cz/vop-en.pdf";   // anglický překlad VOP pro anglicky mluvící zákazníky (Vašek 31.10.2026)
 const PODPIS_FIRMY = "Mercedes Restorations s.r.o.\n+420 732 518 016\ninfo@mercedesrest.cz\nwww.mercedesrestorations.cz";   // každý údaj na vlastním řádku (Vašek 31.10.2026)
 
 function hlavicky(origin: string | null) {
@@ -122,7 +123,7 @@ Deno.serve(async req => {
         if (x) pril.push({ filename: `${/parts/i.test(f.nazev || "") ? "Parts_list" : "Priloha"}_${d.cislo}.pdf`, content: b64(new Uint8Array(await x.arrayBuffer())) });
       }
     } else {                                               // k zakázkovému listu vždy obchodní podmínky
-      const r = await fetch(VOP_PDF);
+      const r = await fetch(en ? VOP_PDF_EN : VOP_PDF);
       if (!r.ok) throw new Error("PDF obchodních podmínek se nepodařilo načíst");
       pril.push({ filename: en ? "General_Terms_Mercedes_Restorations.pdf" : "VOP_Mercedes_Restorations.pdf", content: b64(new Uint8Array(await r.arrayBuffer())) });
     }
