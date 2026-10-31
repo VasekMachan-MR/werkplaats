@@ -335,6 +335,14 @@ const server = http.createServer((q, r) => {
   await p.click("text=Detail zakázky");
   await p.waitForSelector("text=7377-4");
   await foto("13-detail-doklady");
+  // datum předání: po protokolu vyplněné samo, jde ho ručně změnit (staré zakázky bez protokolu) – Vašek 31.10.2026
+  { const dp0 = await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky[0].datum_predani);
+    kontrola(await p.isVisible("#datum-predani-pole") && await p.inputValue("#datum-predani") === dp0 && !!dp0, `detail předané zakázky: políčko „📅 Předáno“ s datem z protokolu (${dp0})`);
+    await p.fill("#datum-predani", "2025-07-17"); await p.dispatchEvent("#datum-predani", "change");
+    await p.waitForFunction(() => window.__ULOZENO__.tabulky.zakazky[0].datum_predani === "2025-07-17");
+    kontrola(true, "datum předání jde ručně změnit a uloží se k zakázce");
+    await p.fill("#datum-predani", dp0); await p.dispatchEvent("#datum-predani", "change");
+    await p.waitForFunction(d => window.__ULOZENO__.tabulky.zakazky[0].datum_predani === d, dp0); }
   // přehled dokladů
   await p.click(".lista-vpravo >> text=Doklady");
   await p.waitForSelector(".dlazdice-k");
