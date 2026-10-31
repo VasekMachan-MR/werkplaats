@@ -140,7 +140,9 @@ Deno.serve(async req => {
   for (const z of (zak || [])) {
     if (!aktualni || z.zakaznik_id !== aktualni.zakaznik_id) continue;
     const zl = HOTOVO.includes(z.stav) ? null : (dok || []).filter((d: any) => d.zakazka_id === z.id && d.druh === "zakazkovy_list")[0] as any;
-    const d = ceka(zl) ? zl : (dok || []).find((x: any) => x.zakazka_id === z.id && (x.druh === "faktura" || x.druh === "zalohova") && ceka(x)) as any;
+    // cenová nabídka s „Podepíše později“ (Vašek 31.10.2026): jen poslední verze a jen u rozpracované zakázky
+    const nb = HOTOVO.includes(z.stav) ? null : (dok || []).filter((x: any) => x.zakazka_id === z.id && x.druh === "nabidka")[0] as any;
+    const d = ceka(zl) ? zl : ((dok || []).find((x: any) => x.zakazka_id === z.id && (x.druh === "faktura" || x.druh === "zalohova") && ceka(x)) as any) || (ceka(nb) ? nb : null);
     if (!d) continue;
     podpis = { cislo: d.cislo, druh: d.druh, zakazka: z.cislo, url: url[d.soubory?.klic] || null, podepsano: null, jazyk: d.jazyk || null };
     break;
@@ -176,13 +178,14 @@ async function podepsat(req: Request, sb: any, odp: (s: number, o: unknown) => R
   const { data: v } = await sb.from("vozidla").select("id").eq("eserviska_kod", kod).maybeSingle();
   if (!v) return odp(404, { chyba: "nenalezeno" });
   if (b?.archiv) return podepsatArchiv(req, sb, odp, v, String(b.archiv), png);
-  const druh = ["faktura", "zalohova"].includes(b?.druh) ? b.druh : "zakazkovy_list", jeList = druh === "zakazkovy_list";
+  const druh = ["faktura", "zalohova", "nabidka"].includes(b?.druh) ? b.druh : "zakazkovy_list";
+  const jenPosledni = druh === "zakazkovy_list" || druh === "nabidka";       // zakázkový list i nabídka: podepsat jde jen poslední verzi
   const { data: d } = await sb.from("doklady").select("id,cislo,druh,verze,data,zakazka_id,zamceno,zakazky!inner(id,cislo,stav,vozidlo_id,zakaznik_id),podpisy(role),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id)")
     .eq("cislo", String(b?.cislo || "")).eq("druh", druh).maybeSingle();
-  if (!d || !d.zamceno || d.zakazky?.vozidlo_id !== v.id || !d.data?.cekaPodpis || (jeList && HOTOVO.includes(d.zakazky.stav))) return odp(404, { chyba: "nenalezeno" });
+  if (!d || !d.zamceno || d.zakazky?.vozidlo_id !== v.id || !d.data?.cekaPodpis || (jenPosledni && HOTOVO.includes(d.zakazky.stav))) return odp(404, { chyba: "nenalezeno" });
   // zakázkový list: podepsat jde jen poslední verzi (tu, kterou zákazník v E-servisce vidí)
-  if (jeList) {
-    const { data: novejsi } = await sb.from("doklady").select("id").eq("zakazka_id", d.zakazka_id).eq("druh", "zakazkovy_list").gt("verze", d.verze ?? 1).limit(1);
+  if (jenPosledni) {
+    const { data: novejsi } = await sb.from("doklady").select("id").eq("zakazka_id", d.zakazka_id).eq("druh", druh).gt("verze", d.verze ?? 1).limit(1);
     if (novejsi?.length) return odp(404, { chyba: "nenalezeno" });
   }
   const { data: maj } = await sb.from("vlastnictvi").select("zakaznik_id").eq("vozidlo_id", v.id).is("vlastni_do", null).maybeSingle();
@@ -204,7 +207,7 @@ async function podepsat(req: Request, sb: any, odp: (s: number, o: unknown) => R
 }
 
 // podpis zákazníka do PDF (stránka 1, políčko „Převzal“ nad tečkami – stejné místo v šabloně i ve starých listech z Excelu)
-// faktura / zálohová faktura: políčko „Převzal“ je o kousek jinde (šablona faktura.js: obrázek left 200 top 707 w 115, tečky 730.2)
+// faktura / zálohová faktura / cenová nabídka: políčko „Převzal“ je o kousek jinde (šablona faktura.js: obrázek left 200 top 707 w 115, tečky 730.2)
 const POLE_PODPISU: Record<string, { x: number; top: number; w: number; stred: number; text: number }> = {
   zakazkovy_list: { x: 199, top: 706.9, w: 122, stred: 259.7, text: 734.6 },
   faktura: { x: 200, top: 707, w: 115, stred: 256.8, text: 735.6 }
