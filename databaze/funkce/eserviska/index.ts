@@ -241,7 +241,18 @@ async function podepsat(req: Request, sb: any, odp: (s: number, o: unknown) => R
     // @ts-ignore EdgeRuntime existuje jen v Supabase
     if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(odeslat); else await odeslat;
   }
+  upozornit({ zakazka_id: d.zakazka_id, druh, cislo: d.cislo });
   return odp(200, { ok: true, email: druh === "zakazkovy_list" });
+}
+
+// notifikace na telefon dílně (Vašek 31.10.2026) – na pozadí, podpis tím nečeká; chyba notifikace podpis nikdy nezastaví
+function upozornit(o: { zakazka_id: string; druh: string; cislo: string | null }) {
+  const p = fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/notifikace`, {
+    method: "POST", headers: { "content-type": "application/json", "x-werk-interni": Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")! },
+    body: JSON.stringify({ udalost: "podpis", ...o })
+  }).catch(() => {});
+  // @ts-ignore EdgeRuntime existuje jen v Supabase
+  if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(p);
 }
 
 // podpis zákazníka do PDF (stránka 1, políčko „Převzal“ nad tečkami – stejné místo v šabloně i ve starých listech z Excelu)
@@ -314,5 +325,6 @@ async function podepsatArchiv(req: Request, sb: any, odp: (s: number, o: unknown
   if (e3 || !rad) { await sb.storage.from("soubory").remove([klicPodpis, klicPdf]); return odp(500, { chyba: "ulozeni" }); }
   const sid = rad.find((x: any) => x.druh === "podpis")?.id;
   await sb.from("dalkove_podpisy").insert({ archiv_soubor_id: f.id, soubor_id: sid, ip: null, zarizeni: (req.headers.get("user-agent") || "").slice(0, 300) });
+  upozornit({ zakazka_id: f.zakazka_id, druh: "archiv", cislo: String(cislo) });
   return odp(200, { ok: true });
 }

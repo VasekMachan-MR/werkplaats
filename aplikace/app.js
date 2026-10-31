@@ -157,6 +157,15 @@
       async noveHeslo(heslo) { return ok(await sb.auth.updateUser({ password: heslo })); },
       async clen(id) { return ok(await sb.from("uzivatele").select("id,jmeno,role,email,aktivni,podpis_obrazek").eq("id", id).maybeSingle()); },
       async uzivatele() { return ok(await sb.from("uzivatele").select("id,jmeno,role,email,aktivni,vytvoreno,podpis_obrazek").order("vytvoreno")); },
+      // notifikace na telefon (Web Push)
+      async pushKlic() { const r = await fetch(K.supabaseUrl + "/functions/v1/notifikace", { cache: "no-store" }); if (!r.ok) throw new Error("Server notifikací neodpovídá."); return (await r.json()).verejny; },
+      async ulozitPushOdber(o) { return ok(await sb.from("push_odbery").upsert(o, { onConflict: "endpoint" }).select("id")); },
+      async smazatPushOdber(endpoint) { return ok(await sb.from("push_odbery").delete().eq("endpoint", endpoint)); },
+      async pushTest() {
+        const { data: { session } } = await sb.auth.getSession();
+        const r = await fetch(K.supabaseUrl + "/functions/v1/notifikace", { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + (session?.access_token || "") }, body: JSON.stringify({ test: true }) });
+        const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.chyba === "zadne-zarizeni" ? "Na tomto účtu není zapnuté žádné zařízení." : "Zkušební notifikaci se nepodařilo poslat."); return j;
+      },
       async ulozitMujPodpis(id, obrazek) { return ok(await sb.from("uzivatele").update({ podpis_obrazek: obrazek }).eq("id", id).select("id")); },
       async ulozitMojeJmeno(id, jmeno) { return ok(await sb.from("uzivatele").update({ jmeno }).eq("id", id).select("id")); },
       async kurzEur() { const { data, error } = await sb.functions.invoke("kurz-cnb"); if (error || !data?.kurz) throw error || new Error("kurz"); return data; },
@@ -4343,6 +4352,11 @@
         <div class="podpis-pole" style="margin-top:12px"><canvas id="novy-podpis"></canvas><div class="linka-podpisu"></div><div class="text-podpisu">${uzivatel.podpis_obrazek ? "Nový podpis (nahradí stávající)" : "Podepište se"}</div></div>
         <div class="radek-tlacitek" style="margin-top:10px"><button class="tl tl-male" id="smazat">Smazat</button><button class="tl tl-hlavni" id="ulozit-podpis" disabled>Uložit podpis</button></div>
       </section>
+      <section class="karta" id="sekce-upozorneni"><h2>🔔 Upozornění na tomto zařízení</h2>
+        <p class="popis">Notifikace, když zákazník v E-servisce podepíše zakázkový list, předávací protokol nebo fakturu, nebo odsouhlasí cenovou nabídku. Zapíná se zvlášť na každém zařízení.</p>
+        <div id="stav-upozorneni" class="napoveda">Zjišťuji…</div>
+        <div class="radek-tlacitek" style="margin-top:10px" id="tl-upozorneni"></div>
+      </section>
       <section class="karta"><h2>Změna hesla</h2>
         <form id="heslo-f" class="mrizka" autocomplete="on">
           <input type="email" autocomplete="username" value="${esc(uzivatel.email || "")}" hidden>
@@ -4352,6 +4366,7 @@
         </form>
       </section>`;
     navazUcet();
+    vykresliUpozorneni();
     const pad = new PodpisPad(app.querySelector("#novy-podpis"), { onZmena: ma => (app.querySelector("#ulozit-podpis").disabled = !ma) });
     uklid = () => pad.zrus();
     app.querySelector("#smazat").onclick = () => pad.smazat();
@@ -4370,6 +4385,52 @@
       try { await db.noveHeslo(f.h1.value); f.reset(); hlaska("Heslo změněno."); } catch (err) { hlaska(chybaText(err), true); }
     };
   }
+
+  /* notifikace na telefon (Web Push) – Vašek 31.10.2026. iPhone: jen z ikony na ploše (iOS 16.4+), povolení jen po klepnutí na tlačítko */
+  const b64uNaBajty = t => Uint8Array.from(atob(t.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((t.length + 3) % 4)), c => c.charCodeAt(0));
+  const nazevZarizeni = () => { const u = navigator.userAgent; return /iPhone/.test(u) ? "iPhone" : /iPad|Macintosh.*Mobile/.test(u) || (/Macintosh/.test(u) && navigator.maxTouchPoints > 1) ? "iPad" : /Android/.test(u) ? "Android" : /Macintosh/.test(u) ? "Mac" : /Windows/.test(u) ? "Windows" : "zařízení"; };
+  async function vykresliUpozorneni() {
+    const st = app.querySelector("#stav-upozorneni"), tl = app.querySelector("#tl-upozorneni"); if (!st) return;
+    const ios = /iPhone|iPad/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+    const naPlose = window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone === true;
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+      st.innerHTML = ios && !naPlose ? "Na iPhonu fungují upozornění jen v aplikaci spuštěné <b>z ikony na ploše</b> (Safari → Sdílet → Přidat na plochu)." : "Tento prohlížeč upozornění neumí" + (ios ? " – je potřeba iOS 16.4 nebo novější." : ".");
+      tl.innerHTML = ""; return;
+    }
+    const reg = await Promise.race([navigator.serviceWorker.ready, new Promise(r => setTimeout(r, 6000))]).catch(() => null);
+    if (!reg?.pushManager) { st.textContent = "Aplikace se ještě načítá, zkuste to za chvíli znovu (nebo ji zavřete a otevřete z ikony na ploše)."; tl.innerHTML = ""; return; }
+    const odber = await reg.pushManager.getSubscription();
+    if (Notification.permission === "denied") {
+      st.innerHTML = `<span style="color:var(--cervena)">Upozornění jsou pro tuto aplikaci zakázaná.</span> ${ios ? "Zapnete je v Nastavení iPhonu → Oznámení → Werkplaats." : "Povolte je v nastavení prohlížeče u této stránky."}`;
+      tl.innerHTML = ""; return;
+    }
+    if (odber && Notification.permission === "granted") {
+      st.innerHTML = `<span style="color:var(--zelena);font-weight:650">✓ Zapnuto</span> – na tomto zařízení (${esc(nazevZarizeni())}) přijde upozornění při každém podpisu v E-servisce.`;
+      tl.innerHTML = `<button class="tl" id="push-test" type="button">Poslat zkušební</button><button class="tl tl-male" id="push-vyp" type="button">Vypnout</button>`;
+      tl.querySelector("#push-test").onclick = async () => { try { await db.ulozitPushOdber(odberDb(odber)); const r = await db.pushTest(); hlaska(r.doruceno ? "Zkušební upozornění odesláno – mělo by se objevit za pár vteřin." : "Odesláno, ale push služba ho nepřijala. Zkuste upozornění vypnout a znovu zapnout.", !r.doruceno, 6000); } catch (e) { hlaska(chybaText(e), true); } };
+      tl.querySelector("#push-vyp").onclick = async () => { try { await db.smazatPushOdber(odber.endpoint); await odber.unsubscribe(); hlaska("Upozornění na tomto zařízení vypnuta."); } catch (e) { hlaska(chybaText(e), true); } vykresliUpozorneni(); };
+      return;
+    }
+    st.textContent = "Vypnuto – na tomto zařízení zatím upozornění nechodí.";
+    tl.innerHTML = `<button class="tl tl-hlavni" id="push-zap" type="button">🔔 Zapnout upozornění</button>`;
+    tl.querySelector("#push-zap").onclick = async () => {
+      const b = tl.querySelector("#push-zap"); b.disabled = true; b.textContent = "Zapínám…";
+      try {
+        const souhlas = await Notification.requestPermission();   // iPhone se zeptá jen po klepnutí – proto až tady
+        if (souhlas !== "granted") { vykresliUpozorneni(); return; }
+        const klic = await db.pushKlic();
+        let o = await reg.pushManager.getSubscription();
+        if (o && b64uNaBajty(klic).join() !== new Uint8Array(o.options?.applicationServerKey || []).join() && o.options?.applicationServerKey) { await o.unsubscribe(); o = null; }
+        o ||= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uNaBajty(klic) });
+        await db.ulozitPushOdber(odberDb(o));
+        hlaska("Upozornění zapnuta. Klepněte na „Poslat zkušební“ a vyzkoušejte je.", false, 6000);
+      } catch (e) { hlaska("Upozornění se nepodařilo zapnout: " + chybaText(e), true, 7000); }
+      vykresliUpozorneni();
+    };
+  }
+  const odberDb = o => { const j = o.toJSON(); return { endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, zarizeni: nazevZarizeni(), uzivatel_id: uzivatel.id }; };
+  // klepnutí na notifikaci, když je aplikace už otevřená (service worker pošle adresu)
+  if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", e => { const u = e.data?.otevrit; if (u) { const x = new URL(u); if (x.origin === location.origin) location.hash = x.hash || "#/"; } });
 
   /* ================= lidé v dílně (jen majitel) ================= */
   async function lide() {

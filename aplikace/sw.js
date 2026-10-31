@@ -22,3 +22,20 @@ self.addEventListener("fetch", e => {
     }
   })());
 });
+
+/* Notifikace na telefon (Vašek 31.10.2026): zákazník podepsal / odsouhlasil doklad v E-servisce */
+self.addEventListener("push", e => {
+  let d = {}; try { d = e.data ? e.data.json() : {}; } catch { d = { text: e.data ? e.data.text() : "" }; }
+  e.waitUntil(self.registration.showNotification(d.titulek || "Werkplaats", {
+    body: d.text || "", icon: "ikony/ikona-192.png", badge: "ikony/ikona-192.png", tag: d.tag || undefined, data: { url: d.url || "/" }
+  }));
+});
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  const cil = new URL(e.notification.data?.url || "/", self.location.origin).href;
+  e.waitUntil((async () => {
+    const okna = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const o of okna) if (new URL(o.url).origin === self.location.origin) { await o.focus(); try { await o.navigate(cil); } catch { o.postMessage({ otevrit: cil }); } return; }
+    await self.clients.openWindow(cil);
+  })());
+});

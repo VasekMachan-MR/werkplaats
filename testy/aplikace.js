@@ -745,6 +745,29 @@ const server = http.createServer((q, r) => {
   await m.waitForSelector('#podpis-nahled img');
   kontrola(true, "Můj účet ukazuje uložený podpis");
   kontrola(await m.isVisible("#odhlasit") && await m.locator('[data-zal="#/lide"]').count() === 0, "mechanik: Odhlásit v Můj účet, bez záložky Lidé");
+  // 🔔 upozornění na telefon (Web Push) – zapnutí, zkušební, vypnutí (push služba prohlížeče je tady nahrazená)
+  await m.evaluate(() => {
+    let odber = null, perm = "default";
+    const reg = { pushManager: {
+      getSubscription: async () => odber,
+      subscribe: async o => { window.__PUSH_KLIC__ = Array.from(o.applicationServerKey).length; odber = { endpoint: "https://web.push.apple.com/test123", options: { applicationServerKey: o.applicationServerKey.buffer },
+        toJSON: () => ({ endpoint: "https://web.push.apple.com/test123", keys: { p256dh: "BP", auth: "AU" } }), unsubscribe: async () => { odber = null; return true; } }; return odber; } } };
+    Object.defineProperty(navigator.serviceWorker, "ready", { configurable: true, get: () => Promise.resolve(reg) });
+    Object.defineProperty(Notification, "permission", { configurable: true, get: () => perm });
+    Notification.requestPermission = async () => (perm = "granted");
+    location.hash = "#/"; setTimeout(() => { location.hash = "#/ucet"; }, 50);
+  });
+  await m.waitForSelector("#push-zap");
+  kontrola(/Vypnuto/.test(await m.textContent("#stav-upozorneni")), "Můj účet: sekce 🔔 Upozornění – vypnuto, tlačítko Zapnout upozornění");
+  await m.click("#push-zap");
+  await m.waitForSelector("#push-test");
+  const pushU = await m.evaluate(() => ({ o: window.__PUSH__, k: window.__PUSH_KLIC__, t: document.getElementById("stav-upozorneni").textContent }));
+  kontrola(pushU.k === 65 && pushU.o?.length === 1 && pushU.o[0].endpoint === "https://web.push.apple.com/test123" && pushU.o[0].p256dh === "BP" && pushU.o[0].uzivatel_id === "u2" && /✓ Zapnuto/.test(pushU.t),
+    "Zapnout upozornění: povolení → odběr s klíčem serveru (65 B) → uložen k uživateli, stav ✓ Zapnuto");
+  await m.click("#push-test"); await m.waitForFunction(() => window.__PUSH_TEST__ === 1);
+  kontrola(true, "Poslat zkušební zavolá server");
+  await m.click("#push-vyp"); await m.waitForSelector("#push-zap");
+  kontrola(await m.evaluate(() => (window.__PUSH__ || []).length) === 0, "Vypnout: odběr se smaže z databáze i z prohlížeče");
   {
     const mz = await m.evaluate(() => window.__ULOZENO__.tabulky.zakazky[0].id);
     await m.evaluate(id => { location.hash = "#/zakazka/" + id; }, mz); await m.waitForSelector("#sekce-fotky-detail");

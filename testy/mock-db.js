@@ -45,6 +45,10 @@ window.__WERK_DB__ = (() => {
     async mfaOverit(fid, kod) { if (kod !== "123456") throw new Error("Invalid TOTP code entered"); window.__TEST_MFA__ = null; window.__MFA_OVERENO__ = fid; return {}; }, async odhlasit() {}, async obnovitHeslo() {}, async noveHeslo() {},
     async clen(uid) { return kopie(LIDE.find(u => u.id === uid) || null); },
     async uzivatele() { return kopie(LIDE); },
+    async pushKlic() { return "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM"; },
+    async ulozitPushOdber(o) { (window.__PUSH__ ||= []).push(o); return [{ id: "push1" }]; },
+    async smazatPushOdber(endpoint) { window.__PUSH__ = (window.__PUSH__ || []).filter(x => x.endpoint !== endpoint); return []; },
+    async pushTest() { window.__PUSH_TEST__ = (window.__PUSH_TEST__ || 0) + 1; return { ok: true, doruceno: 1 }; },
     async ulozitMujPodpis(uid, obrazek) { LIDE.find(u => u.id === uid).podpis_obrazek = obrazek; return [{ id: uid }]; },
     async ulozitMojeJmeno(uid, jmeno) { LIDE.find(u => u.id === uid).jmeno = jmeno; return [{ id: uid }]; },
     async sprava(b) {
