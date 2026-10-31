@@ -1590,7 +1590,7 @@
 
   /* Vykreslí doklad do rámečku → PDF → uloží PDF, podpis zákazníka, doklad (zamčený) a podpisy. Vrací {doklad, bytes, cislo}. */
   async function ulozitDoklad({ iframe, sablona, data, jazyk, zakazka_id, vozidlo_id, cisloZakazky, druh, verze = 1, vystaveno, splatnost,
-                               podpisZak, jmenoZakaznika, vyhPodepsalNaIpadu = false, nabidka_id = null, prubeh = () => {}, prilohy = [], zpusobZak = "ipad", predVystavenim = null }) {
+                               podpisZak, jmenoZakaznika, vyhPodepsalNaIpadu = false, nabidka_id = null, prubeh = () => {}, prilohy = [], zpusobZak = "ipad", nahraditNepodepsane = false }) {
     const cislo = TVAR_CISLA.test(String(data?.cislo || "")) ? String(data.cislo) : cisloDokladu(cisloZakazky, druh, verze);
     if (data && !data.cislo) data.cislo = cislo;
     prubeh(`Vytvářím ${NAZEV_DOKLADU.cs[druh].toLowerCase()}…`);
@@ -1622,13 +1622,22 @@
       soubory.push({ role: "priloha", druh: "pdf", klic: kl, nazev: `${cislo} ${pr.nazev}`, velikost: pb.length, mime: "application/pdf" });
       hotovePrilohy.push({ bytes: pb, nazev: `${cislo}-${pr.slug}.pdf` });
     }
-    const ulozenaData = { ...data }; delete ulozenaData.podpisVyhotovil; delete ulozenaData.podpisZakaznik;
+    // značka tohoto vystavení: opakovaný pokus na stejné obrazovce (po výpadku signálu) ji má stejnou → není to kolize čísla
+    const pokus = iframe ? (iframe._pokusVystaveni ||= (crypto.randomUUID?.() || String(Math.random()).slice(2))) : null;
+    const ulozenaData = { ...data, ...(pokus ? { pokus } : {}) }; delete ulozenaData.podpisVyhotovil; delete ulozenaData.podpisZakaznik;
     const podpisy = [{ role: "vyhotovil", jmeno: uzivatel.jmeno, uzivatel_id: uzivatel.id, zpusob: vyhPodepsalNaIpadu ? "ipad" : "ulozeny", otisk_dokumentu: otisk }];
     if (podpisZak) podpisy.unshift({ role: "zakaznik", jmeno: jmenoZakaznika, zpusob: zpusobZak, otisk_dokumentu: otisk });
     prubeh("Ukládám doklad…");
-    if (predVystavenim) await predVystavenim();          // např. odstranit nepodepsaný zakázkový list, který nový nahrazuje – až když je PDF hotové a nahrané
+    // nahrazení nepodepsaného zakázkového listu proběhne v databázi spolu s vystavením nového (jedním krokem – buď obojí, nebo nic)
     const doklad = await db.vystavitDoklad({ zakazka_id, vozidlo_id, nabidka_id, druh, verze, cislo, variabilni_symbol: vsZCisla(cislo), jazyk,
-      vystaveno: vystaveno || dnes(), splatnost: splatnost || null, data: ulozenaData, celkem: vysledek.celkem ?? null, soubory, podpisy });
+      vystaveno: vystaveno || dnes(), splatnost: splatnost || null, data: ulozenaData, celkem: vysledek.celkem ?? null, soubory, podpisy,
+      ...(nahraditNepodepsane ? { nahradit_nepodepsane: true } : {}) })
+      .catch(e => { if (/už mezitím dostal jiný doklad/.test(chybaText(e))) uklidSoubory({ klice: soubory.map(x => x.klic) }); throw e; });
+    // číslo už mezitím obsadil jiný doklad (druhé zařízení, podpis v E-servisce…) → nehlásit úspěch, nahrané PDF uklidit
+    if (doklad?.uz_existoval && (!pokus || doklad.data?.pokus !== pokus)) {
+      uklidSoubory({ klice: soubory.map(x => x.klic) });
+      throw new Error(`číslo ${cislo} už mezitím dostal jiný doklad (jiné zařízení nebo podpis v E-servisce). Načtěte zakázku znovu (obnovte stránku) a vystavte doklad znovu.`);
+    }
     posledniPdf = { zakazka_id, cislo, bytes, nazev: `${cislo}.pdf`, druh, jazyk, prilohy: hotovePrilohy };
     return { doklad, bytes, cislo };
   }
@@ -1896,7 +1905,7 @@
         await ulozitDoklad({ iframe, sablona: "zakazkovy-list.html", data: dataZakazkovehoListu(z.cislo, podpisVyh, pozdeji ? null : podpisZak, pozdeji, Q), jazyk: Q.zakazka.jazyk,
           zakazka_id: z.id, vozidlo_id: z.vozidlo_id, cisloZakazky: z.cislo, druh: "zakazkovy_list", verze, vystaveno: dnes(),
           podpisZak: pozdeji ? null : podpisZak, jmenoZakaznika: Q.zakaznik.jmeno.trim(), vyhPodepsalNaIpadu, prubeh: p.text,
-          predVystavenim: nahradit ? () => db.nahraditNepodepsaneListy(z.id) : null });
+          nahraditNepodepsane: nahradit });
         if (pozdeji && posledniPdf) posledniPdf.cekaPodpis = true;
         p.zavri(); uklid?.(); uklid = null; location.hash = `#/hotovo/${z.id}`;
       } catch (e) { p.zavri(); hlaska("Vystavení se nepovedlo: " + chybaText(e) + " – zkuste to znovu.", true, 8000); }

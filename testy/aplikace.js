@@ -1027,12 +1027,35 @@ const server = http.createServer((q, r) => {
       return { n: d.length, s: d.filter(x => x.cislo === document.title || true).map(x => x.cislo), novy: d.find(x => x.data?.odhad === 47000), stareVKosi: !!T.soubory.find(f => f.id === pdf)?.smazano }; }, [zid, predNahr.pdf]);
     kontrola(po.n === predNahr.n && po.novy?.cislo === cisloNove && po.s.filter(c => c === cisloNove).length === 1 && po.stareVKosi,
       `Znovu vystavit: nepodepsaný list se nahradil – pořád jediný ${cisloNove} (s novou cenou), podepsané listy zůstaly, staré PDF je v koši`);
+    // kolize: zákazník mezitím podepsal / jiné zařízení obsadilo číslo → chyba, nic se nesmaže a nehlásí se úspěch (noční kontrola 31.10.2026)
+    {
+      const pred = await p.evaluate(id => window.__ULOZENO__.tabulky.doklady.filter(x => x.zakazka_id === id && x.druh === "zakazkovy_list").map(x => x.id).sort().join(), zid);
+      await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid); await p.waitForSelector("#upravit-prijem", { state: "attached" });
+      await p.evaluate(() => { document.querySelector("#upravit-prijem").closest("details")?.setAttribute("open", ""); });
+      await p.click("#upravit-prijem"); await p.waitForSelector("#vystavit-znovu");
+      await p.fill('[data-uf="odhad_ceny"]', "48000"); await p.click("#vystavit-znovu");
+      await p.waitForSelector(`#stav-ulozeni >> text=nahradí nepodepsaný ${cisloNove}`);
+      await p.evaluate(() => { window.__CIZI_DOKLAD__ = true; window.__SMAZANE_SOUBORY__ = []; });
+      await p.click("#pozdeji"); await p.waitForSelector(`#hlaska >> text=číslo ${cisloNove} už mezitím dostal jiný doklad`, { timeout: 15000 });
+      const po2 = await p.evaluate(id => { const T = window.__ULOZENO__.tabulky; const cizi = T.doklady.filter(x => x.data?.pokus === "jine-zarizeni");
+        for (let i = T.doklady.length - 1; i >= 0; i--) if (T.doklady[i].data?.pokus === "jine-zarizeni") T.doklady.splice(i, 1);   // úklid testu
+        return { cizi: cizi.length, listy: T.doklady.filter(x => x.zakazka_id === id && x.druh === "zakazkovy_list").map(x => x.id).sort().join(), hash: location.hash,
+                 uklid: (window.__SMAZANE_SOUBORY__ || []).some(t => (t.klice || []).some(k => k.endsWith(".pdf"))) }; }, zid);
+      kontrola(po2.cizi === 1 && po2.listy === pred && !po2.hash.startsWith("#/hotovo/") && po2.uklid,
+        "kolize čísla listu (zákazník mezitím podepsal): chyba „už mezitím dostal jiný doklad“, žádný list se nesmazal, úspěch se nehlásí, nahrané PDF se uklidí");
+      await p.evaluate(() => { location.hash = "#/doklady"; }); await p.waitForSelector("#f-druh");   // pryč z obrazovky podpisu (hash zakázky se nemění)
+    }
     // ---------- cenová nabídka „Podepíše později“ → E-serviska + e-mail (Vašek 31.10.2026) ----------
     await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid); await p.waitForSelector("text=📝 Cenová nabídka");
     await p.click("text=📝 Cenová nabídka"); await p.waitForSelector("#vystavit:not([disabled])");
     kontrola(await p.isEnabled("#pozdeji"), "nabídka: tlačítko „✍️ Podepíše později“ je i u cenové nabídky");
     const cisloNab = (await p.textContent("#vystavit")).replace(/^\D*/, "").trim();
-    await p.click("#pozdeji"); await p.waitForSelector(`.velke-cislo >> text=${cisloNab}`);
+    // číslo mezitím obsadilo jiné zařízení → chyba místo falešného „hotovo“; po úklidu jde vystavit znovu na stejné obrazovce
+    await p.evaluate(() => { window.__CIZI_DOKLAD__ = true; });
+    await p.click("#pozdeji"); await p.waitForSelector(`#hlaska >> text=číslo ${cisloNab} už mezitím dostal jiný doklad`, { timeout: 15000 });
+    kontrola(!(await p.evaluate(() => location.hash)).startsWith("#/hotovo/"), `nabídka ${cisloNab}: obsazené číslo (jiné zařízení) → chyba, ne „hotovo“`);
+    await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; for (let i = T.doklady.length - 1; i >= 0; i--) if (T.doklady[i].data?.pokus === "jine-zarizeni") T.doklady.splice(i, 1); });
+    await p.click("#pozdeji"); await p.waitForSelector(`.velke-cislo >> text=${cisloNab}`).catch(async e => { console.log("HLÁŠKA:", await p.textContent("#hlaska"), p.url(), await p.evaluate(() => window.__ULOZENO__.tabulky.doklady.filter(d => d.druh === "nabidka").map(d => d.cislo + ":" + d.data?.pokus))); throw e; });
     kontrola(/cenovou nabídku tam podepíše/.test(await p.textContent(".hotovo")) && await p.isVisible("#odkaz-podpis"), `nabídka ${cisloNab}: po vystavení „čeká na podpis“ + „Poslat odkaz k podpisu“`);
     kontrola(await p.evaluate(c => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === c); return d.druh === "nabidka" && d.data.cekaPodpis === true && !T.podpisy.some(x => x.doklad_id === d.id && x.role === "zakaznik"); }, cisloNab),
       "nabídka uložená s „čeká na podpis“ a bez podpisu zákazníka");
