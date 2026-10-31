@@ -197,12 +197,14 @@ async function podepsat(req: Request, sb: any, odp: (s: number, o: unknown) => R
   if (eu) return odp(500, { chyba: "ulozeni" });
   const { data: sf, error: es } = await sb.from("soubory").insert({ zakazka_id: d.zakazka_id, vozidlo_id: v.id, druh: "podpis", klic, nazev: "podpis zákazníka (E-serviska)", mime: "image/png", velikost: bin.length, verejne: false }).select("id").single();
   if (es) { await sb.storage.from("soubory").remove([klic]); return odp(500, { chyba: "ulozeni" }); }
+  // nejdřív si podpis „zabrat“ (dalkove_podpisy má unikátní doklad_id): když přijdou dva podpisy naráz (dvě okna, opakované
+  // odeslání), druhý tady skončí a do PDF se razítkuje jen jednou (noční kontrola 31.10.2026). IP adresa se neukládá (Vašek 30.10.2026).
+  const { data: dp, error: ed } = await sb.from("dalkove_podpisy").insert({ doklad_id: d.id, soubor_id: sf.id, ip: null, zarizeni: (req.headers.get("user-agent") || "").slice(0, 300), vystaveny_doklad_id: null }).select("id").single();
+  if (ed || !dp) { await sb.from("soubory").delete().eq("id", sf.id); await sb.storage.from("soubory").remove([klic]); return odp(409, { chyba: "uz-podepsano" }); }
   // podpis se rovnou vloží do PDF zakázkového listu (políčko „Převzal“) a PDF dokladu se nahradí podepsaným – dílna nic „nevystavuje“ (Vašek 30.10.2026)
   let nahrazeno = false;
   try { nahrazeno = await vlozitPodpisDoDokladu(sb, d, v, bin); } catch (_) { nahrazeno = false; }
-  // IP adresa se neukládá (Vašek 30.10.2026) – stačí čas a zařízení
-  const { error: ed } = await sb.from("dalkove_podpisy").insert({ doklad_id: d.id, soubor_id: sf.id, ip: null, zarizeni: (req.headers.get("user-agent") || "").slice(0, 300), vystaveny_doklad_id: nahrazeno ? d.id : null });
-  if (ed) { await sb.from("soubory").delete().eq("id", sf.id); await sb.storage.from("soubory").remove([klic]); return odp(409, { chyba: "uz-podepsano" }); }
+  if (nahrazeno) await sb.from("dalkove_podpisy").update({ vystaveny_doklad_id: d.id }).eq("id", dp.id);
   return odp(200, { ok: true });
 }
 

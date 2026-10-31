@@ -149,7 +149,7 @@ window.__WERK_DB__ = (() => {
     },
     async nahraditNepodepsaneListy(zid) {           // jako 039 v databázi
       await cekej(); const ids = T.doklady.filter(d => d.zakazka_id === zid && d.druh === "zakazkovy_list"
-        && !T.podpisy.some(x => x.doklad_id === d.id && x.role === "zakaznik") && !T.dalkove_podpisy.some(x => x.doklad_id === d.id)).map(d => d.id);
+        && d.data?.cekaPodpis && !T.podpisy.some(x => x.doklad_id === d.id && x.role === "zakaznik") && !T.dalkove_podpisy.some(x => x.doklad_id === d.id)).map(d => d.id);
       T.soubory.forEach(f => { if (ids.includes(f.doklad_id) || T.doklady.some(d => ids.includes(d.id) && d.pdf_soubor_id === f.id)) { f.doklad_id = null; f.smazano ||= new Date().toISOString(); } });
       T.podpisy = T.podpisy.filter(x => !ids.includes(x.doklad_id)); window.__ULOZENO__.tabulky.podpisy = T.podpisy;
       T.doklady = T.doklady.filter(d => !ids.includes(d.id)); window.__ULOZENO__.tabulky.doklady = T.doklady;
@@ -217,13 +217,19 @@ window.__WERK_DB__ = (() => {
     async odkaz(klic) { return URL.createObjectURL(new Blob([S[klic]], { type: klic.endsWith(".pdf") ? "application/pdf" : "image/jpeg" })); },
     async odkazy(klice) { return Promise.all(klice.map(async k => ({ path: k, signedUrl: await this.odkaz(k) }))); },
     async stahnout(klic) { return new Blob([S[klic]]); },
-    async kurzEur() { return { kurz: 24.335, datum: "29.10.2026", kurzy: { EUR: 24.335, USD: 21.05, GBP: 28.4, JPY: 0.15512 } }; },
+    async kurzEur() { return { kurz: 24.335, datum: "29.10.2026", kurzy: { EUR: 24.335, USD: 21.05, GBP: 28.4, JPY: 0.15512, IDR: 0.0013838 } }; },
     async smazatZaznamSouboru(sid) { await cekej(); T.soubory = T.soubory.filter(x => x.id !== sid); return [{ id: sid }]; },
     async smazatSoubory(telo) { (window.__SMAZANE_SOUBORY__ ||= []).push(telo); return { smazano: (telo.klice || []).length }; },
     async vystavitDoklad(p) {                       // jako vystavit_doklad v databázi: všechno najednou, nebo nic
       if (!/^(\d+-[1-6](-\d+)?|\d{4,}\d{3}[1-6])$/.test(String(p.cislo)) || !/^\d{1,10}$/.test(String(p.variabilni_symbol))) throw new Error("new row violates check constraint \"doklady_cislo_tvar\"");   // jako 038
       await cekej(); if (window.__OFFLINE_DOKLAD__) throw new Error("Failed to fetch");
       for (const x of p.podpisy || []) if (!["ipad", "dalkove", "ulozeny"].includes(x.zpusob)) throw new Error('new row for relation "podpisy" violates check constraint "podpisy_zpusob_check"');   // jako v databázi
+      if (window.__CIZI_DOKLAD__) { window.__CIZI_DOKLAD__ = null; T.doklady.push({ id: id(), zakazka_id: p.zakazka_id, druh: p.druh, verze: p.verze, cislo: p.cislo, variabilni_symbol: p.variabilni_symbol, data: { pokus: "jine-zarizeni" }, zamceno: true }); }   // test: číslo mezitím obsadil jiný doklad
+      if (p.nahradit_nepodepsane && p.druh === "zakazkovy_list") {                // jako 042: nahrazení a vystavení jedním krokem (při kolizi se nic nesmaže)
+        const jiny = T.doklady.find(x => x.cislo === p.cislo && x.data?.pokus !== p.data?.pokus && (!x.data?.cekaPodpis || T.dalkove_podpisy.some(y => y.doklad_id === x.id)));
+        if (jiny) throw new Error(`Číslo ${p.cislo} už mezitím dostal jiný doklad – načtěte zakázku znovu`);
+        await this.nahraditNepodepsaneListy(p.zakazka_id);
+      }
       const uz = T.doklady.find(x => x.cislo === p.cislo); if (uz) return { ...kopie(uz), uz_existoval: true };
       const ted = new Date().toISOString(), sb = p.soubory.map(x => ({ id: id(), vytvoreno: ted, zakazka_id: p.zakazka_id, vozidlo_id: p.vozidlo_id, druh: x.druh, klic: x.klic, nazev: x.nazev, velikost: x.velikost, mime: x.mime, verejne: false, _role: x.role }));
       const pdf = sb.find(x => x._role === "pdf"), podpis = sb.find(x => x._role === "podpis");
