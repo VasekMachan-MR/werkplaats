@@ -71,6 +71,7 @@ window.__WERK_DB__ = (() => {
       return c?.email ? { ok: true, komu: c.email, stav: "odeslano" } : { ok: false, stav: "chyba", chyba: "Zákazník nemá platný e-mail." }; },
     odeslatZakazkovyList(doklad_id) { return this.odeslatEmail(doklad_id); },
     async dalsiCisloOdhad() { return window.__ULOZENO__.citac + 1; },
+    async servisEservisky(kod) { await cekej(); window.__SERVIS_ES_DOTAZ__ = kod; return window.__SERVIS_ES__ ? kopie(window.__SERVIS_ES__) : null; },
     async katalogVozu() { return kopie(window.__KATALOG__ || []); },
     async vsechnyDily() {
       await cekej();

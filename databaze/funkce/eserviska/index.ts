@@ -2,7 +2,7 @@
 // Přístup jen tajným odkazem ?k=… (vozidla.eserviska_kod, Vašek 29.10.2026 – E3); VIN sám nestačí. Při změně majitele se odkaz změní.
 // Předchozí majitelé: vidět je historie prací a fotky (bez jmen, dokladů a dílů – E1b); údaje zákazníka jen u současného majitele (C1).
 // Jen čtení. Odkazy na soubory jsou podepsané a platí 1 hodinu.
-// „Co je příště na řadě“: intervaly z tabulky servisni_intervaly (skupina A/B/C podle roku), případně servisni_intervaly_motoru, + zaškrtnuté servisní úkony u zakázek.
+// „Co je příště na řadě“: intervaly z tabulky servisni_intervaly (skupina A/B/C podle roku), případně servisni_intervaly_motoru / servisni_intervaly_paliva, + zaškrtnuté servisní úkony u zakázek.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { PDFDocument, StandardFonts, rgb } from "npm:pdf-lib@1.17.1";
 
@@ -56,7 +56,7 @@ Deno.serve(async req => {
   if (!v) return odp(404, { chyba: "nenalezeno" });
 
   const sk = skupina(v);
-  const [{ data: vl }, { data: zak }, { data: tp }, { data: intervaly }, { data: motory }, { data: typy }, { data: ukony }, { data: intMot }, { data: prof }] = await Promise.all([
+  const [{ data: vl }, { data: zak }, { data: tp }, { data: intervaly }, { data: motory }, { data: typy }, { data: ukony }, { data: intMot }, { data: intPal }, { data: prof }] = await Promise.all([
     sb.from("vlastnictvi").select("zakaznik_id,vlastni_od,vlastni_do,zakaznici(jmeno,kontaktni_osoba,email,telefon)").eq("vozidlo_id", v.id).order("vlastni_od", { ascending: false }),
     sb.from("zakazky").select("id,cislo,stav,zakaznik_id,datum_prijmu,datum_predani,km_prijem,km_predani,zavady,servisni_ukony,ukoly,poznamky").eq("vozidlo_id", v.id).neq("stav", "zruseno").neq("stav", "poptavka").order("datum_prijmu", { ascending: false }),
     sb.from("soubory").select("klic,nazev,mime,vytvoreno").eq("vozidlo_id", v.id).eq("druh", "tp").eq("verejne", true).is("smazano", null).order("vytvoreno"),
@@ -65,6 +65,7 @@ Deno.serve(async req => {
     sb.from("typy_motoru").select("klic,motor"),
     sb.from("servisni_ukony").select("ukon,jen_palivo,jen_serizovani_ventilu,jen_prevodovka"),
     sb.from("servisni_intervaly_motoru").select("motor,ukon,interval_km,interval_mesice,zdroj"),
+    sb.from("servisni_intervaly_paliva").select("palivo,ukon,rok_od,rok_do,krome_typu,interval_km,interval_mesice,zdroj").eq("skupina", sk),
     // profilové fotky patří k autu – ze všech návštěv, i ze smazaných / zrušených zakázek (Vašek 30.10.2026)
     sb.from("soubory").select("klic,verejne,vytvoreno").eq("vozidlo_id", v.id).eq("druh", "foto").eq("faze", "profil").is("smazano", null).order("vytvoreno")
   ]);
@@ -77,6 +78,35 @@ Deno.serve(async req => {
   // TP je u auta, ale je na něm jméno majitele → jen současnému majiteli a jen nahraný za jeho vlastnictví
   const tpVidi = (tp || []).filter((f: any) => aktualni && (!aktualni.vlastni_od || String(f.vytvoreno || "").slice(0, 10) >= String(aktualni.vlastni_od)));
   const ids = (zak || []).map(z => z.id);
+
+  // co je příště na řadě
+  const mil = v.jednotka_tachometru === "mi", naJed = (km: number | null) => km == null ? null : mil ? Math.round(km / 1.6 / 100) * 100 : km;
+  const dnes = new Date().toISOString().slice(0, 10), za60 = plusMesice(dnes, 2);
+  // zaškrtnutý servisní úkon platí hned – i když je vůz ještě v dílně (Vašek 31.10.2026: „zaškrtnu olej a v E-servisce se objeví V pořádku“)
+  const hotove = (zak || []).filter(z => (z.servisni_ukony || []).length).sort((a, b) => String(b.datum_predani || b.datum_prijmu).localeCompare(String(a.datum_predani || a.datum_prijmu)));
+  // interval podle motoru přebíjí interval podle paliva (diesel), ten přebíjí interval skupiny (047, Vašek 31.10.2026)
+  const typVin = (() => { const m = String(v.vin || "").toUpperCase().match(/^(?:WDB)?(\d{3})(\d{3})/); return m ? m[1] + "." + m[2] : null; })();
+  const podlePaliva = (ukon: string) => (intPal || []).find((x: any) => x.ukon === ukon && x.palivo === palivo
+    && (x.rok_od == null || (v.rok != null && v.rok >= x.rok_od)) && (x.rok_do == null || (v.rok != null && v.rok <= x.rok_do))
+    && !(typVin && (x.krome_typu || []).includes(typVin)));
+  const servis = (intervaly || []).filter(it => platne.has(it.ukon)).map(it => (intMot || []).find(x => x.motor === motor && x.ukon === it.ukon) || podlePaliva(it.ukon) || it).map(it => {
+    const z = hotove.find(x => (x.servisni_ukony || []).includes(it.ukon));
+    const interval = naJed(it.interval_km);
+    if (!z) return { ukon: it.ukon, interval_km: interval, interval_mesice: it.interval_mesice, zdroj: it.zdroj, posledni: null, pristi: null, stav: "nezname" };
+    const datum = z.datum_predani || z.datum_prijmu, km = z.km_prijem ?? z.km_predani ?? null;   // km se zapisují při převzetí (F4)
+    const pDatum = it.interval_mesice ? plusMesice(datum, it.interval_mesice) : null, pKm = interval != null && km != null ? km + interval : null;
+    const nyni = v.km_posledni;
+    const po = (pDatum && pDatum <= dnes) || (pKm != null && nyni != null && nyni >= pKm);
+    const brzy = (pDatum && pDatum <= za60) || (pKm != null && nyni != null && nyni >= pKm - Math.min(1500, Math.round(interval! / 10)));
+    return { ukon: it.ukon, interval_km: interval, interval_mesice: it.interval_mesice, zdroj: it.zdroj,
+      posledni: { datum, km, cislo: z.cislo }, pristi: { datum: pDatum, km: pKm }, stav: po ? "po" : brzy ? "brzy" : "ok" };
+  });
+  // nejnaléhavější nahoře: Po termínu → Brzy → V pořádku → Nezaznamenáno (v rámci skupiny pořadí z manuálu) – Vašek 31.10.2026
+  const NALEH: Record<string, number> = { po: 0, brzy: 1, ok: 2, nezname: 3 };
+  servis.sort((a, b) => NALEH[a.stav] - NALEH[b.stav]);
+  // Werkplaats (sekce Servisní úkony) chce jen tenhle seznam – stejný jako v E-servisce (Vašek 31.10.2026)
+  if (new URL(req.url).searchParams.get("jen") === "servis") return odp(200, { servis, servis_skupina: sk, motor, palivo, prevodovka });
+
 
   const [{ data: pol }, { data: dily }, { data: dok }, { data: soub }] = ids.length ? await Promise.all([
     sb.from("polozky").select("zakazka_id,poradi,typ,popis").in("zakazka_id", ids).is("nabidka_id", null).in("typ", ["prace", "pausal", "nadpis"]).order("poradi"),
@@ -125,27 +155,6 @@ Deno.serve(async req => {
     };
   });
 
-  // co je příště na řadě
-  const mil = v.jednotka_tachometru === "mi", naJed = (km: number | null) => km == null ? null : mil ? Math.round(km / 1.6 / 100) * 100 : km;
-  const dnes = new Date().toISOString().slice(0, 10), za60 = plusMesice(dnes, 2);
-  // zaškrtnutý servisní úkon platí hned – i když je vůz ještě v dílně (Vašek 31.10.2026: „zaškrtnu olej a v E-servisce se objeví V pořádku“)
-  const hotove = (zak || []).filter(z => (z.servisni_ukony || []).length).sort((a, b) => String(b.datum_predani || b.datum_prijmu).localeCompare(String(a.datum_predani || a.datum_prijmu)));
-  // interval podle motoru přebíjí interval skupiny
-  const servis = (intervaly || []).filter(it => platne.has(it.ukon)).map(it => (intMot || []).find(x => x.motor === motor && x.ukon === it.ukon) || it).map(it => {
-    const z = hotove.find(x => (x.servisni_ukony || []).includes(it.ukon));
-    const interval = naJed(it.interval_km);
-    if (!z) return { ukon: it.ukon, interval_km: interval, interval_mesice: it.interval_mesice, zdroj: it.zdroj, posledni: null, pristi: null, stav: "nezname" };
-    const datum = z.datum_predani || z.datum_prijmu, km = z.km_prijem ?? z.km_predani ?? null;   // km se zapisují při převzetí (F4)
-    const pDatum = it.interval_mesice ? plusMesice(datum, it.interval_mesice) : null, pKm = interval != null && km != null ? km + interval : null;
-    const nyni = v.km_posledni;
-    const po = (pDatum && pDatum <= dnes) || (pKm != null && nyni != null && nyni >= pKm);
-    const brzy = (pDatum && pDatum <= za60) || (pKm != null && nyni != null && nyni >= pKm - Math.min(1500, Math.round(interval! / 10)));
-    return { ukon: it.ukon, interval_km: interval, interval_mesice: it.interval_mesice, zdroj: it.zdroj,
-      posledni: { datum, km, cislo: z.cislo }, pristi: { datum: pDatum, km: pKm }, stav: po ? "po" : brzy ? "brzy" : "ok" };
-  });
-  // nejnaléhavější nahoře: Po termínu → Brzy → V pořádku → Nezaznamenáno (v rámci skupiny pořadí z manuálu) – Vašek 31.10.2026
-  const NALEH: Record<string, number> = { po: 0, brzy: 1, ok: 2, nezname: 3 };
-  servis.sort((a, b) => NALEH[a.stav] - NALEH[b.stav]);
 
   // doklad čekající na podpis zákazníka (jen současný majitel): zakázkový list (poslední verze, rozpracovaná zakázka)
   // nebo faktura / zálohová faktura vystavená s „Podepíše později“ (Vašek 30.10.2026 – i u hotové zakázky)

@@ -230,6 +230,11 @@
       async dily(zid) { return ok(await sb.from("dily").select("*").eq("zakazka_id", zid).order("poradi")); },
       async ulozitDily(zid, dily) { return ok(await sb.rpc("ulozit_dily", { p_zakazka: zid, p_dily: dily })); },
       async dodavatele() { return ok(await sb.from("dodavatele").select("id,nazev,web,mena").order("nazev")); },
+      // „Co je příště na řadě“ přímo z E-servisky (stejný výpočet jako vidí zákazník)
+      async servisEservisky(kod) {
+        const r = await fetch(K.supabaseUrl + "/functions/v1/eserviska?jen=servis&k=" + encodeURIComponent(kod), { cache: "no-store" });
+        if (!r.ok) return null; const j = await r.json(); return Array.isArray(j?.servis) ? j : null;
+      },
       async katalogVozu() { return ok(await sb.from("katalog_vozu").select("typ,rada,karoserie,model,od,do,motor,motor_popis,palivo").order("typ").limit(2000)); },
       async vsechnyDily() {
         return ok(await sb.from("dily").select("id,nazev,cislo_mb,vyrobce,cislo_vyrobce,mnozstvi,jednotka,nakupni_cena,mena,kurz,prodejni_cena,stav,dodavatel_id,sklad_id,ze_skladu,zakazky(id,cislo,datum_prijmu,stav,vozidla(typ,model,rok,motor,vin,cislo_motoru))").neq("stav", "nepouzito").limit(10000));
@@ -2504,23 +2509,39 @@
       });
     } catch (e) { el.insertAdjacentHTML("beforeend", `<div class="info chyba">${esc(chybaText(e))}</div>`); }
   }
-  /* ---------- servisní úkony: zaškrtnuté úkony → E-serviska spočítá „Co je příště na řadě“ ---------- */
+  /* ---------- servisní úkony: zaškrtnuté úkony → E-serviska spočítá „Co je příště na řadě“ ----------
+     Seznam je stejný jako „Co je příště na řadě“ v E-servisce – stejné položky, pořadí i stav (Vašek 31.10.2026: „aby to nebylo matoucí“).
+     Bere se přímo z E-servisky (?jen=servis); bez odkazu do E-servisky / při chybě se položky určí stejnými pravidly v aplikaci. */
+  const STAV_SERVISU = { po: ["Po termínu", "var(--cervena)"], brzy: ["Brzy", "var(--oranzova)"], ok: ["V pořádku", "var(--zelena)"], nezname: ["Nezaznamenáno", "var(--seda, #777)"] };
+  async function servisZEservisky(v) {
+    if (!v?.eserviska_kod) return null;
+    try { return await db.servisEservisky(v.eserviska_kod); } catch { return null; }
+  }
+  const stavServisuHtml = s => { const x = STAV_SERVISU[s?.stav]; return x ? ` <span class="stav-servisu" style="font-size:12px;font-weight:650;color:${x[1]}">· ${x[0]}</span>` : ""; };
   async function vykresliServisniUkony() {
     const el = document.getElementById("sekce-servis"); if (!el || !E) return;
-    let K; try { K = await nactiKatalogServisu(); } catch (e) { el.innerHTML = `<summary><h2>Servisní úkony</h2></summary><div class="info chyba">${esc(chybaText(e))}</div>`; return; }
+    const v = E.z.vozidla || {};
+    let K2, ES; try { [K2, ES] = await Promise.all([nactiKatalogServisu(), servisZEservisky(v)]); } catch (e) { el.innerHTML = `<summary><h2>Servisní úkony</h2></summary><div class="info chyba">${esc(chybaText(e))}</div>`; return; }
     if (!document.getElementById("sekce-servis")) return;
-    const v = E.z.vozidla || {}, sk = skupinaServisu(v), zvol = new Set(E.z.servisni_ukony || []), S2 = servisVozu(v, K);
-    const ukony = S2.ukony.concat(K.ukony.filter(u => zvol.has(u.ukon) && !S2.ukony.includes(u)));   // už zaškrtnuté nikdy nezmizí
-    el.innerHTML = `<summary><h2>Servisní úkony <span class="mutted" id="souhrn-servisu" style="font-weight:400;font-size:15px">${zvol.size ? `· ${zvol.size} zaškrtnut${zvol.size === 1 ? "ý" : zvol.size < 5 ? "é" : "ých"}` : ""}</span> <span class="napoveda" style="margin-left:auto;font-weight:400">pro E-servisku · ${S2.motor ? `motor ${esc(S2.motor)}` : "motor neurčen"} (${S2.palivo === "diesel" ? "diesel" : "benzín"}) · ${S2.prevodovka === "automat" ? "automat" : S2.prevodovka === "manual" ? "manuál" : "převodovka neurčena"} · intervaly ${sk}</span></h2></summary>
-      <p class="napoveda" style="margin:0 0 6px">Zaškrtněte, co se při této návštěvě provedlo. E-serviska podle toho spočítá, co je příště na řadě.${S2.motor ? "" : ` Motor jde určit v <a href="#/vozidlo/${E.z.vozidlo_id || v.id}">údajích vozidla</a>.`}${S2.prevodovka ? "" : ` Převodovka není určená – doplňte ji v <a href="#/vozidlo/${E.z.vozidlo_id || v.id}">údajích vozidla</a> (kód 722… = automat, 717… = manuál), pak se nabídne jen správný olej převodovky.`}</p>
+    const sk = ES?.servis_skupina || skupinaServisu(v), zvol = new Set(E.z.servisni_ukony || []), S2 = servisVozu(v, K2);
+    const podle = Object.fromEntries(K2.ukony.map(u => [u.ukon, u]));
+    // stejné položky a pořadí jako E-serviska; neurčená převodovka → olej převodovky se nenabízí (jako v E-servisce)
+    const zaklad = ES ? ES.servis.map(s => podle[s.ukon]).filter(Boolean) : S2.ukony.filter(u => !u.jen_prevodovka || u.jen_prevodovka === S2.prevodovka);
+    const ukony = zaklad.concat(K2.ukony.filter(u => zvol.has(u.ukon) && !zaklad.includes(u)));   // už zaškrtnuté nikdy nezmizí
+    const stavy = Object.fromEntries((ES?.servis || []).map(s => [s.ukon, s]));
+    const palivo = ES?.palivo || S2.palivo, prevodovka = ES ? ES.prevodovka : S2.prevodovka, motor = ES ? ES.motor : S2.motor;
+    el.innerHTML = `<summary><h2>Servisní úkony <span class="mutted" id="souhrn-servisu" style="font-weight:400;font-size:15px">${zvol.size ? `· ${zvol.size} zaškrtnut${zvol.size === 1 ? "ý" : zvol.size < 5 ? "é" : "ých"}` : ""}</span> <span class="napoveda" style="margin-left:auto;font-weight:400">pro E-servisku · ${motor ? `motor ${esc(motor)}` : "motor neurčen"} (${palivo === "diesel" ? "diesel" : "benzín"}) · ${prevodovka === "automat" ? "automat" : prevodovka === "manual" ? "manuál" : "převodovka neurčena"} · intervaly ${sk}</span></h2></summary>
+      <p class="napoveda" style="margin:0 0 6px">Zaškrtněte, co se při této návštěvě provedlo. Seznam je stejný jako „Co je příště na řadě“ v E-servisce${ES ? " (se stavem, který tam zákazník vidí)" : ""}.${motor ? "" : ` Motor jde určit v <a href="#/vozidlo/${E.z.vozidlo_id || v.id}">údajích vozidla</a>.`}${prevodovka ? "" : ` Převodovka není určená, proto se olej převodovky nenabízí – doplňte ji v <a href="#/vozidlo/${E.z.vozidlo_id || v.id}">údajích vozidla</a> (kód 722… = automat, 711–717… = manuál).`}</p>
       <div class="cipy">${ukony.map(u =>
-        `<label class="cip zaskrt"><input type="checkbox" data-servis="${u.ukon}" ${zvol.has(u.ukon) ? "checked" : ""}> ${esc(u.nazev)}</label>`).join("")}</div>
+        `<label class="cip zaskrt"><input type="checkbox" data-servis="${u.ukon}" ${zvol.has(u.ukon) ? "checked" : ""}> ${esc(u.nazev)}<span data-stav-servisu="${u.ukon}">${stavServisuHtml(stavy[u.ukon])}</span></label>`).join("")}</div>
       <div class="napoveda" id="stav-servisu" style="margin-top:8px"></div>`;
     el.querySelectorAll("[data-servis]").forEach(i => i.onchange = async () => {
       const nove = [...el.querySelectorAll("[data-servis]:checked")].map(x => x.dataset.servis), stav = el.querySelector("#stav-servisu");
       stav.textContent = "Ukládám…";
       try { await ulozitZmenu("zakazky", E.id, { servisni_ukony: nove }, stav); E.z.servisni_ukony = nove;
-        const ss = el.querySelector("#souhrn-servisu"); if (ss) ss.textContent = nove.length ? `· ${nove.length} zaškrtnut${nove.length === 1 ? "ý" : nove.length < 5 ? "é" : "ých"}` : ""; }
+        const ss = el.querySelector("#souhrn-servisu"); if (ss) ss.textContent = nove.length ? `· ${nove.length} zaškrtnut${nove.length === 1 ? "ý" : nove.length < 5 ? "é" : "ých"}` : "";
+        // stav podle E-servisky se obnoví na místě (pořadí zůstane, ať položky pod rukou neskáčou)
+        const n = await servisZEservisky(v); if (n) n.servis.forEach(s => { const x = el.querySelector(`[data-stav-servisu="${s.ukon}"]`); if (x) x.innerHTML = stavServisuHtml(s); }); }
       catch (e) { i.checked = !i.checked; stav.textContent = ""; hlaska(chybaText(e), true); }
     });
   }
