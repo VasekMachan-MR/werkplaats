@@ -2020,8 +2020,6 @@
         <div><div class="mutted">Zakázka · ${esc(c.jmeno || "")}</div><h1 style="margin:0">#${z.cislo} · ${esc([v.typ, v.model].filter(Boolean).join(" ") || "Mercedes-Benz")}</h1></div>
         <span class="radek-tlacitek"><label class="vyber-stavu ${["predano", "zaplaceno", "hotovo"].includes(z.stav) ? "hotovo" : z.stav === "zruseno" ? "zruseno" : ""}" title="Stav zakázky">
             <select id="stav-zakazky" aria-label="Stav zakázky">${Object.entries(STAVY).map(([k, t]) => `<option value="${k}" ${k === z.stav ? "selected" : ""}>${t}</option>`).join("")}</select></label>
-          <label class="tl tl-male" id="datum-predani-pole" title="Chybí datum předání – běžně ho zapíše předávací protokol" ${z.stav === "predano" && !z.datum_predani ? "" : "hidden"}>📅 Doplnit datum předání
-            <input type="date" id="datum-predani" value="" class="chybi" style="border:0;background:transparent;font-family:inherit;font-size:16px"></label>
           ${uzivatel.role === "majitel" ? (doklady.some(d => ["faktura", "zalohova", "opravny"].includes(d.druh))
             ? (z.stav !== "zruseno" ? `<button class="tl tl-male tl-smazat" id="zrusit-zakazku">✕ Zrušit zakázku</button>` : "")
             : `<button class="tl tl-male tl-smazat" id="smazat-zakazku">🗑 Smazat</button>`) : ""}</span>
@@ -2085,20 +2083,21 @@
       <details class="karta sbalovaci souhrn-zakazky" id="souhrn" data-sbal${sbalOpen(id, "souhrn")}></details>
 
       <details class="karta sbalovaci" id="sekce-udaje" data-sbal${sbalOpen(id, "sekce-udaje")}>
-        <summary><h2>Zákazník, vozidlo a příjem <span class="mutted" style="font-weight:400;font-size:15px">${esc([c.jmeno, [v.typ, v.model].filter(Boolean).join(" "), v.spz].filter(Boolean).join(" · "))}</span></h2></summary>
+        <summary><h2>Zákazník, vozidlo, příjem, předání <span class="mutted" style="font-weight:400;font-size:15px">${esc([c.jmeno, [v.typ, v.model].filter(Boolean).join(" "), v.spz].filter(Boolean).join(" · "))}</span></h2></summary>
         <div class="podsekce"><h3 class="podnadpis">👤 Zákazník <a class="tl tl-male" href="#/zakaznik/${z.zakaznik_id || c.id}" style="margin-left:auto">✏️ Upravit zákazníka</a></h3><dl class="udaje">
         ${[["Jméno", esc(c.jmeno)], ["Kontaktní osoba", esc(c.kontaktni_osoba)], ["Telefon", telOdkaz(c.telefon)], ["E-mail", mailOdkaz(c.email)], ["Adresa", esc([c.ulice, [c.psc, c.mesto].filter(Boolean).join(" "), c.zeme].filter(Boolean).join(", "))], ["IČO", esc(c.ico)], ["DIČ", esc(c.dic)]]
           .filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${b}</dd></div>`).join("")}</dl>${kontaktTlacitka(c)}</div>
         <div class="podsekce"><h3 class="podnadpis">🚗 Vozidlo <a class="tl tl-male" href="#/vozidlo/${z.vozidlo_id || v.id}" style="margin-left:auto">✏️ Upravit vozidlo a TP</a></h3><dl class="udaje">
-        ${[["VIN", v.vin], ["Typ", v.typ], ["Model", v.model], ["Rok", v.rok], ["SPZ", v.spz], ["Barva", v.barva], ["Verze", v.verze],
-           ["Tachometr při předání", z.km_predani != null ? `${Number(z.km_predani).toLocaleString("cs-CZ")} ${jedn}` : ""]]
+        ${[["VIN", v.vin], ["Typ", v.typ], ["Model", v.model], ["Rok", v.rok], ["SPZ", v.spz], ["Barva", v.barva], ["Verze", v.verze]]
           .filter(([, x]) => x != null && x !== "").map(([a, b]) => `<div><dt>${a}</dt><dd>${esc(b)}${a === "VIN" ? ` <button type="button" class="tl-kopirovat" data-kopirovat="${esc(b)}" aria-label="Kopírovat VIN" title="Kopírovat VIN">⧉</button>` : ""}</dd></div>`).join("")}</dl>
           <p style="margin:14px 0 8px"><b>Dokumenty vozidla</b> <span class="napoveda">(v E-servisce ke stažení)</span></p><div class="fotky" id="dokumenty-vozidla"><span class="mutted">Načítám…</span></div></div>
         <div class="podsekce" id="sekce-prijem-detail"></div>
+        <div class="podsekce" id="sekce-predani-detail"></div>
       </details>
       <details class="karta sbalovaci" id="sekce-archiv" data-sbal${sbalOpen(id, "sekce-archiv")}><summary><h2>Ostatní dokumenty</h2></summary></details>
       <details class="karta sbalovaci" id="sekce-fotky-detail" data-sbal${sbalOpen(id, "sekce-fotky-detail")}><summary><h2>Fotky a videa</h2></summary></details>`;
     vykresliPrijemDetail(false);
+    vykresliPredaniDetail();
     sbalPamatuj(app, id);
     napojKopirovani(app);
     app.querySelectorAll("[data-rychle-foto]").forEach(inp => inp.addEventListener("change", e => {
@@ -2121,17 +2120,9 @@
       const novy = e.target.value, stary = E.z.stav;
       try { await db.upravit("zakazky", id, { stav: novy }); E.z.stav = novy; z.stav = novy;
         const l = e.target.parentElement; l.className = `vyber-stavu ${["predano", "zaplaceno", "hotovo"].includes(novy) ? "hotovo" : novy === "zruseno" ? "zruseno" : ""}`;
-        app.querySelector("#datum-predani-pole").hidden = novy !== "predano" || !!z.datum_predani;
+        vykresliPredaniDetail();
         hlaska(`Stav zakázky: ${STAVY[novy]}${novy === "predano" && !z.datum_predani ? " – doplňte datum předání" : ""}`); }
       catch (err) { e.target.value = stary; hlaska(chybaText(err), true); }
-    };
-    // datum předání ručně (staré zakázky bez předávacího protokolu, nebo když se nepropsalo samo) – Vašek 31.10.2026
-    app.querySelector("#datum-predani").onchange = async e => {
-      const inp = e.target, nove = inp.value || null, stare = z.datum_predani || "";
-      try { await db.upravit("zakazky", id, { datum_predani: nove }); z.datum_predani = nove; if (E?.z) E.z.datum_predani = nove;
-        inp.classList.toggle("chybi", !nove); if (nove) app.querySelector("#datum-predani-pole").hidden = true;   // doplněno → políčko zmizí
-        hlaska(nove ? `Datum předání: ${datumCz(nove)}` : "Datum předání smazáno."); }
-      catch (err) { inp.value = stare; hlaska(chybaText(err), true); }
     };
 
     const sz = app.querySelector("#smazat-zakazku");
@@ -2181,6 +2172,40 @@
         hlaska("Úhrada zrušena – doklad je zase nezaplacený."); detail(id);
       } catch (e) { hlaska(chybaText(e), true); }
     });
+  }
+
+  /* ---------- předání: datum předání auta – zapíše ho předávací protokol, nebo se zadá ručně (často stačí faktura, kterou zákazník
+     podepisuje jako převzetí) – Vašek 31.10.2026 ---------- */
+  function vykresliPredaniDetail(zmenit = false) {
+    const el = document.getElementById("sekce-predani-detail"); if (!el || !E) return;
+    const z = E.z, v = z.vozidla || {}, jedn = v.jednotka_tachometru === "mi" ? "mi" : "km";
+    const protokol = (z.doklady || []).filter(d => d.druh === "predavaci_protokol").sort((a, b) => (b.verze || 1) - (a.verze || 1))[0];
+    if (z.datum_predani && !zmenit) {
+      el.innerHTML = `<h3 class="podnadpis">🔑 Předání ${datumCz(z.datum_predani)} <button type="button" class="tl tl-male" id="zmenit-predani" style="margin-left:auto">✏️ Změnit datum</button></h3>
+        <dl class="udaje">${[["Datum předání", datumCz(z.datum_predani)], ["Tachometr při předání", z.km_predani != null ? `${Number(z.km_predani).toLocaleString("cs-CZ")} ${jedn}` : ""],
+          ["Předávací protokol", protokol ? protokol.cislo : "bez protokolu"]].filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join("")}</dl>`;
+      el.querySelector("#zmenit-predani").onclick = () => vykresliPredaniDetail(true);
+      return;
+    }
+    el.innerHTML = `<h3 class="podnadpis">🔑 Předání</h3>
+      ${z.datum_predani ? "" : `<p class="napoveda" style="margin:0 0 10px">Auto zatím není předané. Datum zapíše předávací protokol – když protokol nevystavujete (stačí faktura), zadejte ho tady.</p>`}
+      <div class="radek-tlacitek" style="align-items:flex-end">
+        <label class="pole" style="margin:0">Datum předání<input type="date" id="datum-predani" value="${esc(z.datum_predani || dnes())}" style="font-size:16px"></label>
+        <button type="button" class="tl tl-hlavni" id="ulozit-predani">${z.datum_predani ? "Uložit datum" : "✓ Předáno"}</button>
+        ${zmenit ? `<button type="button" class="tl" id="zrusit-predani">Zrušit</button>` : ""}</div>`;
+    const zr = el.querySelector("#zrusit-predani"); if (zr) zr.onclick = () => vykresliPredaniDetail(false);
+    el.querySelector("#ulozit-predani").onclick = async e => {
+      const b = e.currentTarget, inp = el.querySelector("#datum-predani"), datum = inp.value;
+      if (!datum) { inp.classList.add("chybi"); inp.focus(); return hlaska("Vyberte datum předání.", true); }
+      const zmeny = { datum_predani: datum, ...(z.stav !== "predano" && z.stav !== "zruseno" ? { stav: "predano" } : {}) };
+      b.disabled = true;
+      try {
+        await db.upravit("zakazky", z.id, zmeny); Object.assign(z, zmeny);
+        if (zmeny.stav) { const sel = document.getElementById("stav-zakazky"); if (sel) { sel.value = "predano"; sel.parentElement.className = "vyber-stavu hotovo"; } }
+        hlaska(`Předáno ${datumCz(datum)}${zmeny.stav ? " – zakázka přepnuta na Předáno" : ""}.`); vykresliPredaniDetail(false);
+      } catch (err) { hlaska("Nepodařilo se uložit: " + chybaText(err), true); }
+      finally { if (b.isConnected) b.disabled = false; }
+    };
   }
 
   /* ---------- příjem: zobrazení a úpravy (zakázkový list -1 zůstává, jak byl podepsán) ---------- */

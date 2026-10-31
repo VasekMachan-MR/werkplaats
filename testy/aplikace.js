@@ -335,15 +335,25 @@ const server = http.createServer((q, r) => {
   await p.click("text=Detail zakázky");
   await p.waitForSelector("text=7377-4");
   await foto("13-detail-doklady");
-  // datum předání: po protokolu je vyplněné → políčko se neukazuje; když chybí (staré zakázky), jde doplnit ručně – Vašek 31.10.2026
+  // podsekce „🔑 Předání“ v sekci Zákazník, vozidlo, příjem, předání – Vašek 31.10.2026
   { const dp0 = await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky[0].datum_predani);
-    kontrola(!!dp0 && !(await p.isVisible("#datum-predani-pole")), `předaná zakázka s datem z protokolu (${dp0}): políčko „Doplnit datum předání“ se neukazuje`);
-    await p.evaluate(() => { window.__ULOZENO__.tabulky.zakazky[0].datum_predani = null; location.hash = "#/doklady"; }); await p.waitForSelector("#f-druh");
-    await p.evaluate(() => { location.hash = "#/zakazka/" + window.__ULOZENO__.tabulky.zakazky[0].id; }); await p.waitForSelector("#datum-predani-pole:not([hidden])");
-    await p.fill("#datum-predani", dp0); await p.dispatchEvent("#datum-predani", "change");
+    await p.evaluate(() => { document.getElementById("sekce-udaje").open = true; });
+    const t = await p.textContent("#sekce-predani-detail");
+    kontrola(/Zákazník, vozidlo, příjem, předání/.test(await p.textContent("#sekce-udaje > summary")) && /Předávací protokol\s*7377-4/.test(t) && /Tachometr při předání\s*123\s?890/.test(t) && !(await p.isVisible("#datum-predani")),
+      `podsekce Předání: datum z protokolu (${dp0}), km a číslo protokolu 7377-4; bez políčka k vyplnění`);
+    // zakázka bez předávacího protokolu (stačí faktura): datum se zadá ručně a zakázka se přepne na Předáno
+    await p.evaluate(() => { const z = window.__ULOZENO__.tabulky.zakazky[0]; z.datum_predani = null; z.stav = "zaplaceno"; location.hash = "#/doklady"; }); await p.waitForSelector("#f-druh");
+    await p.evaluate(() => { location.hash = "#/zakazka/" + window.__ULOZENO__.tabulky.zakazky[0].id; }); await p.waitForSelector("#sekce-predani-detail #ulozit-predani", { state: "attached" });
+    await p.evaluate(() => { document.getElementById("sekce-udaje").open = true; });
+    kontrola(/zatím není předané/.test(await p.textContent("#sekce-predani-detail")) && (await p.textContent("#ulozit-predani")).includes("Předáno"), "podsekce Předání bez data: „Auto zatím není předané“ + datum + tlačítko „✓ Předáno“");
+    await p.fill("#datum-predani", "2026-10-30"); await p.click("#ulozit-predani");
+    await p.waitForFunction(() => { const z = window.__ULOZENO__.tabulky.zakazky[0]; return z.datum_predani === "2026-10-30" && z.stav === "predano"; });
+    await p.waitForSelector("#zmenit-predani");
+    kontrola(await p.$eval("#stav-zakazky", s => s.value) === "predano" && /bez protokolu|7377-4/.test(await p.textContent("#sekce-predani-detail")),
+      "„✓ Předáno“ uloží datum 30. 10. 2026, zakázku přepne na Předáno a ukáže datum s tlačítkem „Změnit datum“");
+    await p.click("#zmenit-predani"); await p.fill("#datum-predani", dp0); await p.click("#ulozit-predani");
     await p.waitForFunction(d => window.__ULOZENO__.tabulky.zakazky[0].datum_predani === d, dp0);
-    await p.waitForSelector("#datum-predani-pole", { state: "hidden" });
-    kontrola(true, "předaná zakázka bez data: políčko „📅 Doplnit datum předání“, po vyplnění se datum uloží a políčko zmizí"); }
+    kontrola(true, "„✏️ Změnit datum“ – datum předání jde opravit"); }
   // přehled dokladů
   await p.click(".lista-vpravo >> text=Doklady");
   await p.waitForSelector(".dlazdice-k");
@@ -465,7 +475,7 @@ const server = http.createServer((q, r) => {
   await foto("07-prehled");
 
   await p.click(".zakazka-radek >> text=7378"); await p.waitForSelector("#sekce-udaje");
-  kontrola(await p.evaluate(() => !document.getElementById("sekce-udaje").open && ["Zákazník", "Vozidlo", "Příjem"].every(t => document.getElementById("sekce-udaje").textContent.includes(t))
+  kontrola(await p.evaluate(() => !document.getElementById("sekce-udaje").open && ["Zákazník", "Vozidlo", "Příjem", "Předání"].every(t => document.getElementById("sekce-udaje").textContent.includes(t))
     && document.getElementById("sekce-servis").compareDocumentPosition(document.getElementById("sekce-dily")) & Node.DOCUMENT_POSITION_FOLLOWING),
     "zákazník, vozidlo a příjem jsou v jedné sbalené sekci; Servisní úkony jsou nad Díly");
   await p.click("#sekce-udaje > summary"); await p.waitForSelector(".kontakt-tlacitka");
