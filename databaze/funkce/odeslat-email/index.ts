@@ -28,15 +28,18 @@ function textEmailu(en: boolean, x: { cislo: string; model: string; spz: string;
   const auto = x.spz ? `${x.model} (${x.spz})` : x.model;
   if (en) return {
     predmet: `Work order ${x.cislo} – ${x.model} – Mercedes Restorations`,
-    text: `Hello,\n\nthank you for your trust and for signing the work order for your ${auto}. Attached you will find work order no. ${x.cislo} and our General Terms and Conditions.\n\nYou can follow the work, see photos and the service history of your car in its E-serviska: ${x.odkaz}\n\nWe will keep you updated by WhatsApp or e-mail. If you have any questions, we are happy to help.\n\nBest regards,\n\n${x.jmeno}\n${PODPIS_FIRMY}`
+    text: `Hello,\n\nthank you for your trust and for signing the work order for your ${auto}. Attached you will find work order no. ${x.cislo} and our General Terms and Conditions.\n\nYou can follow the work, see photos and the service history of your car in its E-serviska:\n${x.odkaz}\n\nWe will keep you updated by WhatsApp or e-mail. If you have any questions, we are happy to help.\n\nBest regards,\n\n${x.jmeno}\n${PODPIS_FIRMY}`
   };
   return {
     predmet: `Zakázkový list ${x.cislo} – ${x.model} – Mercedes Restorations`,
-    text: `Dobrý den,\n\nděkujeme za důvěru a za podpis zakázkového listu k vašemu vozu ${auto}. V příloze zasíláme zakázkový list č. ${x.cislo} a Všeobecné obchodní podmínky.\n\nPrůběh prací, fotografie a historii servisu najdete v E-servisce vašeho vozu: ${x.odkaz}\n\nO dalším postupu vás budeme informovat přes WhatsApp nebo e-mailem. Kdybyste měli jakýkoli dotaz, jsme k dispozici.\n\nS pozdravem,\n\n${x.jmeno}\n${PODPIS_FIRMY}`
+    text: `Dobrý den,\n\nděkujeme za důvěru a za podpis zakázkového listu k vašemu vozu ${auto}. V příloze zasíláme zakázkový list č. ${x.cislo} a Všeobecné obchodní podmínky.\n\nPrůběh prací, fotografie a historii servisu najdete v E-servisce vašeho vozu:\n${x.odkaz}\n\nO dalším postupu vás budeme informovat přes WhatsApp nebo e-mailem. Kdybyste měli jakýkoli dotaz, jsme k dispozici.\n\nS pozdravem,\n\n${x.jmeno}\n${PODPIS_FIRMY}`
   };
 }
-const naHtml = (t: string, odkaz: string) => `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#092b50">` +
-  t.split("\n\n").map(p => `<p style="margin:0 0 14px">${esc(p).replace(/\n/g, "<br>").replace(esc(odkaz), `<a href="${esc(odkaz)}" style="color:#092b50">${esc(odkaz)}</a>`)}</p>`).join("") + `</div>`;
+// odkaz do E-servisky jako výrazné tlačítko na vlastním řádku (Vašek 31.10.2026: modrý odkaz v textu byl špatně vidět)
+const naHtml = (t: string, odkaz: string, en: boolean) => `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#092b50">` +
+  t.split("\n\n").map(p => p.endsWith("\n" + odkaz)
+    ? `<p style="margin:0 0 8px">${esc(p.slice(0, -odkaz.length - 1))}</p><p style="margin:0 0 18px"><a href="${esc(odkaz)}" style="display:inline-block;background:#092b50;color:#ffffff;font-weight:700;text-decoration:none;padding:12px 22px">${en ? "Open E-serviska" : "Otevřít E-servisku"} &rarr;</a></p>`
+    : `<p style="margin:0 0 14px">${esc(p).replace(/\n/g, "<br>")}</p>`).join("") + `</div>`;
 
 Deno.serve(async req => {
   const origin = req.headers.get("origin");
@@ -100,7 +103,7 @@ Deno.serve(async req => {
   const r = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { "authorization": `Bearer ${klic}`, "content-type": "application/json", "idempotency-key": `zl-${d.id}-${id}` },
-    body: JSON.stringify({ from: OD, to: [komu], bcc: [FIRMA], reply_to: FIRMA, subject: predmet, text, html: naHtml(text, odkaz), attachments: pril,
+    body: JSON.stringify({ from: OD, to: [komu], bcc: [FIRMA], reply_to: FIRMA, subject: predmet, text, html: naHtml(text, odkaz, en), attachments: pril,
       tags: [{ name: "doklad", value: String(d.cislo).replace(/[^\w-]/g, "_") }] })
   });
   const j = await r.json().catch(() => ({}));
