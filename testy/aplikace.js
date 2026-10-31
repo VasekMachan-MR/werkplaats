@@ -906,6 +906,10 @@ const server = http.createServer((q, r) => {
     await p.selectOption("#form-novy [data-mena]", "USD");
     await p.waitForFunction(() => document.querySelector("#form-novy [data-kurz]").value === "21,05");
     kontrola(/210,50\s*Kč/.test(await p.textContent("#form-novy [data-prepocet]")), "Sklad: po výběru USD se doplní kurz ČNB (21,05) a ukáže přepočet 210,50 Kč/ks");
+    await p.selectOption("#form-novy [data-mena]", "IDR");
+    await p.waitForFunction(() => document.querySelector("#form-novy [data-kurz]").value === "0,001384");
+    kontrola(true, "Sklad: malý kurz (IDR 0,0013838) se zaokrouhlí na 4 platné číslice (0,001384), ne na 0,0014");
+    await p.selectOption("#form-novy [data-mena]", "USD"); await p.waitForFunction(() => document.querySelector("#form-novy [data-kurz]").value === "21,05");
     await p.fill("#form-novy [data-kurz]", "21,5"); await p.selectOption("#form-novy [data-fs-vyber]", ""); await p.click("#novy-ulozit"); await p.waitForSelector(".sklad-pol >> text=Těsnění USA");
     kontrola(await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, s = T.sklad.find(x => x.nazev === "Těsnění USA"), po = T.sklad_pohyby.find(x => x.sklad_id === s.id);
       return s.nakupni_cena === 215 && po.cena === 215 && po.poznamka === "10 USD × kurz 21,5"; }), "Sklad: cena v USD s ručně upraveným kurzem se uloží v Kč (215 Kč) a původní částka do poznámky");

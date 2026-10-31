@@ -217,7 +217,7 @@ window.__WERK_DB__ = (() => {
     async odkaz(klic) { return URL.createObjectURL(new Blob([S[klic]], { type: klic.endsWith(".pdf") ? "application/pdf" : "image/jpeg" })); },
     async odkazy(klice) { return Promise.all(klice.map(async k => ({ path: k, signedUrl: await this.odkaz(k) }))); },
     async stahnout(klic) { return new Blob([S[klic]]); },
-    async kurzEur() { return { kurz: 24.335, datum: "29.10.2026", kurzy: { EUR: 24.335, USD: 21.05, GBP: 28.4, JPY: 0.15512 } }; },
+    async kurzEur() { return { kurz: 24.335, datum: "29.10.2026", kurzy: { EUR: 24.335, USD: 21.05, GBP: 28.4, JPY: 0.15512, IDR: 0.0013838 } }; },
     async smazatZaznamSouboru(sid) { await cekej(); T.soubory = T.soubory.filter(x => x.id !== sid); return [{ id: sid }]; },
     async smazatSoubory(telo) { (window.__SMAZANE_SOUBORY__ ||= []).push(telo); return { smazano: (telo.klice || []).length }; },
     async vystavitDoklad(p) {                       // jako vystavit_doklad v databázi: všechno najednou, nebo nic

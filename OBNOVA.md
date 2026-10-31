@@ -1,18 +1,20 @@
 # Obnova Werkplaats + E-serviska 1:1
 
-Ověřeno **30. 10. 2026**: obsah tohoto repozitáře odpovídá tomu, co běží naostro.
+Ověřeno **31. 10. 2026** (noční kontrola): obsah tohoto repozitáře odpovídá tomu, co běží naostro.
 
 **Databáze**
-- Migrace `databaze/001–031` vytvoří přesně stejné tabulky, sloupce, omezení, indexy, triggery, pravidla RLS, typy a úložiště.
-- Porovnáno otiskem s produkční databází, shoda 100 %.
-- Jediný rozdíl: u `vystavit_doklad` chybí jeden komentář.
+- Migrace `databaze/001–042` vytvoří přesně stejné tabulky, sloupce, omezení, indexy, triggery, pravidla RLS, typy a úložiště.
+- Porovnáno otiskem s produkční databází, shoda 100 % (jediný rozdíl: u `vystavit_doklad` chybí jeden komentář).
+- Zkouška obnovy 31. 10. 2026: databáze postavená z migrací + `obnova-dat.sql` ze zálohy → všechna data sedí, majitel převeden na nový účet.
 
 **Serverové funkce:** `databaze/funkce/*` jsou stejné jako nasazené verze:
-- eserviska v15
-- kurz-cnb v1
+- eserviska v{{ESERVISKA}}
+- kurz-cnb v2
 - smazat-soubory v2
 - sprava-uzivatelu v3
-- import-archivu v2 (vypnutá)
+- zaloha v5 (noční záloha, přihlášení tokenem GitHub OIDC)
+- import-archivu v2 (jednorázová, nepoužívá se)
+- `uklid-jednorazovy` – jen prázdná funkce po jednorázovém úklidu 31. 10. 2026 (není v gitu, dá se smazat; při obnově ji nezakládat)
 
 **Web E-serviska**
 - Kód v hlavičce i patičce stránky `/e-serviska` se shoduje s webem bajt po bajtu (SHA-256).
@@ -20,15 +22,17 @@ Ověřeno **30. 10. 2026**: obsah tohoto repozitáře odpovídá tomu, co běž�
 
 Záloha kódu: soubor `werkplaats-kod-RRRR-MM-DD.bundle` s celou historií (`git clone soubor.bundle werkplaats`) a větev `zaloha-RRRR-MM-DD` na GitHubu.
 
-## Denní záloha (každý den ve 2:00, od 31. 10. 2026)
+## Noční záloha (každou noc kolem 2:00, od 31. 10. 2026)
 
-Plánovaná úloha Clauda každou noc uloží do iCloudu `Mercedes Restorations/Zálohy Werkplaats/RRRR-MM-DD/` celý balíček (kód, data, `obnova-dat.sql`, návody).
+Běží na GitHubu (workflow `.github/workflows/zaloha.yml`), nezávisle na Macu. Nic se neplatí (bezplatný limit Cloudflare R2).
 
-1. Přečte klíč zálohy ze souboru `.klic-zalohy` v téže složce iCloudu (funkce `zaloha` zná jen jeho otisk SHA-256).
-2. `ZALOHA_KLIC=<klíč> zaloha/denni-zaloha.sh` stáhne data přes funkci `zaloha` a sestaví balíček v `/mnt/user-data/outputs/zaloha-RRRR-MM-DD/`.
-3. Soubory se zapíšou na Mac do iCloudu.
+1. Funkce `zaloha` v Supabase vydá data všech tabulek; přihlášení tokenem GitHub OIDC (žádné heslo – jen tento repozitář, větev `main`).
+2. `zaloha/denni-zaloha.sh` + `zaloha/vytvor-balicek.py` sestaví balíček: data po tabulkách, `data/obnova-dat.sql` (obnova dat jedním spuštěním v SQL Editoru), `JAK-OBNOVIT.html`, tento návod, kód webu E-servisky a git bundle s kódem.
+3. Balíček se nahraje do Cloudflare R2 `werkplaats-zalohy/RRRR-MM-DD/` (drží se 30 posledních).
+4. `zaloha/zrcadlo-souboru.py` zrcadlí fotky, videa a PDF do R2 `werkplaats-soubory` (jen přidává, nic nemaže).
+5. Pojistka: když je v R2 přes 8 GB, nic se nenahraje (aby se neplatilo).
 
-Nový klíč: vygenerovat náhodný (`python3 -c "import secrets;print(secrets.token_hex(32))"`), jeho SHA-256 dát do `OTISK` ve `databaze/funkce/zaloha/index.ts`, funkci nasadit a klíč uložit do `.klic-zalohy`.
+Ruční spuštění: `gh workflow run zaloha.yml -R VasekMachan-MR/werkplaats --ref main`.
 
 ## Co kde běží
 
@@ -52,16 +56,17 @@ Další údaje:
 
 2. **Databáze (nový projekt Supabase):**
    - Spustit `databaze/0*.sql` přesně v pořadí podle názvu souboru (015 před 015b, 028 před 028b).
-   - Data nahrát ze zálohy dat (JSON po tabulkách).
+   - Jednou se přihlásit do nové aplikace (vznikne účet), pak celý `data/obnova-dat.sql` ze zálohy vložit do Supabase → SQL Editor → Run. Nový účet převezme roli majitele.
    - Supabase Pro má navíc denní zálohy databáze přímo v Supabase.
 
 3. **Serverové funkce:** nasadit každou složku z `databaze/funkce/` pod stejným názvem.
    - `eserviska` s `verify_jwt = false`.
    - Ostatní funkce s `verify_jwt = true`.
-   - `import-archivu` je jednorázová a může zůstat vypnutá; `zaloha` je denní záloha (pouští jen s klíčem ze souboru `.klic-zalohy`, viz Denní záloha).
+   - Výjimka: `zaloha` také s `verify_jwt = false` (ověřuje si token GitHub OIDC sama). `import-archivu` je jednorázová a nemusí se nasazovat.
 
 4. **Nastavení Supabase, které není v kódu (nastavit ručně):**
    - Authentication → MFA: zapnout TOTP (aplikace vyžaduje druhý krok přihlášení).
+   - Authentication → Sign In / Providers → Email: zapnout „Prevent use of leaked passwords“ (ochrana uniklých hesel, zapnuto 31. 10. 2026).
    - Authentication → URL Configuration: Site URL `https://werk.mercedesrestorations.cz`, Redirect URLs `https://werk.mercedesrestorations.cz/**`.
    - Uživatelé (přihlášení) se nezálohují. Majitel si účet založí znovu a v tabulce `uzivatele` se mu nastaví `role = 'majitel'`.
    - Nová adresa a publishable klíč projektu se zapíšou do `aplikace/nastaveni.js` a do `API` v `web/e-serviska-footer.html`.
@@ -74,7 +79,9 @@ Další údaje:
 
 6. **E-serviska:** ve Webflow na stránce E-serviska vložit `web/e-serviska-head.html` do Head code a `web/e-serviska-footer.html` do Footer code (celý obsah), pak publikovat.
 
-7. **Soubory (fotky, PDF, podpisy):** nahrát do úložiště `soubory` se stejnými cestami (sloupec `soubory.klic`).
+7. **Soubory (fotky, PDF, podpisy):** zkopírovat z R2 `werkplaats-soubory` do úložiště `soubory` se stejnými cestami (sloupec `soubory.klic`).
+
+8. **Noční záloha:** v GitHubu nastavit Secrets `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (klíč R2 jen pro koše `werkplaats-zalohy` a `werkplaats-soubory`).
 
 ## Co v gitu záměrně není
 - Osobní údaje zákazníků, podpisy (`dokumenty/sablony/assets/podpis*.png`) a PDF dokladů. To je v databázi a úložišti, zálohuje se zvlášť.

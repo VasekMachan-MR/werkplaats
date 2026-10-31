@@ -242,7 +242,7 @@
       // nepodepsaný zakázkový list se při novém vystavení nahradí (039) – server hlídá, že ho zákazník nepodepsal
       async nahraditNepodepsaneListy(zid) { return ok(await sb.rpc("nahradit_nepodepsane_listy", { p_zakazka: zid })); },
       async prirazeniFakturyPrijmu(pohyb, soubor) { return ok(await sb.rpc("priradit_fakturu_prijmu", { p_pohyb: pohyb, p_soubor: soubor })); },
-      async fakturySkladu() { return ok(await sb.from("soubory").select("id,klic,nazev,mime,vytvoreno").eq("druh", "nakupni_doklad").eq("faze", "sklad").is("smazano", null).order("vytvoreno", { ascending: false }).limit(30)); },
+      async fakturySkladu() { return ok(await sb.from("soubory").select("id,klic,nazev,mime,vytvoreno").eq("druh", "nakupni_doklad").eq("faze", "sklad").is("smazano", null).order("vytvoreno", { ascending: false }).limit(500)); },   // dřív jen 30 – starší faktury nešly vybrat
       async fakturyPrijmu() { return ok(await sb.from("sklad_pohyby").select("sklad_id,cas,soubory(id,klic,nazev,mime,smazano)").eq("druh", "prijem").not("soubor_id", "is", null).order("cas", { ascending: false }).limit(5000)); },
       async novaPolozkaSkladu(p) { return ok(await sb.from("sklad").insert(p).select().single()); },
       async pohybSkladu(p) { return ok(await sb.from("sklad_pohyby").insert(p).select("id")); },
@@ -1775,7 +1775,10 @@
   // měny pro naskladnění: CZK, EUR, USD a pak podle abecedy (seznam měn ČNB) – Vašek 30.10.2026
   const MENY_CNB = ["AUD", "BRL", "CAD", "CHF", "CNY", "DKK", "GBP", "HKD", "HUF", "IDR", "ILS", "INR", "ISK", "JPY", "KRW", "MXN", "MYR", "NOK", "NZD", "PHP", "PLN", "RON", "SEK", "SGD", "THB", "TRY", "ZAR"];
   const seznamMen = () => ["CZK", "EUR", "USD", ...[...new Set([...MENY_CNB, ...Object.keys(kurzCnb?.kurzy || {})])].filter(m => !["CZK", "EUR", "USD", "XDR"].includes(m)).sort()];
-  const kurzMeny = m => m === "CZK" ? 1 : m === "EUR" ? kurzEur() : kurzCnb?.kurzy?.[m] ? Math.round(kurzCnb.kurzy[m] * 10000) / 10000 : null;
+  // kurz pro naskladnění: bez spojení na ČNB žádný odhad (ani 25 Kč za EUR) – pole zůstane prázdné a zvýrazněné, zadá se ručně;
+  // malé kurzy (IDR, KRW, HUF…) na 4 platné číslice, ať se nezaokrouhlí na nepřesnou hodnotu (noční kontrola 31.10.2026)
+  const zaokrouhlitKurz = k => k >= 1 ? Math.round(k * 10000) / 10000 : Number(k.toPrecision(4));
+  const kurzMeny = m => m === "CZK" ? 1 : m === "EUR" ? (kurzCnb?.kurz ? zaokrouhlitKurz(kurzCnb.kurz) : null) : kurzCnb?.kurzy?.[m] ? zaokrouhlitKurz(kurzCnb.kurzy[m]) : null;
   const nactiKurzEur = () => kurzCnbNacitam ||= (db.kurzEur ? db.kurzEur() : Promise.reject()).then(k => (kurzCnb = k)).catch(() => { kurzCnbNacitam = null; });
   // sbalovací sekce zakázky: aplikace si pamatuje (pro každou zakázku zvlášť), co bylo rozbalené
   const SBAL_KLIC = "werk-sbaleni", SBAL_VYCHOZI = ["sekce-prace", "sekce-dily", "sekce-servis", "souhrn"];
@@ -3475,11 +3478,11 @@
         if (kurzMeny(m) == null || !kurzCnb) { ku.placeholder = "načítám…"; await nactiKurzEur(); }
         const k = kurzMeny(m); ku.value = k ? String(k).replace(".", ",") : ""; ku.placeholder = "kurz";
         ku.title = k && kurzCnb ? `ČNB ${kurzCnb.datum}: 1 ${m} = ${String(k).replace(".", ",")} Kč` : "Kurz ČNB se nepodařilo načíst – zadej ho ručně (Kč za 1 " + m + ")";
-        if (!k) ku.focus();
+        ku.classList.toggle("chybi", !k); if (!k) ku.focus();
       }
       prepocet();
     };
-    cenaInp.addEventListener("input", prepocet); ku.addEventListener("input", prepocet);
+    cenaInp.addEventListener("input", prepocet); ku.addEventListener("input", () => { ku.classList.remove("chybi"); prepocet(); });
     // vrací cenu v Kč a poznámku s původní částkou; undefined = chyba (zvýrazněno)
     return () => {
       const m = sel.value, c = ciselnyVstup(cenaInp, { min: 0, max: 10000000 });
@@ -3534,7 +3537,8 @@
     const kolikObjednat = s => pod(s) ? Math.max(1, Math.ceil(Number(s.min_mnozstvi) - Number(s.mnozstvi))) : Math.max(1, Math.round(pouz(s).mnozstvi / Math.max(1, pouz(s).zakazky.size)));
 
     // výběr přijaté faktury k naskladnění: nahrát novou, nebo vybrat už nahranou (jedna faktura na víc dílů – Vašek 30.10.2026)
-    const moznostiFaktur = vybrano => `<option value="">🧾 bez faktury</option>${FS.map(f => `<option value="${f.id}" ${f.id === vybrano ? "selected" : ""}>🧾 ${esc(f.nazev || "faktura")} · ${datumCz(String(f.vytvoreno || "").slice(0, 10))}</option>`).join("")}`;
+    // přiřazená faktura, která není v seznamu (hodně stará), se nesmí ztratit – zůstane vybraná
+    const moznostiFaktur = vybrano => `<option value="">🧾 bez faktury</option>${vybrano && !FS.some(f => f.id === vybrano) ? `<option value="${esc(vybrano)}" selected>🧾 starší faktura (ponechat)</option>` : ""}${FS.map(f => `<option value="${f.id}" ${f.id === vybrano ? "selected" : ""}>🧾 ${esc(f.nazev || "faktura")} · ${datumCz(String(f.vytvoreno || "").slice(0, 10))}</option>`).join("")}`;
     // předvybraná je jen ve formuláři „Naskladnit díl“ (další díl ze stejné faktury); jinde vždy „bez faktury“ – Vašek 30.10.2026
     const vyberFaktury = (predvybrat = false) => `<div class="faktura-skladu"><select class="vstup" data-fs-vyber aria-label="Přijatá faktura k naskladnění">${moznostiFaktur(predvybrat ? posledniFakturaSkladu : null)}</select>
       <label class="tl tl-male" title="Nahrát přijatou fakturu (PDF nebo fotka) – stejnou pak vybereš i u dalších dílů z té faktury">＋ Nahrát fakturu<input type="file" accept="application/pdf,image/*,.heic,.heif,.jpg,.jpeg,.png" hidden data-fs-soubor></label></div>`;
