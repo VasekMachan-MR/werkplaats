@@ -164,7 +164,11 @@ if(stav==='ok'&&S.due!=null&&D.servis&&D.servis[S.due]){var unit=D.vuz.jednotka_
 if(stav==='ok'&&S.gal){var G=D.navstevy[S.gal[0]].fotky,gi=S.gal[1],g=G[gi];h+='<div class="ov"><button class="b" data-a="gclose" aria-label="'+esc(t.close)+'" style="position:absolute;right:8px;top:8px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;color:#fff">'+I_X+'</button><div style="position:relative;width:100%;max-width:900px">'+(g.video?'<video src="'+esc(g.url)+'" controls playsinline autoplay></video>':'<img src="'+esc(g.url)+'" alt="">')+(G.length>1?'<button class="b arw" data-a="gprev" aria-label="'+esc(t.prev)+'" style="left:4px">'+I_L+'</button><button class="b arw" data-a="gnext" aria-label="'+esc(t.next)+'" style="right:4px">'+I_R+'</button>':'')+'</div><div style="margin-top:12px;color:#fff;font-size:14px">'+(gi+1)+' / '+G.length+'</div></div>'}
 root.innerHTML=h;document.documentElement.lang=lang;
 setTimeout(napojPodpis,0);
+if(stav==='ok'&&S.gal)prednacti();
 }
+// galerie: další 3 a předchozí fotka se stáhnou dopředu, listování je pak bez čekání (Vašek 31.10.2026)
+var PRED={};
+function prednacti(){var G=D.navstevy[S.gal[0]].fotky,n=G.length;[1,2,3,-1].forEach(function(d){var g=G[(S.gal[1]+d+n)%n];if(g&&!g.video&&g.url&&!PRED[g.url]){var im=new Image();im.decoding='async';im.src=g.url;PRED[g.url]=im}})}
 var kreslim=false;
 function napojPodpis(){var c=document.getElementById('es-podpis');if(!c||c._napojeno)return;c._napojeno=1;var x=c.getContext('2d');
 var vel=function(){var r=c.getBoundingClientRect(),dpr=window.devicePixelRatio||1;if(!r.width)return;c.width=Math.round(r.width*dpr);c.height=Math.round(r.height*dpr);x.setTransform(dpr,0,0,dpr,0,0);kresli()};
