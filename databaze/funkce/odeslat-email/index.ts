@@ -33,6 +33,22 @@ const DOKLADY = ["zakazkovy_list", "nabidka", "faktura", "zalohova", "predavaci_
 type X = { cislo: string; zakazka: string; model: string; spz: string; odkaz: string; jmeno: string; platba: string; podepsano: boolean };
 const castka = (n: number, en: boolean) => en ? "CZK " + Math.round(n).toLocaleString("en-GB") : Math.round(n).toLocaleString("cs-CZ").replace(/\s/g, " ") + " Kč";
 const datum = (d: string, en: boolean) => { const m = String(d || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return !m ? "" : en ? `${+m[3]}/${+m[2]}/${m[1]}` : `${+m[3]}. ${+m[2]}. ${m[1]}`; };
+// označení vozu do e-mailů: kód karoserie + model, např. „W126 300 SE“, „R107 560 SL“, „C124 300 CE“ (Vašek 31.10.2026: vždy písmeno a typ)
+function kodKaroserie(typ: unknown, model: unknown) {
+  const t = String(typ || "").toUpperCase().replace(/\s+/g, ""), mo = String(model || "").toUpperCase(), m = t.match(/^([WRCSAV])?(\d{3})(C)?/);
+  if (!m) return String(typ || "").trim();
+  if (m[1]) return m[1] + m[2];
+  const d = m[2];
+  if (m[3]) return "C" + d;
+  if (d === "107") return /SLC/.test(mo) ? "C107" : "R107";
+  if (["129", "170", "230"].includes(d)) return "R" + d;
+  if (/CABRIO/.test(mo)) return d === "124" ? "A124" : "W" + d;
+  if ((d === "123" || d === "124") && /\d\s*C[ED]?\b|\bCE\b/.test(mo)) return "C" + d;
+  if (d === "126" && /SEC/.test(mo)) return "C126";
+  if (d === "140" && /SEC|\bCL\b/.test(mo)) return "C140";
+  return "W" + d;
+}
+const oznaceniVozu = (v: any) => [kodKaroserie(v?.typ, v?.model), String(v?.model || "").trim()].filter(Boolean).join(" ") || "Mercedes-Benz";
 // texty e-mailů – CZ firemní „my“, bez oslovení jménem (Vašek 31.10.2026); EN jednoduchou angličtinou
 function textEmailu(druh: Druh, en: boolean, x: X): { predmet: string; text: string; tlacitko: string } {
   const auto = x.spz ? `${x.model} (${x.spz})` : x.model;
@@ -137,7 +153,7 @@ Deno.serve(async req => {
 
   const en = (d.jazyk || d.zakazky?.zakaznici?.jazyk) === "en";
   const v = d.zakazky?.vozidla || {};
-  const model = [v.typ, v.model].filter(Boolean).join(" ") || "Mercedes-Benz";
+  const model = oznaceniVozu(v);
   const odkaz = v.eserviska_kod ? "https://www.mercedesrestorations.cz/e-serviska?k=" + encodeURIComponent(v.eserviska_kod)
     : "https://www.mercedesrestorations.cz/e-serviska?vin=" + encodeURIComponent(String(v.vin || "").toUpperCase().replace(/[^A-Z0-9]/g, ""));
   const jmeno = (d.podpisy || []).find((x: any) => x.role === "vyhotovil")?.jmeno || "Václav Macháň";
