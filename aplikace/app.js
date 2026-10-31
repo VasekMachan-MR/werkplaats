@@ -295,7 +295,7 @@
       async upravit(tabulka, id, zmeny) { return ok(await sb.from(tabulka).update(zmeny).eq("id", id).select()); },
       async detail(id) {
         return ok(await sb.from("zakazky")
-          .select("*,vozidla(*),zakaznici(*),doklady(id,druh,cislo,verze,vystaveno,splatnost,zamceno,celkem,zaplaceno,odeslano_uol,data,jazyk,pdf_soubor_id,soubory!doklady_pdf_soubor_id_fkey(klic),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id,podepsano,vystaveny_doklad_id,soubory(klic)),podpisy(role,podepsano),emaily(id,komu,stav,chyba,odeslano,zmeneno)),soubory!soubory_zakazka_id_fkey(id,druh,faze,klic,nazev,mime,vytvoreno,smazano,doklad_id,verejne,podpis_pozadan,podepsany_z)")
+          .select("*,vozidla(*),zakaznici(*),doklady(id,druh,cislo,verze,vystaveno,splatnost,zamceno,celkem,zaplaceno,odeslano_uol,data,jazyk,pdf_soubor_id,soubory!doklady_pdf_soubor_id_fkey(klic),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(id,podepsano,vystaveny_doklad_id,soubory(klic)),podpisy(role,podepsano,zpusob),emaily(id,komu,stav,chyba,odeslano,zmeneno)),soubory!soubory_zakazka_id_fkey(id,druh,faze,klic,nazev,mime,vytvoreno,smazano,doklad_id,verejne,podpis_pozadan,podepsany_z)")
           .eq("id", id).maybeSingle());
       }
     };
@@ -2075,14 +2075,22 @@
     const jedn = v.jednotka_tachometru === "mi" ? "mi" : "km";
     const doklady = bezStarychListu((z.doklady || []).map(d => ({ ...d, zakazka_id: d.zakazka_id || z.id }))).sort((a, b) => a.cislo.localeCompare(b.cislo, "cs", { numeric: true }));
     const maEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(c.email || "").trim());
-    // ✓ u cenové nabídky, kterou zákazník odsouhlasil (podpis na místě nebo v E-servisce) – Vašek 31.10.2026
+    // ✓ u cenové nabídky / zakázkového listu, který zákazník podepsal (na místě nebo v E-servisce) – s datem a časem (Vašek 31.10.2026)
     const posledniNabidka = Math.max(0, ...doklady.filter(d => d.druh === "nabidka").map(d => d.verze || 1));
-    const odsouhlaseni = d => {
+    const kdyPodpis = t => { const x = new Date(t); return isNaN(x) || /^\d{4}-\d{2}-\d{2}$/.test(String(t)) ? datumCz(t) : x.toLocaleString("cs-CZ", { timeZone: "Europe/Prague", day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" }); };
+    const podpisZakaznika = d => {
       const dp = dalkovyPodpis(d), na = (d.podpisy || []).find(x => x.role === "zakaznik");
-      if (dp?.podepsano) return ` · <b style="color:var(--zelena)">✓ Odsouhlaseno ${datumCz(dp.podepsano)} (online)</b>`;
-      if (na) return ` · <b style="color:var(--zelena)">✓ Odsouhlaseno ${datumCz(na.podepsano || d.vystaveno)}</b>`;
-      return d.data?.cekaPodpis && (d.verze || 1) >= posledniNabidka ? " · ⏳ čeká na odsouhlasení" : "";
+      if (dp?.podepsano) return { kdy: dp.podepsano, online: true };
+      if (na) return { kdy: na.podepsano || d.vystaveno, online: na.zpusob === "dalkove" };
+      return null;
     };
+    const stavPodpisu = (d, slovo, ceka) => {
+      const p = podpisZakaznika(d);
+      if (p) return ` · <b style="color:var(--zelena)">✓ ${slovo} ${esc(kdyPodpis(p.kdy))}${p.online ? " (online)" : ""}</b>`;
+      return ceka ? ` · ⏳ ${ceka}` : "";
+    };
+    const odsouhlaseni = d => stavPodpisu(d, "Odsouhlaseno", d.data?.cekaPodpis && (d.verze || 1) >= posledniNabidka ? "čeká na odsouhlasení" : "");
+    const podpisListu = d => stavPodpisu(d, "Podepsáno", d.data?.cekaPodpis ? "čeká na podpis" : "");
     app.innerHTML = `
       <div class="hlavicka-prehledu">
         <div><div class="mutted">Zakázka · ${esc(c.jmeno || "")}</div><h1 style="margin:0">#${z.cislo} · ${esc([v.typ, v.model].filter(Boolean).join(" ") || "Mercedes-Benz")}</h1></div>
@@ -2115,7 +2123,7 @@
           return `<div class="info pozor"><span>⏳ ${co} ${esc(d.cislo)} čeká na podpis zákazníka v E-servisce.</span>${v.vin ? ` <button class="tl tl-male" data-odkaz-faktura="${d.id}">🔗 Poslat odkaz k podpisu</button>` : ""}</div>`; }).join("")}
         <div class="doklady">${doklady.map(d => `
           <div class="doklad"><span><b>${esc(d.cislo)}</b> · ${DRUHY[d.druh] || d.druh}${d.celkem != null ? ` · <b>${kc(d.celkem)}</b>` : ""}<br>
-            <small class="mutted">vystaveno ${datumCz(d.vystaveno)}${d.splatnost ? ` · ${d.druh === "nabidka" ? "platnost" : "splatnost"} ${datumCz(d.splatnost)}` : ""}${["faktura", "zalohova", "opravny"].includes(d.druh) ? (d.zaplaceno ? ` · <b style="color:var(--zelena)">${d.druh === "opravny" && Number(d.celkem) < 0 ? "vráceno" : "zaplaceno"} ${datumCz(d.zaplaceno)}</b>` : Number(d.celkem) < 0 ? " · nevráceno" : " · nezaplaceno") : ""}${d.druh === "nabidka" ? odsouhlaseni(d) : ""}${["zakazkovy_list", "nabidka"].includes(d.druh) ? stavEmailu(d) : ""}</small></span>
+            <small class="mutted">vystaveno ${datumCz(d.vystaveno)}${d.splatnost ? ` · ${d.druh === "nabidka" ? "platnost" : "splatnost"} ${datumCz(d.splatnost)}` : ""}${["faktura", "zalohova", "opravny"].includes(d.druh) ? (d.zaplaceno ? ` · <b style="color:var(--zelena)">${d.druh === "opravny" && Number(d.celkem) < 0 ? "vráceno" : "zaplaceno"} ${datumCz(d.zaplaceno)}</b>` : Number(d.celkem) < 0 ? " · nevráceno" : " · nezaplaceno") : ""}${d.druh === "nabidka" ? odsouhlaseni(d) : d.druh === "zakazkovy_list" ? podpisListu(d) : ""}${["zakazkovy_list", "nabidka"].includes(d.druh) ? stavEmailu(d) : ""}</small></span>
             <span class="radek-tlacitek">
               ${["faktura", "zalohova", "opravny"].includes(d.druh) && jeMajitel() ? (d.zaplaceno ? `<button class="tl tl-male" data-nezaplaceno="${d.id}" style="color:var(--zelena);border-color:var(--zelena)" title="Uhrazeno ${datumCz(d.zaplaceno)} – omylem? Kliknutím úhradu zrušíte">✓ ${d.druh === "opravny" && Number(d.celkem) < 0 ? "Vráceno" : "Zaplaceno"}</button>`
                 : `<button class="tl tl-male" data-zaplaceno="${d.id}" title="Až přijde platba, klikněte – doklad se označí jako zaplacený">${d.druh === "opravny" && Number(d.celkem) < 0 ? "Nevráceno" : "Neuhrazeno"}</button>`) : ""}

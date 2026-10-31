@@ -908,6 +908,7 @@ const server = http.createServer((q, r) => {
     await p.waitForSelector("#sekce-udaje");
     kontrola(await p.locator("#vystavit-podepsany, #odkaz-k-podpisu, .info.pozor [data-poslat-email]").count() === 0 && /Podepsané PDF je uložené/.test(await p.textContent("body")),
       "když server podpis vloží do PDF sám, zakázka jen ukáže, že je podepsáno (bez „Vystavit“)");
+    kontrola(/✓ Podepsáno \d+\. \d+\. \d{4} \d{1,2}:\d{2} \(online\)/.test(await p.textContent(".doklady")), "Doklady: u zakázkového listu podepsaného v E-servisce je ✓ Podepsáno s datem a časem (online)");
     { const b = await p.evaluate(() => Array.from(Object.entries(window.__ULOZENO__.soubory).find(([k]) => /7377-1-2-zakazkovy-list\.pdf$/.test(k))?.[1] || [])); if (b.length) require("fs").writeFileSync("testy/vystup-app/podepsany-list.pdf", Buffer.from(b)); }
   }
 
@@ -1119,7 +1120,8 @@ const server = http.createServer((q, r) => {
     await p.evaluate(() => { const h = location.hash; location.hash = "#/zakazky"; location.hash = h; });
     await p.waitForSelector("text=Zákazník odsouhlasil cenovou nabídku");
     kontrola(new RegExp(`Zákazník odsouhlasil cenovou nabídku ${cisloNab} v E-servisce`).test(await p.textContent("body")), "po podpisu v E-servisce: „Zákazník odsouhlasil cenovou nabídku…“");
-    kontrola(/✓ Odsouhlaseno \d+\. \d+\. \d{4} \(online\)/.test(await p.textContent(".doklady")) && !/čeká na odsouhlasení/.test(await p.textContent(".doklady")), "Doklady: u nabídky je ✓ Odsouhlaseno (online) s datem");
+    kontrola(/✓ Odsouhlaseno \d+\. \d+\. \d{4} \d{1,2}:\d{2} \(online\)/.test(await p.textContent(".doklady")) && !/čeká na odsouhlasení/.test(await p.textContent(".doklady")), "Doklady: u nabídky je ✓ Odsouhlaseno s datem a časem (online)");
+    kontrola(/⏳ čeká na podpis/.test(await p.textContent(".doklady")), "Doklady: u zakázkového listu odeslaného k podpisu je ⏳ čeká na podpis");
     // ---------- předávací protokol „Podepíše později“ (Vašek 31.10.2026) ----------
     const stavPred = await p.evaluate(id => { const z = window.__ULOZENO__.tabulky.zakazky.find(x => x.id === id); return { stav: z.stav, d: z.datum_predani ?? null, km: z.km_predani ?? null }; }, zid);
     await p.click("text=🔑 Předávací protokol"); await p.waitForSelector("#co-chybi");

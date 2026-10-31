@@ -243,7 +243,7 @@ window.__WERK_DB__ = (() => {
         jazyk: p.jazyk, vystaveno: p.vystaveno, splatnost: p.splatnost, data: p.data, pdf_soubor_id: pdf?.id || null, zamceno: true, celkem: p.celkem ?? null, zaplaceno: null, odeslano_uol: null };
       for (const x of sb) { if (x._role === "pdf" || x._role === "priloha") x.doklad_id = d.id; delete x._role; }
       T.soubory.push(...sb); T.doklady.push(d);
-      T.podpisy.push(...p.podpisy.map(x => ({ id: id(), doklad_id: d.id, ...x, obrazek_soubor_id: x.role === "zakaznik" ? podpis?.id : null })));
+      T.podpisy.push(...p.podpisy.map(x => ({ id: id(), doklad_id: d.id, podepsano: new Date().toISOString(), ...x, obrazek_soubor_id: x.role === "zakaznik" ? podpis?.id : null })));
       if (window.__PO_VYSTAVENI_CHYBA__) { window.__PO_VYSTAVENI_CHYBA__ = false; throw new Error("Failed to fetch"); }   // odpověď se ztratila, doklad ale vznikl
       return kopie(d);
     },
@@ -264,7 +264,7 @@ window.__WERK_DB__ = (() => {
       return kopie({ ...z, vozidla: T.vozidla.find(v => v.id === z.vozidlo_id), zakaznici: T.zakaznici.find(c => c.id === z.zakaznik_id),
         doklady: T.doklady.filter(d => d.zakazka_id === zid).map(d => ({ ...d, soubory: T.soubory.find(s => s.id === d.pdf_soubor_id),
           dalkove_podpisy: T.dalkove_podpisy.filter(x => x.doklad_id === d.id).map(x => ({ ...x, soubory: T.soubory.find(f => f.id === x.soubor_id) })),
-          podpisy: T.podpisy.filter(x => x.doklad_id === d.id).map(x => ({ role: x.role, podepsano: x.podepsano || null })),
+          podpisy: T.podpisy.filter(x => x.doklad_id === d.id).map(x => ({ role: x.role, zpusob: x.zpusob, podepsano: x.podepsano || null })),
           emaily: (window.__ULOZENO__.emaily || []).filter(x => x.doklad_id === d.id) })),
         soubory: T.soubory.filter(s => s.zakazka_id === zid) });
     }
