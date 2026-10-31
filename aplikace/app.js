@@ -203,6 +203,7 @@
       async vystavitDoklad(p) { return ok(await sb.rpc("vystavit_doklad", { p })); },
       async smazatZakazku(id) { return ok(await sb.rpc("smazat_zakazku", { p_id: id })); },
       async smazatDoklad(id) { return ok(await sb.rpc("smazat_doklad", { p_id: id })); },
+      async kliceSouboruDokladu(id) { return (ok(await sb.from("soubory").select("klic").eq("doklad_id", id)) || []).map(f => f.klic); },
       async smazatZakaznika(id) { return ok(await sb.rpc("smazat_zakaznika", { p_id: id })); },
       async smazatVozidlo(id) { return ok(await sb.rpc("smazat_vozidlo", { p_id: id })); },
       async ulozitZakaznika(p) { return ok(await sb.rpc("ulozit_zakaznika", { p })); },
@@ -1577,9 +1578,13 @@
   const uklidSoubory = telo => { if (jeMajitel()) db.smazatSoubory?.(telo)?.catch?.(() => {}); };
   async function smazatDokladDotaz(d, potom) {
     if (!d) return;
-    const fa = ["faktura", "zalohova"].includes(d.druh);
-    if (!confirm(`Smazat ${(DRUHY[d.druh] || "doklad").toLowerCase()} ${d.cislo}?\n\nSmaže se i jeho PDF a podpisy. Číslo ${d.cislo} se uvolní a dostane ho další vystavený doklad.${fa ? "\n\nPoužívejte jen pro chybně vytvořené faktury, které ještě nikdo nedostal." : ""}`)) return;
-    try { await db.smazatDoklad(d.id); uklidSoubory({ slozky: [slozkaSouboru(d.soubory?.klic)].filter(Boolean), klice: d.soubory?.klic ? [d.soubory.klic] : [] }); hlaska(`Doklad ${d.cislo} smazán.`); potom?.(); }
+    const fa = ["faktura", "zalohova"].includes(d.druh), dp = dalkovyPodpis(d);
+    const eserviska = dp?.podepsano ? `\n\n⚠️ Zákazník tento doklad podepsal v E-servisce (${datumCz(dp.podepsano)}). Po smazání podpis zmizí i z E-servisky.` : "";
+    if (!confirm(`Smazat ${(DRUHY[d.druh] || "doklad").toLowerCase()} ${d.cislo}?\n\nSmaže se i jeho PDF a podpisy. Číslo ${d.cislo} se uvolní a dostane ho další vystavený doklad.${fa ? "\n\nPoužívejte jen pro chybně vytvořené faktury, které ještě nikdo nedostal." : ""}${eserviska}`)) return;
+    // všechny soubory dokladu (i původní nepodepsané PDF ve vlastní složce, parts list, podpis) – po smazání záznamu se uklidí i z úložiště
+    let klice = d.soubory?.klic ? [d.soubory.klic] : [];
+    try { klice = [...new Set([...klice, ...(await db.kliceSouboruDokladu?.(d.id) || [])])]; } catch (e) { /* úklid je jen bonus */ }
+    try { await db.smazatDoklad(d.id); uklidSoubory({ slozky: [...new Set(klice.map(slozkaSouboru).filter(Boolean))], klice }); hlaska(`Doklad ${d.cislo} smazán.`); potom?.(); }
     catch (e) { hlaska("Smazat nejde: " + chybaText(e), true, 9000); }
   }
 
@@ -3334,8 +3339,8 @@
       if (praceNedokoncene && !confirm(`⚠️ ${praceNedokoncene}\n\nOpravdu vystavit fakturu, i když nejsou všechny práce odkliknuté?`)) return;
       if ((druh === "faktura" || druh === "zalohova") && !confirm(`Vystavit ${druh === "zalohova" ? "zálohovou fakturu" : "fakturu"} ${cislo} na ${kc(kUhrade)}${pozdeji ? " bez podpisu zákazníka" : ""}? Vydaná faktura se už nedá změnit (oprava jen opravným dokladem).${pozdeji ? "\n\nZákazník ji podepíše z domu v E-servisce (pošlete mu odkaz). Podpis se pak do faktury doplní sám." : ""}`)) return;
       if (druh === "nabidka" && pozdeji && !confirm(`Vystavit cenovou nabídku ${cislo} bez podpisu zákazníka?\n\nZákazník ji podepíše z domu v E-servisce (pošlete mu odkaz). Podpis se pak do nabídky doplní sám.`)) return;
-      bezi = true;
       if (druh === "opravny" && !confirm(`Vystavit opravný doklad ${cislo} k dokladu ${f.opravuje} na ${kc(kUhrade)}? Vydaný opravný doklad se už nedá změnit ani smazat.`)) return;
+      bezi = true;   // až po všech dotazech – po „Zrušit“ musí tlačítka dál fungovat
       const p = prekryv("Ukládám…");
       try {
         if (!vyh && mujPad && !mujPad.prazdny()) { const png = mujPad.png(); await db.ulozitMujPodpis(uzivatel.id, png); uzivatel.podpis_obrazek = png; }
@@ -3684,13 +3689,15 @@
           catch (e) { hlaska("Nepodařilo se smazat: " + chybaText(e), true); }
         };
         const cenaDetailu = napojMenuNakupu(d, d.querySelector("[data-prijem-cena]"), d.querySelector("[data-prepocet]"));
-        d.querySelector("[data-prijem]").onclick = async () => {
+        d.querySelector("[data-prijem]").onclick = async ev => {
+          const tl = ev.currentTarget; if (tl.disabled) return;   // dvojí ťuknutí na iPadu nesmí naskladnit dvakrát
           const pi = d.querySelector("[data-prijem-pocet]");
           const n = ciselnyVstup(pi, { min: 0.01, max: 100000 });
           if (!n) { pi.classList.add("chybi"); pi.focus(); return; }
           const cena = cenaDetailu(); if (cena === undefined) return; const c = cena.kc;
-          try { await db.pohybSkladu({ sklad_id: sid, druh: "prijem", zmena: n, cena: c ?? null, poznamka: cena.poznamka || null, soubor_id: d.querySelector("[data-fs-vyber]")?.value || null }); katalogDilu = null; hlaska(`Naskladněno ${mnozstviCz(n)} ${s.jednotka || "ks"} – ${s.nazev}.`); await obnov(); }
+          tl.disabled = true; try { await db.pohybSkladu({ sklad_id: sid, druh: "prijem", zmena: n, cena: c ?? null, poznamka: cena.poznamka || null, soubor_id: d.querySelector("[data-fs-vyber]")?.value || null }); katalogDilu = null; hlaska(`Naskladněno ${mnozstviCz(n)} ${s.jednotka || "ks"} – ${s.nazev}.`); await obnov(); }
           catch (e) { hlaska("Nepodařilo se naskladnit: " + chybaText(e), true); }
+          finally { tl.disabled = false; }
         };
         d.querySelector("[data-inv]").onclick = async () => {
           const ii = d.querySelector("[data-inv-pocet]"), n = ciselnyVstup(ii, { min: 0, max: 100000 });
@@ -3814,14 +3821,15 @@
     document.head.appendChild(s);
   });
   const bezpecnyNazev = t => String(t || "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "-").replace(/\s+/g, " ").trim().slice(0, 120);
-  const csvBunka = v => { const t = v == null ? "" : String(v); return /[";\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+  // text začínající = + @ (nebo - a ne číslem) by Excel spustil jako vzorec → apostrof na začátek
+  const csvBunka = v => { let t = v == null ? "" : String(v); if (/^([=+@\t\r]|-(?![\d,.]))/.test(t)) t = "'" + t; return /[";\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
   const csvCislo = n => n == null || n === "" ? "" : String(Math.round(Number(n) * 100) / 100).replace(".", ",");
   async function podkladyProUcetni(mesic, vse, stav) {
     const [y, m] = mesic.split("-").map(Number);
-    const od = `${mesic}-01`, doo = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
     const FA = ["faktura", "zalohova", "opravny"];
     const vydane = vse.filter(d => FA.includes(d.druh) && String(d.vystaveno).startsWith(mesic)).sort((a, b) => String(a.cislo).localeCompare(String(b.cislo), "cs", { numeric: true }));
-    const prijate = await db.prijateFaktury(od, doo);
+    // hranice měsíce v místním čase (Praha) – faktura nahraná 1. v 0:30 patří do nového měsíce, ne do předchozího (databáze počítá v UTC)
+    const prijate = await db.prijateFaktury(new Date(y, m - 1, 1).toISOString(), new Date(y, m, 1).toISOString());
     if (!vydane.length && !prijate.length) { hlaska(`Za ${nazevMesice(mesic)} nejsou žádné faktury ani přijaté doklady.`, true); return; }
     const { zipSync, strToU8 } = await nactiZip();
     const soubory = {}, chybi = [], pouzite = new Set();

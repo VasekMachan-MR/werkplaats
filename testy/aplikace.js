@@ -344,9 +344,14 @@ const server = http.createServer((q, r) => {
   kontrola(await p.locator("#seznam-dokladu .doklad").count() === 5, "přehled dokladů: všech 5 dokladů zakázky 7377");
   await foto("14-prehled-dokladu");
   kontrola(!(await p.isVisible('.doklad:has(b:text-is("7377-3")) [data-smazat-doklad]')) && await p.isVisible('.doklad:has(b:text-is("7377-2")) [data-smazat-doklad]'), "přehled: zaplacená faktura bez koše, nabídka s košem");
+  // původní nepodepsané PDF v jiné složce (po podpisu v E-servisce) – po smazání dokladu se má uklidit i jeho složka
+  await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === "7377-2");
+    T.soubory.push({ id: "puvodni-nab", zakazka_id: d.zakazka_id, doklad_id: d.id, druh: "pdf", klic: "zakazky/7377/puvodni1/7377-2-nabidka.pdf", nazev: "puvodní", smazano: new Date().toISOString() }); });
   await p.click('.doklad:has(b:text-is("7377-2")) [data-smazat-doklad]');
   await p.waitForFunction(() => document.querySelectorAll("#seznam-dokladu .doklad").length === 4);
   kontrola(await p.evaluate(() => !window.__ULOZENO__.tabulky.doklady.some(d => d.cislo === "7377-2")), "koš smaže chybnou nabídku 7377-2 (zbývají 4 doklady)");
+  kontrola(await p.evaluate(() => (window.__SMAZANE_SOUBORY__ || []).some(t => (t.slozky || []).includes("zakazky/7377/puvodni1") && (t.klice || []).includes("zakazky/7377/puvodni1/7377-2-nabidka.pdf"))),
+    "smazání dokladu uklidí z úložiště i složku původního (nepodepsaného) PDF");
   // podklady pro účetní (UOL): ZIP za měsíc = vydané faktury + přijaté faktury + přehled CSV; bez výběru měsíce jen upozornění
   await p.click("#podklady-uol");
   await p.waitForSelector("text=Nejdřív vyberte měsíc");
