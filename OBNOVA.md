@@ -8,11 +8,12 @@ Ověřeno **31. 10. 2026** (noční kontrola): obsah tohoto repozitáře odpoví
 - Zkouška obnovy 31. 10. 2026: databáze postavená z migrací + `obnova-dat.sql` ze zálohy → všechna data sedí, majitel převeden na nový účet.
 
 **Serverové funkce:** `databaze/funkce/*` jsou stejné jako nasazené verze:
-- eserviska v17
+- eserviska v28 (`verify_jwt = false`; GET ?k=…, ?jen=servis pro Werkplaats, ?jen=nahled pro náhled odkazu, POST podpis)
+- notifikace v2 (`verify_jwt = false`; Web Push na telefon – podpisy v E-servisce, chyby systému; klíč VAPID si vytvoří sama v tabulce push_vapid)
 - kurz-cnb v2
 - smazat-soubory v2
 - sprava-uzivatelu v3
-- zaloha v5 (noční záloha, přihlášení tokenem GitHub OIDC)
+- zaloha v8 (noční záloha, přihlášení tokenem GitHub OIDC)
 - import-archivu v2 (jednorázová, nepoužívá se)
 - odeslat-email (nová 31. 10. 2026, `verify_jwt = false` – ověřuje si přihlášení / interní klíč sama): e-mail se zakázkovým listem a VOP po podpisu
 - email-udalosti (nová 31. 10. 2026, `verify_jwt = false` – ověřuje podpis Svix): zpětná vazba doručení od Resend
@@ -33,6 +34,9 @@ Běží na GitHubu (workflow `.github/workflows/zaloha.yml`), nezávisle na Macu
 3. Balíček se nahraje do Cloudflare R2 `werkplaats-zalohy/RRRR-MM-DD/` (drží se 30 posledních).
 4. `zaloha/zrcadlo-souboru.py` zrcadlí fotky, videa a PDF do R2 `werkplaats-soubory` (jen přidává, nic nemaže).
 5. Pojistka: když je v R2 přes 8 GB, nic se nenahraje (aby se neplatilo).
+6. **Zkouška obnovy nanečisto** (`zaloha/zkouska-obnovy.sh`, od 31. 10. 2026): do prázdného PostgreSQL (služba v GitHub Actions) se pustí všechny migrace a `obnova-dat.sql` z právě vytvořeného balíčku a porovnají se počty řádků každé tabulky. Když něco nesedí nebo v záloze chybí tabulka, úloha skončí chybou (GitHub pošle e-mail). Zkušební databáze se pak smaže.
+
+**Odkaz s náhledem v chatu:** `werk.mercedesrestorations.cz/s/<kód>` – Cloudflare Pages Functions ve složce `functions/s/` (náhled: název auta + profilová fotka, pak přesměrování do E-servisky; noindex).
 
 Ruční spuštění: `gh workflow run zaloha.yml -R VasekMachan-MR/werkplaats --ref main`.
 
