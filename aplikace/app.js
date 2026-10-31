@@ -234,7 +234,7 @@
       // profilové fotky patří k autu (ze všech zakázek i po smazané zakázce) – Vašek 30.10.2026
       async profilovkyVozu(vid) { return ok(await sb.from("soubory").select("id,zakazka_id,vozidlo_id,doklad_id,druh,faze,klic,nazev,mime,vytvoreno,smazano,verejne").eq("vozidlo_id", vid).eq("druh", "foto").eq("faze", "profil").is("smazano", null).order("vytvoreno")); },
       async dokumentyVozidla(vid) { return ok(await sb.from("soubory").select("id,druh,klic,nazev,mime,verejne,vytvoreno").eq("vozidlo_id", vid).eq("druh", "tp").is("smazano", null).order("vytvoreno")); },
-      async polozky(zid) { return ok(await sb.from("polozky").select("typ,popis,mnozstvi,jednotka,sazba,castka,poradi").eq("zakazka_id", zid).is("nabidka_id", null).order("poradi")); },
+      async polozky(zid) { return ok(await sb.from("polozky").select("typ,popis,mnozstvi,jednotka,sazba,castka,poradi,poznamka").eq("zakazka_id", zid).is("nabidka_id", null).order("poradi")); },
       async ulozitPolozky(zid, polozky) { return ok(await sb.rpc("ulozit_polozky", { p_zakazka: zid, p_polozky: polozky })); },
       async dily(zid) { return ok(await sb.from("dily").select("*").eq("zakazka_id", zid).order("poradi")); },
       async ulozitDily(zid, dily) { return ok(await sb.rpc("ulozit_dily", { p_zakazka: zid, p_dily: dily })); },
@@ -2792,7 +2792,7 @@
     if (cekajiciUlozeni[co]) clearTimeout(cekajiciUlozeni[co].t);
     delete neulozene[co];
     const dataK = () => { const E = zakazka;
-      return co === "prace" ? E.polozky.map(p => ({ typ: p.typ, popis: p.popis || "", mnozstvi: p.mnozstvi ?? null, jednotka: p.jednotka || null, sazba: p.sazba ?? null, castka: p.castka ?? null }))
+      return co === "prace" ? E.polozky.map(p => ({ typ: p.typ, popis: p.popis || "", mnozstvi: p.mnozstvi ?? null, jednotka: p.jednotka || null, sazba: p.sazba ?? null, castka: p.castka ?? null, poznamka: p.poznamka || null }))
         : E.dily.map(d => ({ id: d.id, nazev: d.nazev, cislo_mb: d.cislo_mb, vyrobce: d.vyrobce, dodavatel_id: d.dodavatel_id || null,
           mnozstvi: d.mnozstvi, jednotka: d.jednotka || "ks", nakupni_cena: d.nakupni_cena ?? null, mena: d.mena || "CZK", kurz: d.kurz ?? 1,
           marze_pct: d.marze_pct ?? 30, prodejni_cena: d.prodejni_cena ?? null, stav: d.stav || "potreba", puvod: d.puvod || null, poznamka: d.poznamka || null,
@@ -2944,6 +2944,7 @@
           : p.typ === "pausal" ? `<span></span><span></span><span class="mutted" style="font-size:13px">paušál</span>
             <input class="vstup cislo" data-f="castka" value="${p.castka ?? ""}" inputmode="numeric" placeholder="Kč">` : `<span></span><span></span><span></span><span></span>`}
           <span class="akce-pol">
+            ${p.typ === "prace" || p.typ === "pausal" ? `<button type="button" class="tl tl-male tl-pozn${p.poznamka ? " ma" : ""}" data-pozn="${i}" aria-label="${p.poznamka ? "Poznámka pro zákazníka: " + esc(p.poznamka) : "Přidat poznámku pro zákazníka (E-serviska)"}" title="${p.poznamka ? esc(p.poznamka) : "Přidat poznámku pro zákazníka (E-serviska)"}">${ikonaPozn(!!p.poznamka)}</button>` : ""}
             <button type="button" class="tl tl-male" data-nahoru="${i}" aria-label="Posunout nahoru" ${i === 0 ? "disabled" : ""}>↑</button>
             <button type="button" class="tl tl-male" data-smaz="${i}" aria-label="Smazat">×</button></span>
         </div>`).join("")}
@@ -2972,6 +2973,7 @@
       const p = E.polozky[+b.dataset.smaz];
       if (p && (p.popis || p.castka || p.mnozstvi) && !confirm(`Opravdu smazat řádek „${p.popis || (p.typ === "pausal" ? "paušál" : "práce")}“?`)) return;
       E.polozky.splice(+b.dataset.smaz, 1); vykresliPrace(); vykresliSouhrnZakazky(); ulozitPozdeji("prace"); });
+    el.querySelectorAll("[data-pozn]").forEach(b => b.onclick = () => oknoPoznamky(+b.dataset.pozn));
     el.querySelectorAll("[data-nahoru]").forEach(b => b.onclick = () => { const i = +b.dataset.nahoru; [E.polozky[i - 1], E.polozky[i]] = [E.polozky[i], E.polozky[i - 1]]; vykresliPrace(); ulozitPozdeji("prace"); });
     const nova = { inspekce: { typ: "prace", popis: "Inspekce", mnozstvi: 1, jednotka: "h", sazba: 1200 }, prace: { typ: "prace", popis: "", mnozstvi: 1, jednotka: "h", sazba: 1500 },
       kus: { typ: "prace", popis: "", mnozstvi: 1, jednotka: "ks", sazba: null }, pausal: { typ: "pausal", popis: "", castka: null },
@@ -2983,6 +2985,30 @@
     el.querySelectorAll("[data-ze-zavady]").forEach(b => b.onclick = () => {
       E.polozky.push({ typ: "prace", popis: E.z.zavady[+b.dataset.zeZavady], mnozstvi: 1, jednotka: "h", sazba: 1500 }); vykresliPrace(); vykresliSouhrnZakazky(); ulozitPozdeji("prace");
     });
+  }
+
+  /* poznámka k řádku práce (Vašek 31.10.2026): zobrazí se zákazníkovi v E-servisce u provedeného úkonu pod modrým „i“
+     (např. „Chladicí kapalina do −25 °C“). Bez poznámky je „i“ šedé a v E-servisce se neukáže. Na nabídku ani fakturu nejde. */
+  const ikonaPozn = ma => `<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${ma ? "#092b50" : "#b4bac1"}" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 11v6" stroke-linecap="square"/><circle cx="12" cy="7.5" r="0.6" fill="${ma ? "#092b50" : "#b4bac1"}"/></svg>`;
+  function oknoPoznamky(i) {
+    const p = E?.polozky[i]; if (!p) return;
+    const o = document.createElement("div"); o.className = "prekryv"; o.id = "okno-poznamky";
+    o.innerHTML = `<div class="karta pozn-okno" role="dialog" aria-modal="true" aria-labelledby="pozn-nadpis">
+      <h2 id="pozn-nadpis" style="margin:0 0 4px">Poznámka pro zákazníka</h2>
+      <p class="napoveda" style="margin:0 0 12px">${esc(p.popis || (p.typ === "pausal" ? "Paušál" : "Práce"))} · zobrazí se v E-servisce u tohoto úkonu</p>
+      <textarea class="vstup" id="pozn-text" rows="4" maxlength="1000" placeholder="Např. Chladicí kapalina do −25 °C">${esc(p.poznamka || "")}</textarea>
+      <div class="radek-tlacitek" style="margin-top:12px">${p.poznamka ? `<button type="button" class="tl tl-male" id="pozn-smazat">Smazat poznámku</button>` : ""}<span style="flex:1 1 auto"></span>
+        <button type="button" class="tl" id="pozn-zrusit">Zrušit</button><button type="button" class="tl tl-hlavni" id="pozn-ulozit">Uložit</button></div></div>`;
+    document.body.appendChild(o);
+    const ta = o.querySelector("#pozn-text"); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+    const zavri = () => { o.remove(); document.removeEventListener("keydown", esk); };
+    const esk = e => { if (e.key === "Escape") zavri(); };
+    document.addEventListener("keydown", esk);
+    const uloz = text => { const t = String(text || "").trim(); if ((p.poznamka || "") !== t) { p.poznamka = t || null; ulozitPozdeji("prace"); } zavri(); vykresliPrace(); if (t) hlaska("Poznámka uložena – zákazník ji uvidí v E-servisce."); };
+    o.querySelector("#pozn-zrusit").onclick = zavri;
+    o.onclick = e => { if (e.target === o) zavri(); };
+    o.querySelector("#pozn-ulozit").onclick = () => uloz(ta.value);
+    o.querySelector("#pozn-smazat")?.addEventListener("click", () => uloz(""));
   }
 
   /* ---------- díly ---------- */

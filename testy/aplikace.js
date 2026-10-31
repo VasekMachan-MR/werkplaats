@@ -226,6 +226,24 @@ const server = http.createServer((q, r) => {
   await p.evaluate(() => { location.hash = "#/zakazky"; }); await p.waitForSelector("#seznam .zakazka-radek");
   await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid); await p.waitForSelector('.radek-pol[data-i="3"]');
   kontrola(await p.locator(".radek-pol[data-i]").count() === 4 && await p.locator(".dil[data-i]").count() === 2, "práce a díly se uložily i při rychlém odchodu ze stránky");
+  // poznámka k řádku práce (šedé „i“ → okno → modré „i“), do E-servisky (Vašek 31.10.2026)
+  {
+    const sede = await p.evaluate(() => { const b = document.querySelector('.radek-pol[data-i="0"] [data-pozn]'); return b && !b.classList.contains("ma") && /#b4bac1/.test(b.innerHTML); });
+    kontrola(sede, "řádek práce bez poznámky má šedé „i“");
+    await p.click('.radek-pol[data-i="0"] [data-pozn]');
+    await p.waitForSelector("#okno-poznamky #pozn-text");
+    await p.fill("#pozn-text", "  Chladicí kapalina do −25 °C  ");
+    await p.click("#pozn-ulozit");
+    await p.waitForFunction(() => (window.__ULOZENO__.tabulky.polozky.find(x => x.poradi === 1 && x.zakazka_id === location.hash.split("/")[2]) || {}).poznamka === "Chladicí kapalina do −25 °C");
+    const modre = await p.evaluate(() => { const b = document.querySelector('.radek-pol[data-i="0"] [data-pozn]'); return b.classList.contains("ma") && /#092b50/.test(b.innerHTML) && /Chladicí kapalina/.test(b.title) && !document.getElementById("okno-poznamky"); });
+    kontrola(modre, "po uložení poznámky je „i“ modré, okno zavřené a poznámka (oříznutá) je uložená u řádku");
+    kontrola(await p.locator('.radek-pol.typ-nadpis [data-pozn], .radek-pol.typ-prazdny [data-pozn]').count() === 0, "nadpis a prázdný řádek „i“ nemají");
+    await p.click('.radek-pol[data-i="0"] [data-pozn]'); await p.waitForSelector("#pozn-smazat");
+    kontrola(await p.inputValue("#pozn-text") === "Chladicí kapalina do −25 °C", "znovu otevřené okno ukazuje uloženou poznámku");
+    await p.keyboard.press("Escape"); kontrola(await p.locator("#okno-poznamky").count() === 0, "Esc okno zavře bez změny");
+    await p.click('.radek-pol[data-i="1"] [data-pozn]'); await p.fill("#pozn-text", "jen zkouška"); await p.click("#pozn-zrusit");
+    kontrola(await p.evaluate(() => !document.querySelector('.radek-pol[data-i="1"] [data-pozn]').classList.contains("ma")), "Zrušit nic neuloží");
+  }
   // bez signálu: změna se podrží v zařízení (⏳ čeká na odeslání), jde odejít, po návratu signálu se odešle sama
   {
     await p.evaluate(() => { window.__OFFLINE__ = true; });

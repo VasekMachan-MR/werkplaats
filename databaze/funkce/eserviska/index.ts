@@ -109,7 +109,7 @@ Deno.serve(async req => {
 
 
   const [{ data: pol }, { data: dily }, { data: dok }, { data: soub }] = ids.length ? await Promise.all([
-    sb.from("polozky").select("zakazka_id,poradi,typ,popis").in("zakazka_id", ids).is("nabidka_id", null).in("typ", ["prace", "pausal", "nadpis"]).order("poradi"),
+    sb.from("polozky").select("zakazka_id,poradi,typ,popis,poznamka").in("zakazka_id", ids).is("nabidka_id", null).in("typ", ["prace", "pausal", "nadpis"]).order("poradi"),
     sb.from("dily").select("zakazka_id,poradi,nazev,cislo_mb,vyrobce,mnozstvi,jednotka,stav").in("zakazka_id", ids).neq("stav", "nepouzito").order("poradi"),
     sb.from("doklady").select("id,zakazka_id,druh,cislo,verze,vystaveno,jazyk,pdf_soubor_id,data,soubory!doklady_pdf_soubor_id_fkey(klic),podpisy(role),dalkove_podpisy!dalkove_podpisy_doklad_id_fkey(podepsano)").in("zakazka_id", ids).eq("zamceno", true).in("druh", DOKLADY).order("verze", { ascending: false }),
     sb.from("soubory").select("id,zakazka_id,doklad_id,druh,faze,klic,nazev,mime,vytvoreno,verejne,podpis_pozadan,podepsany_z").in("zakazka_id", ids).in("druh", ["foto", "video", "pdf", "archiv"]).is("smazano", null).order("vytvoreno")
@@ -147,7 +147,7 @@ Deno.serve(async req => {
       // postup opravy: zákazník vidí jen kolik je hotovo, ne text odrážek
       postup: !vlastni ? null : (() => { const u = (Array.isArray(z.ukoly) ? z.ukoly : []).filter((x: any) => String(x?.t || "").trim()); return u.length ? { hotovo: u.filter((x: any) => x.h).length, celkem: u.length } : null; })(),
       zavady: (z.zavady || []).filter(Boolean),
-      prace: (pol || []).filter(p => p.zakazka_id === z.id && p.popis).map(p => ({ typ: p.typ, popis: p.popis })),
+      prace: (pol || []).filter(p => p.zakazka_id === z.id && p.popis).map(p => (p.poznamka ? { typ: p.typ, popis: p.popis, poznamka: p.poznamka } : { typ: p.typ, popis: p.popis })),   // poznámka k úkonu → modré „i“ (Vašek 31.10.2026)
       poznamky: String(z.poznamky || "").trim() || null,   // poznámky k zakázce = záznam v servisní knížce, vidí je i další majitelé
       dily: !vlastni ? [] : (dily || []).filter(d => d.zakazka_id === z.id).map(d => ({ nazev: d.nazev, cislo_mb: d.cislo_mb, vyrobce: d.vyrobce, mnozstvi: d.mnozstvi, jednotka: d.jednotka })),
       fotky: (soub || []).filter(f => f.zakazka_id === z.id && (f.druh === "foto" || f.druh === "video") && f.faze !== "profil" && f.verejne !== false && url[f.klic]).map(f => ({ url: url[f.klic], video: f.druh === "video", faze: f.faze })),
