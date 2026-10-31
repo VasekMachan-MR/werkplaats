@@ -20,7 +20,7 @@ Ověřeno **31. 10. 2026** (noční kontrola): obsah tohoto repozitáře odpoví
 
 **Web E-serviska**
 - Kód v hlavičce i patičce stránky `/e-serviska` se shoduje s webem bajt po bajtu (SHA-256).
-- Soubory `web/e-serviska-head.html` a `web/e-serviska-footer.html`.
+- Soubory `web/e-serviska-head.html` a `web/e-serviska-footer.html`. Od 31.10.2026 je kód E-servisky v `aplikace/eserviska.js` (nasazuje se s aplikací na werk.mercedesrestorations.cz/eserviska.js) a patička ve Webflow ho jen načítá. Původní kód přímo ve Webflow je zálohovaný v `web/e-serviska-footer-webflow-zaloha.html` (návrat = vložit ho do Footer code a publikovat).
 
 Záloha kódu: soubor `werkplaats-kod-RRRR-MM-DD.bundle` s celou historií (`git clone soubor.bundle werkplaats`) a větev `zaloha-RRRR-MM-DD` na GitHubu.
 
