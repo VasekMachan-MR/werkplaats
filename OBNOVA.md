@@ -8,7 +8,7 @@ Ověřeno **31. 10. 2026** (noční kontrola): obsah tohoto repozitáře odpoví
 - Zkouška obnovy 31. 10. 2026: databáze postavená z migrací + `obnova-dat.sql` ze zálohy → všechna data sedí, majitel převeden na nový účet.
 
 **Serverové funkce:** `databaze/funkce/*` jsou stejné jako nasazené verze:
-- eserviska v{{ESERVISKA}}
+- eserviska v17
 - kurz-cnb v2
 - smazat-soubory v2
 - sprava-uzivatelu v3
