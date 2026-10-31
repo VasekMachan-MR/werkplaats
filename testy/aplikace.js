@@ -611,6 +611,22 @@ const server = http.createServer((q, r) => {
   kontrola(await p.locator('#sekce-fotky-detail [data-faze="profil"] .fotka').count() === 1 && /Neveřejné/.test(await p.textContent("#sekce-fotky-detail")), "skrytá fotka (🚫) se přesune do skupiny Neveřejné");
   await p.click('#sekce-fotky-detail [data-faze="skryte"] [data-verejne]');
   await p.waitForSelector('#sekce-fotky-detail [data-faze="profil"] .fotka img', { timeout: 15000 });
+  // skupiny fotek jdou sbalit a zůstanou sbalené (i po znovuotevření zakázky) – Vašek 31.10.2026
+  {
+    kontrola(await p.evaluate(() => [...document.querySelectorAll("#sekce-fotky-detail details[data-faze-sbal]")].every(d => d.open)), "skupiny fotek jsou výchozí rozbalené");
+    await p.click('#sekce-fotky-detail details[data-faze-sbal="profil"] > summary');
+    const sb = await p.evaluate(() => ({ profil: document.querySelector('details[data-faze-sbal="profil"]').open,
+      vidim: document.querySelector('[data-faze="profil"] .fotka').checkVisibility() ? 1 : 0, text: document.querySelector('details[data-faze-sbal="profil"] > summary').textContent }));
+    kontrola(!sb.profil && sb.vidim === 0 && /Profilové/.test(sb.text) && /fotk/.test(sb.text) && /nahoře vpravo/.test(sb.text), "klepnutím na „⭐ Profilové“ se skupina sbalí, nadpis s počtem a dodatkem zůstane");
+    const zid2 = await p.evaluate(() => location.hash.split("/")[2]);
+    await p.evaluate(() => { location.hash = "#/zakazky"; }); await p.waitForSelector("#seznam .zakazka-radek");
+    await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid2);
+    await p.waitForSelector('#sekce-fotky-detail details[data-faze-sbal="profil"]', { state: "attached" });
+    kontrola(await p.evaluate(() => !document.querySelector('details[data-faze-sbal="profil"]').open && [...document.querySelectorAll("details[data-faze-sbal]:not([data-faze-sbal=profil])")].every(d => d.open)),
+      "sbalené skupiny zůstanou sbalené i po znovuotevření zakázky");
+    await p.evaluate(() => { document.getElementById("sekce-fotky-detail").open = true; document.querySelectorAll("details[data-faze-sbal]").forEach(d => { d.open = true; d.dispatchEvent(new Event("toggle")); }); });
+    await p.waitForSelector('#sekce-fotky-detail [data-faze="profil"] .fotka img', { timeout: 15000 });
+  }
   kontrola(/mercedesrestorations\.cz\/e-serviska\?k=[0-9a-f]{20}$/.test(await p.getAttribute("#odkaz-eservisky", "href")), "detail zakázky má tajný odkaz do E-servisky (VIN sám nestačí)");
   await p.evaluate(() => { navigator.share = async d => { window.__SDILENO__ = d.url; }; });
   await p.click("#sdilet-eservisku");

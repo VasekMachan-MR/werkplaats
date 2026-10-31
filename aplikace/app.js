@@ -2447,6 +2447,9 @@
     } catch (e) { hlaska("Fotky se nepodařilo připravit: " + chybaText(e), true); }
     finally { if (tl && document.body.contains(tl) && !E.pripravene) { tl.disabled = false; tl.textContent = "📤 Poslat (WhatsApp…)"; } else if (tl && document.body.contains(tl)) tl.disabled = false; }
   }
+  const KLIC_SBALENYCH = "werk-fotky-sbalene";
+  const sbaleneFaze = () => { try { return new Set(JSON.parse(localStorage.getItem(KLIC_SBALENYCH) || "[]")); } catch { return new Set(); } };
+  const ulozSbaleneFaze = m => { try { localStorage.setItem(KLIC_SBALENYCH, JSON.stringify([...m])); } catch {} };
   async function vykresliFotkyDetail() {
     const el = document.getElementById("sekce-fotky-detail"); if (!el || !E) return;
     const fotky = (E.z.soubory || []).filter(s => (s.druh === "foto" || s.druh === "video") && !s.smazano).map(s => ({ ...s, video: s.druh === "video" }));
@@ -2462,9 +2465,11 @@
       ${E.vyber ? `<div class="info vyber-fotek"><span>Klepnutím vyberte fotky (<b id="pocet-vybranych">${E.vyber.size}</b>).</span>
         <span class="radek-tlacitek"><button type="button" class="tl tl-male" id="vybrat-vse" title="Vybere všechny kromě skrytých (🚫)">Vybrat vše</button>
         <button type="button" class="tl tl-hlavni" id="odeslat-fotky" ${E.vyber.size ? "" : "disabled"}>📤 Poslat (WhatsApp…)</button></span></div>` : ""}
-      ${[FAZE_FOTEK[0], ["skryte", "🚫 Neveřejné"], ...FAZE_FOTEK.slice(1)].map(([k, t]) => { const f = fotky.filter(x => k === "skryte" ? x.verejne === false : x.verejne !== false && (x.faze || "prijem") === k); return f.length ? `<p class="faze-nadpis"><b>${t}</b> <span class="mutted">${popisPoctu(f)}${k === "profil" ? " · v E-servisce nahoře vpravo" : k === "skryte" ? " · zákazník je v E-servisce nevidí (👁 je vrátí zpět)" : ""}</span></p><div class="fotky" data-faze="${k}">${f.map(x => `<div class="fotka" data-klic="${esc(x.klic)}"><span class="mutted" style="font-size:12px">Načítám…</span></div>`).join("")}</div>` : ""; }).join("")}
+      ${[FAZE_FOTEK[0], ["skryte", "🚫 Neveřejné"], ...FAZE_FOTEK.slice(1)].map(([k, t]) => { const f = fotky.filter(x => k === "skryte" ? x.verejne === false : x.verejne !== false && (x.faze || "prijem") === k); return f.length ? `<details class="faze-sbal" data-faze-sbal="${k}" ${sbaleneFaze().has(k) ? "" : "open"}><summary class="faze-nadpis"><span class="sipka" aria-hidden="true">▸</span> <b>${t}</b> <span class="mutted">${popisPoctu(f)}${k === "profil" ? " · v E-servisce nahoře vpravo" : k === "skryte" ? " · zákazník je v E-servisce nevidí (👁 je vrátí zpět)" : ""}</span></summary><div class="fotky" data-faze="${k}">${f.map(x => `<div class="fotka" data-klic="${esc(x.klic)}"><span class="mutted" style="font-size:12px">Načítám…</span></div>`).join("")}</div></details>` : ""; }).join("")}
       ${fotky.length ? "" : `<p class="mutted" style="margin:12px 0 0">Zatím žádné fotky.</p>`}`;
     el.querySelector("#faze-fotek").onchange = e => { E.fazeFotek = e.target.value; };
+    // skupiny fotek jde sbalit (Vašek 31.10.2026: „ať to v zakázce nezabírá tolik místa“) – zapamatuje se v zařízení pro všechny zakázky
+    el.querySelectorAll("details[data-faze-sbal]").forEach(d => d.addEventListener("toggle", () => { const m = sbaleneFaze(); d.open ? m.delete(d.dataset.fazeSbal) : m.add(d.dataset.fazeSbal); ulozSbaleneFaze(m); }));
     const pf = el.querySelector("#poslat-fotky");
     if (pf) pf.onclick = () => { E.vyber = E.vyber ? null : new Set(); vykresliFotkyDetail(); };
     el.querySelectorAll("[data-nahrat]").forEach(i => i.addEventListener("change", e => { const s = [...e.target.files]; e.target.value = ""; if (s.length) nahratFotkyKZakazce(s); }));
