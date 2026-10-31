@@ -10,7 +10,7 @@ const POVOLENE = [/^https:\/\/werk\.mercedesrestorations\.cz$/, /^https:\/\/([\w
 const FIRMA = "info@mercedesrest.cz";
 const OD = "Mercedes Restorations <info@mercedesrest.cz>";
 const VOP_PDF = "https://werk.mercedesrestorations.cz/vop.pdf";
-const PODPIS_FIRMY = "Mercedes Restorations s.r.o.\n+420 732 518 016 · info@mercedesrest.cz\nwww.mercedesrestorations.cz";
+const PODPIS_FIRMY = "Mercedes Restorations s.r.o.\n+420 732 518 016\ninfo@mercedesrest.cz\nwww.mercedesrestorations.cz";   // každý údaj na vlastním řádku (Vašek 31.10.2026)
 
 function hlavicky(origin: string | null) {
   const h: Record<string, string> = { "content-type": "application/json; charset=utf-8", "vary": "Origin" };
