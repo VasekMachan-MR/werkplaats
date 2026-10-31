@@ -1,5 +1,5 @@
 // Zpětná vazba od Resend (webhook): doručeno / nedoručeno / označeno jako spam → stav v tabulce emaily.
-// Když e-mail zákazníkovi nedorazí, přijde upozornění na info@mercedesrest.cz (Vašek 31.10.2026: „potřebuji feedback, kdyby e-mail nedorazil“).
+// Když e-mail zákazníkovi nedorazí (zakázkový list, list k podpisu, cenová nabídka), přijde upozornění na info@mercedesrest.cz (Vašek 31.10.2026: „potřebuji feedback, kdyby e-mail nedorazil“).
 // verify_jwt = false – pravost zprávy se ověřuje podpisem Svix (Secrets: RESEND_WEBHOOK_SECRET „whsec_…“).
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -40,7 +40,7 @@ Deno.serve(async req => {
       headers: { "authorization": `Bearer ${Deno.env.get("RESEND_API_KEY")}`, "content-type": "application/json", "idempotency-key": `nedoruceno-${e.id}` },
       body: JSON.stringify({ from: "Werkplaats <info@mercedesrest.cz>", to: [FIRMA],
         subject: `⚠️ E-mail zákazníkovi nedorazil – ${zak}`,
-        text: `Dobrý den,\n\ne-mail se zakázkovým listem ${e.doklady?.cislo || ""} se nepodařilo doručit na adresu ${e.komu}.\n\nDůvod: ${chyba}\n\nZkontrolujte prosím e-mail zákazníka ve Werkplaats a pošlete zakázkový list znovu (v detailu zakázky „Poslat znovu“).\n\nWerkplaats` })
+        text: `Dobrý den,\n\ne-mail „${e.predmet || "doklad " + (e.doklady?.cislo || "")}“ se nepodařilo doručit na adresu ${e.komu}.\n\nDůvod: ${chyba}\n\nZkontrolujte prosím e-mail zákazníka ve Werkplaats a pošlete doklad znovu (v detailu zakázky „Poslat znovu“).\n\nWerkplaats` })
     }).catch(() => {});
   }
   return new Response("ok");

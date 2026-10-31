@@ -64,8 +64,12 @@ window.__WERK_DB__ = (() => {
     async koncept() { await cekej(); if (window.__OFFLINE__) throw new Error("Failed to fetch"); const k = sessionStorage.getItem("mock-koncept"); return k ? JSON.parse(k) : null; },
     async ulozitKoncept(data) { await cekej(); if (window.__OFFLINE__) throw new Error("Failed to fetch"); sessionStorage.setItem("mock-koncept", JSON.stringify({ data, upraveno: new Date().toISOString() })); return [{}]; },
     async smazatKoncept() { await cekej(); sessionStorage.removeItem("mock-koncept"); },
-    async odeslatZakazkovyList(doklad_id) { await cekej(); const d = T.doklady.find(x => x.id === doklad_id); const z = d && T.zakazky.find(x => x.id === d.zakazka_id); const c = z && T.zakaznici.find(x => x.id === z.zakaznik_id);
-      (window.__ULOZENO__.emaily ||= []).push({ doklad_id, komu: c?.email || null }); return c?.email ? { ok: true, komu: c.email, stav: "odeslano" } : { ok: false, stav: "chyba", chyba: "Zákazník nemá platný e-mail." }; },
+    async odeslatEmail(doklad_id) { await cekej(); const d = T.doklady.find(x => x.id === doklad_id); const z = d && T.zakazky.find(x => x.id === d.zakazka_id); const c = z && T.zakaznici.find(x => x.id === z.zakaznik_id);
+      const podepsano = T.podpisy.some(x => x.doklad_id === doklad_id && x.role === "zakaznik") || T.dalkove_podpisy.some(x => x.doklad_id === doklad_id);
+      const ucel = d?.druh === "nabidka" ? "nabidka_podpis" : podepsano ? "zakazkovy_list" : "zakazkovy_list_podpis";
+      (window.__ULOZENO__.emaily ||= []).push({ doklad_id, komu: c?.email || null, ucel, stav: c?.email ? "odeslano" : "chyba", zmeneno: new Date().toISOString() });
+      return c?.email ? { ok: true, komu: c.email, stav: "odeslano" } : { ok: false, stav: "chyba", chyba: "Zákazník nemá platný e-mail." }; },
+    odeslatZakazkovyList(doklad_id) { return this.odeslatEmail(doklad_id); },
     async dalsiCisloOdhad() { return window.__ULOZENO__.citac + 1; },
     async katalogVozu() { return kopie(window.__KATALOG__ || []); },
     async vsechnyDily() {
@@ -259,7 +263,9 @@ window.__WERK_DB__ = (() => {
       const z = T.zakazky.find(x => x.id === zid); if (!z) return null;
       return kopie({ ...z, vozidla: T.vozidla.find(v => v.id === z.vozidlo_id), zakaznici: T.zakaznici.find(c => c.id === z.zakaznik_id),
         doklady: T.doklady.filter(d => d.zakazka_id === zid).map(d => ({ ...d, soubory: T.soubory.find(s => s.id === d.pdf_soubor_id),
-          dalkove_podpisy: T.dalkove_podpisy.filter(x => x.doklad_id === d.id).map(x => ({ ...x, soubory: T.soubory.find(f => f.id === x.soubor_id) })) })),
+          dalkove_podpisy: T.dalkove_podpisy.filter(x => x.doklad_id === d.id).map(x => ({ ...x, soubory: T.soubory.find(f => f.id === x.soubor_id) })),
+          podpisy: T.podpisy.filter(x => x.doklad_id === d.id).map(x => ({ role: x.role, podepsano: x.podepsano || null })),
+          emaily: (window.__ULOZENO__.emaily || []).filter(x => x.doklad_id === d.id) })),
         soubory: T.soubory.filter(s => s.zakazka_id === zid) });
     }
   };

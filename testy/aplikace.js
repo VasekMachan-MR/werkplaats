@@ -876,15 +876,17 @@ const server = http.createServer((q, r) => {
 
   // ---------- Dopodepsání zakázkového listu z E-servisky ----------
   {
-    const zid = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const d = T.doklady.find(x => x.druh === "zakazkovy_list"); d.data = { ...d.data, cekaPodpis: true }; return d.zakazka_id; });
+    const zid = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; const d = T.doklady.find(x => x.druh === "zakazkovy_list"); d.data = { ...d.data, cekaPodpis: true };
+      for (let i = T.podpisy.length - 1; i >= 0; i--) if (T.podpisy[i].doklad_id === d.id && T.podpisy[i].role === "zakaznik") T.podpisy.splice(i, 1);   // list opravdu bez podpisu zákazníka
+      return d.zakazka_id; });
     await p.evaluate(id => { location.hash = "#/zakazky"; location.hash = "#/zakazka/" + id; }, zid);
-    await p.waitForSelector("#odkaz-k-podpisu");
-    kontrola(true, "zakázka ukazuje, že list čeká na podpis zákazníka (+ odkaz k podpisu)");
-    await p.evaluate(() => { window.__MAILTO__ = u => { window.__MAIL__ = u; }; window.__MAIL__ = null; });
-    await p.click("#odkaz-k-podpisu");
-    { const m = decodeURIComponent(await p.evaluate(() => window.__MAIL__ || ""));
-      kontrola(/^mailto:[^?]+@[^?]+\?subject=/.test(m) && /e-serviska\?k=[0-9a-f]{20}/.test(m) && /(Děkujeme za důvěru|Thank you for your trust)/.test(m),
-        "„Poslat odkaz k podpisu“ připraví zákazníkovi e-mail s odkazem do E-servisky"); }
+    await p.waitForSelector(".info.pozor [data-poslat-email]");
+    kontrola(/čeká na podpis zákazníka/.test(await p.textContent(".info.pozor")), "zakázka ukazuje, že list čeká na podpis zákazníka (+ „📧 Poslat znovu“)");
+    { const n0 = await p.evaluate(() => (window.__ULOZENO__.emaily || []).length);
+      await p.click(".info.pozor [data-poslat-email]"); await p.waitForSelector("#hlaska >> text=Odesláno na");
+      const e = await p.evaluate(() => window.__ULOZENO__.emaily.at(-1));
+      kontrola((await p.evaluate(() => window.__ULOZENO__.emaily.length)) === n0 + 1 && e.ucel === "zakazkovy_list_podpis", "„📧 Poslat znovu“ pošle zákazníkovi znovu e-mail se zakázkovým listem k podpisu"); }
+    await p.waitForSelector("#sekce-udaje");
     await p.evaluate(async () => {        // zákazník podepsal v E-servisce (to dělá serverová funkce)
       const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.druh === "zakazkovy_list");
       const c = document.createElement("canvas"); c.width = 200; c.height = 60; const x = c.getContext("2d"); x.strokeStyle = "#1372e8"; x.lineWidth = 3; x.beginPath(); x.moveTo(10, 40); x.bezierCurveTo(60, 0, 120, 70, 190, 20); x.stroke();
@@ -898,13 +900,13 @@ const server = http.createServer((q, r) => {
     await p.waitForSelector("#hlaska >> text=Podepsaný zakázkový list");
     const r = await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === "7377-1-2"); return d && { verze: d.verze, pod: d.data.podepsanoDalkove, ceka: d.data.cekaPodpis, zp: T.podpisy.filter(x => x.doklad_id === d.id).map(x => x.role + ":" + x.zpusob).join(","), dp: T.dalkove_podpisy.find(x => x.id === "dp1").vystaveny_doklad_id === d.id }; });
     kontrola(r && r.verze === 2 && /Podepsáno online v E-servisce/.test(r.pod) && !r.ceka && /zakaznik:dalkove/.test(r.zp) && r.dp, "z podpisu v E-servisce se vystaví podepsaný list 7377-1-2 (podpis zákazníka + poznámka o el. podpisu)");
-    kontrola(await p.locator("#vystavit-podepsany, #odkaz-k-podpisu").count() === 0, "po vystavení už zakázka na podpis nečeká");
+    kontrola(await p.locator("#vystavit-podepsany, #odkaz-k-podpisu, .info.pozor [data-poslat-email]").count() === 0, "po vystavení už zakázka na podpis nečeká");
     // nový postup: server podpis rovnou vloží do PDF (vystaveny_doklad_id = sám doklad) → žádné „Vystavit“
     await p.evaluate(() => { const T = window.__ULOZENO__.tabulky, d1 = T.doklady.find(x => x.cislo === "7377-1-2"); d1.data = { ...d1.data, cekaPodpis: true };
       T.dalkove_podpisy.push({ id: "dp2", doklad_id: d1.id, soubor_id: "sf-dalkovy", podepsano: new Date().toISOString(), vystaveny_doklad_id: d1.id }); });
     await p.evaluate(id => { location.hash = "#/zakazky"; location.hash = "#/zakazka/" + id; }, zid);
     await p.waitForSelector("#sekce-udaje");
-    kontrola(await p.locator("#vystavit-podepsany, #odkaz-k-podpisu").count() === 0 && /Podepsané PDF je uložené/.test(await p.textContent("body")),
+    kontrola(await p.locator("#vystavit-podepsany, #odkaz-k-podpisu, .info.pozor [data-poslat-email]").count() === 0 && /Podepsané PDF je uložené/.test(await p.textContent("body")),
       "když server podpis vloží do PDF sám, zakázka jen ukáže, že je podepsáno (bez „Vystavit“)");
     { const b = await p.evaluate(() => Array.from(Object.entries(window.__ULOZENO__.soubory).find(([k]) => /7377-1-2-zakazkovy-list\.pdf$/.test(k))?.[1] || [])); if (b.length) require("fs").writeFileSync("testy/vystup-app/podepsany-list.pdf", Buffer.from(b)); }
   }
@@ -1053,8 +1055,10 @@ const server = http.createServer((q, r) => {
     const nl = await p.evaluate(id => window.__ULOZENO__.tabulky.doklady.filter(d => d.zakazka_id === id && d.druh === "zakazkovy_list").sort((a, b) => (b.verze || 1) - (a.verze || 1))[0], zid);
     kontrola(nl.cislo === cisloNove && nl.variabilni_symbol === cisloNove && nl.data.cislo === cisloNove && nl.data.cekaPodpis === true && nl.data.odhad === 45000 && nl.data.zavady.includes("Doplněno: výměna brzdové kapaliny"),
       `Vystavit k podpisu: vznikla nová verze ${cisloNove} s novými údaji, čeká na podpis zákazníka (Podepíše později)`);
-    await p.waitForSelector("#odkaz-podpis");
-    kontrola(true, "Vystavit k podpisu: po uložení je hned tlačítko „Poslat odkaz k podpisu“");
+    await p.waitForSelector(".hotovo >> text=se zakázkovým listem k podpisu jsme poslali");
+    kontrola(await p.evaluate(c => { const T = window.__ULOZENO__, d = T.tabulky.doklady.find(x => x.cislo === c && x.data?.cekaPodpis); return (T.emaily || []).some(e => e.doklad_id === d?.id && e.ucel === "zakazkovy_list_podpis"); }, cisloNove)
+      && await p.locator("#odkaz-podpis").count() === 0,
+      "Odeslat k podpisu: zákazníkovi hned odešel e-mail se zakázkovým listem k podpisu (bez ručního „Poslat odkaz“)");
     await p.evaluate(() => { location.hash = "#/doklady"; }); await p.waitForSelector("#f-druh");
     await p.click('#f-druh >> text=Zakázkové listy');
     const listy = await p.$$eval("#seznam-dokladu .doklad b", b => b.map(x => x.textContent).filter(t => /^7377(-1|\d{3}1$)/.test(t)));
@@ -1090,10 +1094,10 @@ const server = http.createServer((q, r) => {
         "kolize čísla listu (zákazník mezitím podepsal): chyba „už mezitím dostal jiný doklad“, žádný list se nesmazal, úspěch se nehlásí, nahrané PDF se uklidí");
       await p.evaluate(() => { location.hash = "#/doklady"; }); await p.waitForSelector("#f-druh");   // pryč z obrazovky podpisu (hash zakázky se nemění)
     }
-    // ---------- cenová nabídka „Podepíše později“ → E-serviska + e-mail (Vašek 31.10.2026) ----------
+    // ---------- cenová nabídka „Odeslat k podpisu“ → automatický e-mail + odsouhlasení v E-servisce (Vašek 31.10.2026) ----------
     await p.evaluate(id => { location.hash = "#/zakazka/" + id; }, zid); await p.waitForSelector("text=📝 Cenová nabídka");
     await p.click("text=📝 Cenová nabídka"); await p.waitForSelector("#vystavit:not([disabled])");
-    kontrola(await p.isEnabled("#pozdeji"), "nabídka: tlačítko „✍️ Podepíše později“ je i u cenové nabídky");
+    kontrola(await p.isEnabled("#pozdeji") && /Odeslat k podpisu/.test(await p.textContent("#pozdeji")), "nabídka: tlačítko „📧 Odeslat k podpisu“");
     const cisloNab = (await p.textContent("#vystavit")).replace(/^\D*/, "").trim();
     // číslo mezitím obsadilo jiné zařízení → chyba místo falešného „hotovo“; po úklidu jde vystavit znovu na stejné obrazovce
     await p.evaluate(() => { window.__CIZI_DOKLAD__ = true; });
@@ -1101,21 +1105,21 @@ const server = http.createServer((q, r) => {
     kontrola(!(await p.evaluate(() => location.hash)).startsWith("#/hotovo/"), `nabídka ${cisloNab}: obsazené číslo (jiné zařízení) → chyba, ne „hotovo“`);
     await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; for (let i = T.doklady.length - 1; i >= 0; i--) if (T.doklady[i].data?.pokus === "jine-zarizeni") T.doklady.splice(i, 1); });
     await p.click("#pozdeji"); await p.waitForSelector(`.velke-cislo >> text=${cisloNab}`).catch(async e => { console.log("HLÁŠKA:", await p.textContent("#hlaska"), p.url(), await p.evaluate(() => window.__ULOZENO__.tabulky.doklady.filter(d => d.druh === "nabidka").map(d => d.cislo + ":" + d.data?.pokus))); throw e; });
-    kontrola(/cenovou nabídku tam podepíše/.test(await p.textContent(".hotovo")) && await p.isVisible("#odkaz-podpis"), `nabídka ${cisloNab}: po vystavení „čeká na podpis“ + „Poslat odkaz k podpisu“`);
+    kontrola(/s cenovou nabídkou k odsouhlasení jsme poslali na/.test(await p.textContent(".hotovo")) && await p.locator("#odkaz-podpis").count() === 0, `nabídka ${cisloNab}: po vystavení „e-mail s nabídkou k odsouhlasení jsme poslali“`);
     kontrola(await p.evaluate(c => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === c); return d.druh === "nabidka" && d.data.cekaPodpis === true && !T.podpisy.some(x => x.doklad_id === d.id && x.role === "zakaznik"); }, cisloNab),
       "nabídka uložená s „čeká na podpis“ a bez podpisu zákazníka");
-    await p.evaluate(() => { window.__MAILTO__ = u => { window.__MAIL__ = u; }; window.__MAIL__ = null; });
-    await p.click("#odkaz-podpis"); await p.waitForFunction(() => !!window.__MAIL__);
-    { const m = decodeURIComponent(await p.evaluate(() => window.__MAIL__ || ""));
-      kontrola(new RegExp(`subject=Mercedes-Benz W126 - Cenová nabídka č\\. ${cisloNab}&`).test(m) && /podepsání cenové nabídky k vašemu vozu Mercedes-Benz W126/.test(m) && /e-serviska\?k=[0-9a-f]{20}/.test(m),
-        `e-mail k podpisu nabídky: předmět „Mercedes-Benz W126 - Cenová nabídka č. ${cisloNab}“, text o nabídce, odkaz do E-servisky`); }
-    await p.click("text=Detail zakázky"); await p.waitForSelector("[data-odkaz-faktura]");
-    kontrola(new RegExp(`Cenová nabídka ${cisloNab} čeká na podpis zákazníka`).test(await p.textContent("body")), `zakázka: „Cenová nabídka ${cisloNab} čeká na podpis zákazníka v E-servisce“`);
+    kontrola(await p.evaluate(c => { const T = window.__ULOZENO__, d = T.tabulky.doklady.find(x => x.cislo === c); return (T.emaily || []).filter(e => e.doklad_id === d.id && e.ucel === "nabidka_podpis").length === 1; }, cisloNab),
+      "nabídka: e-mail k odsouhlasení odešel automaticky právě jednou");
+    await p.click("text=Detail zakázky"); await p.waitForSelector(".info.pozor [data-poslat-email]");
+    kontrola(new RegExp(`Cenová nabídka ${cisloNab} čeká na odsouhlasení zákazníkem`).test(await p.textContent("body")) && /⏳ čeká na odsouhlasení/.test(await p.textContent(".doklady"))
+      && /📧 E-mail .*odesláno/.test(await p.textContent(".doklady")),
+      `zakázka: nabídka ${cisloNab} „čeká na odsouhlasení“ (+ stav e-mailu a „📧 Poslat znovu“)`);
     await p.evaluate(c => { const T = window.__ULOZENO__.tabulky, d = T.doklady.find(x => x.cislo === c);
       T.dalkove_podpisy.push({ id: "dp-nab", doklad_id: d.id, soubor_id: null, podepsano: new Date().toISOString(), vystaveny_doklad_id: d.id }); }, cisloNab);
     await p.evaluate(() => { const h = location.hash; location.hash = "#/zakazky"; location.hash = h; });
-    await p.waitForSelector("text=Zákazník podepsal cenovou nabídku");
-    kontrola(new RegExp(`Zákazník podepsal cenovou nabídku ${cisloNab} v E-servisce`).test(await p.textContent("body")), "po podpisu v E-servisce: „Zákazník podepsal cenovou nabídku…“");
+    await p.waitForSelector("text=Zákazník odsouhlasil cenovou nabídku");
+    kontrola(new RegExp(`Zákazník odsouhlasil cenovou nabídku ${cisloNab} v E-servisce`).test(await p.textContent("body")), "po podpisu v E-servisce: „Zákazník odsouhlasil cenovou nabídku…“");
+    kontrola(/✓ Odsouhlaseno \d+\. \d+\. \d{4} \(online\)/.test(await p.textContent(".doklady")) && !/čeká na odsouhlasení/.test(await p.textContent(".doklady")), "Doklady: u nabídky je ✓ Odsouhlaseno (online) s datem");
     // ---------- předávací protokol „Podepíše později“ (Vašek 31.10.2026) ----------
     const stavPred = await p.evaluate(id => { const z = window.__ULOZENO__.tabulky.zakazky.find(x => x.id === id); return { stav: z.stav, d: z.datum_predani ?? null, km: z.km_predani ?? null }; }, zid);
     await p.click("text=🔑 Předávací protokol"); await p.waitForSelector("#co-chybi");
