@@ -103,7 +103,7 @@ Deno.serve(async req => {
   const odkaz = v.eserviska_kod ? "https://www.mercedesrestorations.cz/e-serviska?k=" + encodeURIComponent(v.eserviska_kod)
     : "https://www.mercedesrestorations.cz/e-serviska?vin=" + encodeURIComponent(String(v.vin || "").toUpperCase().replace(/[^A-Z0-9]/g, ""));
   const jmeno = (d.podpisy || []).find((x: any) => x.role === "vyhotovil")?.jmeno || "Václav Macháň";
-  const { predmet, text, tlacitko } = textEmailu(druh, en, { cislo: d.cislo, zakazka: String(d.zakazky?.cislo || ""), model, spz: v.spz || "", odkaz, jmeno: en ? jmeno.normalize("NFD").replace(/[̀-ͯ]/g, "") : jmeno });
+  const { predmet, text, tlacitko } = textEmailu(druh, en, { cislo: d.cislo, zakazka: String(d.zakazky?.cislo || ""), model, spz: v.spz || "", odkaz, jmeno: en ? jmeno.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : jmeno });
 
   const klic = Deno.env.get("RESEND_API_KEY");
   if (!klic) { await zapis({ predmet, stav: "chyba", chyba: "Odesílání e-mailů ještě není nastavené (chybí RESEND_API_KEY)." }); return odp(200, { ok: false, komu, stav: "chyba", chyba: "Odesílání e-mailů ještě není nastavené." }); }
