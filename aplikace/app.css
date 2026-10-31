@@ -566,7 +566,7 @@ details.postup-prace[open] > summary .postup { display: none; }
 .fronta-odznak { border: 0; border-radius: 999px; padding: 6px 12px; font: 600 13px/1.2 inherit; font-family: inherit; cursor: pointer; white-space: nowrap; margin-right: 6px; }
 .fronta-odznak.ceka { background: #fde7c3; color: #7a4300; }
 .fronta-odznak.offline { background: rgba(255,255,255,.15); color: #fff; }
-.fronta-odznak[hidden] { display: none; }
+.fronta-odznak[hidden], #datum-predani-pole[hidden] { display: none; }
 .dan-pole { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .dan-pole .vstup { width: 4.2em; min-height: 36px; padding: 4px 8px; text-align: right; }
 .dan-zap { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600; }

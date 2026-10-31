@@ -2020,8 +2020,8 @@
         <div><div class="mutted">Zakázka · ${esc(c.jmeno || "")}</div><h1 style="margin:0">#${z.cislo} · ${esc([v.typ, v.model].filter(Boolean).join(" ") || "Mercedes-Benz")}</h1></div>
         <span class="radek-tlacitek"><label class="vyber-stavu ${["predano", "zaplaceno", "hotovo"].includes(z.stav) ? "hotovo" : z.stav === "zruseno" ? "zruseno" : ""}" title="Stav zakázky">
             <select id="stav-zakazky" aria-label="Stav zakázky">${Object.entries(STAVY).map(([k, t]) => `<option value="${k}" ${k === z.stav ? "selected" : ""}>${t}</option>`).join("")}</select></label>
-          <label class="tl tl-male" id="datum-predani-pole" title="Datum předání auta zákazníkovi (vyplní se samo předávacím protokolem)" ${z.stav === "predano" ? "" : "hidden"}>📅 Předáno
-            <input type="date" id="datum-predani" value="${esc(z.datum_predani || "")}" ${z.datum_predani ? "" : 'class="chybi"'} style="border:0;background:transparent;font-family:inherit;font-size:16px"></label>
+          <label class="tl tl-male" id="datum-predani-pole" title="Chybí datum předání – běžně ho zapíše předávací protokol" ${z.stav === "predano" && !z.datum_predani ? "" : "hidden"}>📅 Doplnit datum předání
+            <input type="date" id="datum-predani" value="" class="chybi" style="border:0;background:transparent;font-family:inherit;font-size:16px"></label>
           ${uzivatel.role === "majitel" ? (doklady.some(d => ["faktura", "zalohova", "opravny"].includes(d.druh))
             ? (z.stav !== "zruseno" ? `<button class="tl tl-male tl-smazat" id="zrusit-zakazku">✕ Zrušit zakázku</button>` : "")
             : `<button class="tl tl-male tl-smazat" id="smazat-zakazku">🗑 Smazat</button>`) : ""}</span>
@@ -2121,7 +2121,7 @@
       const novy = e.target.value, stary = E.z.stav;
       try { await db.upravit("zakazky", id, { stav: novy }); E.z.stav = novy; z.stav = novy;
         const l = e.target.parentElement; l.className = `vyber-stavu ${["predano", "zaplaceno", "hotovo"].includes(novy) ? "hotovo" : novy === "zruseno" ? "zruseno" : ""}`;
-        app.querySelector("#datum-predani-pole").hidden = novy !== "predano";
+        app.querySelector("#datum-predani-pole").hidden = novy !== "predano" || !!z.datum_predani;
         hlaska(`Stav zakázky: ${STAVY[novy]}${novy === "predano" && !z.datum_predani ? " – doplňte datum předání" : ""}`); }
       catch (err) { e.target.value = stary; hlaska(chybaText(err), true); }
     };
@@ -2129,7 +2129,8 @@
     app.querySelector("#datum-predani").onchange = async e => {
       const inp = e.target, nove = inp.value || null, stare = z.datum_predani || "";
       try { await db.upravit("zakazky", id, { datum_predani: nove }); z.datum_predani = nove; if (E?.z) E.z.datum_predani = nove;
-        inp.classList.toggle("chybi", !nove); hlaska(nove ? `Datum předání: ${datumCz(nove)}` : "Datum předání smazáno."); }
+        inp.classList.toggle("chybi", !nove); if (nove) app.querySelector("#datum-predani-pole").hidden = true;   // doplněno → políčko zmizí
+        hlaska(nove ? `Datum předání: ${datumCz(nove)}` : "Datum předání smazáno."); }
       catch (err) { inp.value = stare; hlaska(chybaText(err), true); }
     };
 

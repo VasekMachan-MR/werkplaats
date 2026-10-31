@@ -335,14 +335,15 @@ const server = http.createServer((q, r) => {
   await p.click("text=Detail zakázky");
   await p.waitForSelector("text=7377-4");
   await foto("13-detail-doklady");
-  // datum předání: po protokolu vyplněné samo, jde ho ručně změnit (staré zakázky bez protokolu) – Vašek 31.10.2026
+  // datum předání: po protokolu je vyplněné → políčko se neukazuje; když chybí (staré zakázky), jde doplnit ručně – Vašek 31.10.2026
   { const dp0 = await p.evaluate(() => window.__ULOZENO__.tabulky.zakazky[0].datum_predani);
-    kontrola(await p.isVisible("#datum-predani-pole") && await p.inputValue("#datum-predani") === dp0 && !!dp0, `detail předané zakázky: políčko „📅 Předáno“ s datem z protokolu (${dp0})`);
-    await p.fill("#datum-predani", "2025-07-17"); await p.dispatchEvent("#datum-predani", "change");
-    await p.waitForFunction(() => window.__ULOZENO__.tabulky.zakazky[0].datum_predani === "2025-07-17");
-    kontrola(true, "datum předání jde ručně změnit a uloží se k zakázce");
+    kontrola(!!dp0 && !(await p.isVisible("#datum-predani-pole")), `předaná zakázka s datem z protokolu (${dp0}): políčko „Doplnit datum předání“ se neukazuje`);
+    await p.evaluate(() => { window.__ULOZENO__.tabulky.zakazky[0].datum_predani = null; location.hash = "#/doklady"; }); await p.waitForSelector("#f-druh");
+    await p.evaluate(() => { location.hash = "#/zakazka/" + window.__ULOZENO__.tabulky.zakazky[0].id; }); await p.waitForSelector("#datum-predani-pole:not([hidden])");
     await p.fill("#datum-predani", dp0); await p.dispatchEvent("#datum-predani", "change");
-    await p.waitForFunction(d => window.__ULOZENO__.tabulky.zakazky[0].datum_predani === d, dp0); }
+    await p.waitForFunction(d => window.__ULOZENO__.tabulky.zakazky[0].datum_predani === d, dp0);
+    await p.waitForSelector("#datum-predani-pole", { state: "hidden" });
+    kontrola(true, "předaná zakázka bez data: políčko „📅 Doplnit datum předání“, po vyplnění se datum uloží a políčko zmizí"); }
   // přehled dokladů
   await p.click(".lista-vpravo >> text=Doklady");
   await p.waitForSelector(".dlazdice-k");
