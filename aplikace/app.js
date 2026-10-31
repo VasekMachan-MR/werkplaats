@@ -2194,10 +2194,24 @@
     const z = E.z, v = z.vozidla || {}, jedn = v.jednotka_tachometru === "mi" ? "mi" : "km";
     const protokol = (z.doklady || []).filter(d => d.druh === "predavaci_protokol").sort((a, b) => (b.verze || 1) - (a.verze || 1))[0];
     if (z.datum_predani && !zmenit) {
-      el.innerHTML = `<h3 class="podnadpis">🔑 Předání ${datumCz(z.datum_predani)} <button type="button" class="tl tl-male" id="zmenit-predani" style="margin-left:auto">✏️ Změnit datum</button></h3>
+      el.innerHTML = `<h3 class="podnadpis">🔑 Předání ${datumCz(z.datum_predani)} <span class="radek-tlacitek" style="margin-left:auto"><button type="button" class="tl tl-male" id="zmenit-predani">✏️ Změnit datum</button>${protokol ? "" : `<button type="button" class="tl tl-male" id="zrusit-predani-uplne">↩︎ Zrušit předání</button>`}</span></h3>
         <dl class="udaje">${[["Datum předání", datumCz(z.datum_predani)], ["Tachometr při předání", z.km_predani != null ? `${Number(z.km_predani).toLocaleString("cs-CZ")} ${jedn}` : ""],
           ["Předávací protokol", protokol ? protokol.cislo : "bez protokolu"]].filter(([, x]) => x).map(([a, b]) => `<div><dt>${a}</dt><dd>${esc(b)}</dd></div>`).join("")}</dl>`;
       el.querySelector("#zmenit-predani").onclick = () => vykresliPredaniDetail(true);
+      // omylem kliknuté „✓ Předáno“ jde vrátit (Vašek 31.10.2026); s předávacím protokolem ne – ten se ruší smazáním protokolu
+      const zp = el.querySelector("#zrusit-predani-uplne");
+      if (zp) zp.onclick = async () => {
+        const fa = (z.doklady || []).filter(d => d.druh === "faktura");
+        const zpet = z._stavPredPredanim || (fa.some(d => d.zaplaceno) ? "zaplaceno" : fa.length ? "fakturovano" : "v_praci");
+        if (!confirm(`Zrušit předání zakázky #${z.cislo}?\n\nDatum předání se smaže a zakázka se vrátí do stavu „${STAVY[zpet]}“.`)) return;
+        const zmeny = { datum_predani: null, ...(z.stav === "predano" ? { stav: zpet } : {}) };
+        zp.disabled = true;
+        try {
+          await db.upravit("zakazky", z.id, zmeny); Object.assign(z, zmeny); delete z._stavPredPredanim;
+          if (zmeny.stav) { const sel = document.getElementById("stav-zakazky"); if (sel) { sel.value = zmeny.stav; sel.parentElement.className = `vyber-stavu ${["zaplaceno", "hotovo"].includes(zmeny.stav) ? "hotovo" : ""}`; } }
+          hlaska(`Předání zrušeno${zmeny.stav ? ` – zakázka je zpět ve stavu „${STAVY[zmeny.stav]}“` : ""}.`); vykresliPredaniDetail(false);
+        } catch (err) { zp.disabled = false; hlaska("Nepodařilo se zrušit: " + chybaText(err), true); }
+      };
       return;
     }
     el.innerHTML = `<h3 class="podnadpis">🔑 Předání</h3>
@@ -2211,6 +2225,7 @@
       const b = e.currentTarget, inp = el.querySelector("#datum-predani"), datum = inp.value;
       if (!datum) { inp.classList.add("chybi"); inp.focus(); return hlaska("Vyberte datum předání.", true); }
       const zmeny = { datum_predani: datum, ...(z.stav !== "predano" && z.stav !== "zruseno" ? { stav: "predano" } : {}) };
+      if (zmeny.stav) z._stavPredPredanim = z.stav;   // „↩︎ Zrušit předání“ ho vrátí přesně
       b.disabled = true;
       try {
         await db.upravit("zakazky", z.id, zmeny); Object.assign(z, zmeny);

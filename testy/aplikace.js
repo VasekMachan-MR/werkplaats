@@ -353,7 +353,21 @@ const server = http.createServer((q, r) => {
       "„✓ Předáno“ uloží datum 30. 10. 2026, zakázku přepne na Předáno a ukáže datum s tlačítkem „Změnit datum“");
     await p.click("#zmenit-predani"); await p.fill("#datum-predani", dp0); await p.click("#ulozit-predani");
     await p.waitForFunction(d => window.__ULOZENO__.tabulky.zakazky[0].datum_predani === d, dp0);
-    kontrola(true, "„✏️ Změnit datum“ – datum předání jde opravit"); }
+    kontrola(true, "„✏️ Změnit datum“ – datum předání jde opravit");
+    // omylem kliknuté „✓ Předáno“ jde vrátit: datum se smaže a stav se vrátí na původní (Vašek 31.10.2026)
+    kontrola(!(await p.isVisible("#zrusit-predani-uplne")), "s předávacím protokolem nejde předání zrušit tlačítkem (ruší se smazáním protokolu)");
+    // zakázka bez protokolu (jen faktura): „✓ Předáno“ omylem → „↩︎ Zrušit předání“
+    await p.evaluate(() => { const T = window.__ULOZENO__.tabulky; T.doklady.forEach(d => { if (d.druh === "predavaci_protokol" && d.zakazka_id === T.zakazky[0].id) d.druh = "_test_protokol"; });
+      T.zakazky[0].datum_predani = null; T.zakazky[0].stav = "zaplaceno"; location.hash = "#/doklady"; }); await p.waitForSelector("#f-druh");
+    await p.evaluate(() => { location.hash = "#/zakazka/" + window.__ULOZENO__.tabulky.zakazky[0].id; }); await p.waitForSelector("#sekce-predani-detail #ulozit-predani", { state: "attached" });
+    await p.evaluate(() => { document.getElementById("sekce-udaje").open = true; });
+    await p.click("#ulozit-predani"); await p.waitForSelector("#zrusit-predani-uplne");
+    await p.click("#zrusit-predani-uplne");
+    await p.waitForFunction(() => { const z = window.__ULOZENO__.tabulky.zakazky[0]; return !z.datum_predani && z.stav === "zaplaceno"; });
+    await p.waitForSelector("#sekce-predani-detail #ulozit-predani");
+    kontrola(await p.$eval("#stav-zakazky", s => s.value) === "zaplaceno" && /zatím není předané/.test(await p.textContent("#sekce-predani-detail")),
+      "„↩︎ Zrušit předání“ smaže datum a vrátí zakázku do původního stavu (Zaplaceno)");
+    await p.evaluate(d => { const T = window.__ULOZENO__.tabulky, z = T.zakazky[0]; z.datum_predani = d; z.stav = "predano"; T.doklady.forEach(x => { if (x.druh === "_test_protokol") x.druh = "predavaci_protokol"; }); }, dp0); }
   // přehled dokladů
   await p.click(".lista-vpravo >> text=Doklady");
   await p.waitForSelector(".dlazdice-k");
