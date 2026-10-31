@@ -117,7 +117,8 @@ Deno.serve(async req => {
   // co je příště na řadě
   const mil = v.jednotka_tachometru === "mi", naJed = (km: number | null) => km == null ? null : mil ? Math.round(km / 1.6 / 100) * 100 : km;
   const dnes = new Date().toISOString().slice(0, 10), za60 = plusMesice(dnes, 2);
-  const hotove = (zak || []).filter(z => HOTOVO.includes(z.stav)).sort((a, b) => String(b.datum_predani || b.datum_prijmu).localeCompare(String(a.datum_predani || a.datum_prijmu)));
+  // zaškrtnutý servisní úkon platí hned – i když je vůz ještě v dílně (Vašek 31.10.2026: „zaškrtnu olej a v E-servisce se objeví V pořádku“)
+  const hotove = (zak || []).filter(z => (z.servisni_ukony || []).length).sort((a, b) => String(b.datum_predani || b.datum_prijmu).localeCompare(String(a.datum_predani || a.datum_prijmu)));
   // interval podle motoru přebíjí interval skupiny
   const servis = (intervaly || []).filter(it => platne.has(it.ukon)).map(it => (intMot || []).find(x => x.motor === motor && x.ukon === it.ukon) || it).map(it => {
     const z = hotove.find(x => (x.servisni_ukony || []).includes(it.ukon));
